@@ -473,6 +473,7 @@ function MultipleTriggerContent({
   const containerRef = useRef<HTMLDivElement>(null)
   const badgeRef = useRef<HTMLSpanElement>(null)
   const [visibleCount, setVisibleCount] = useState(value.length)
+  const [measured, setMeasured] = useState(false)
   const prevValueRef = useRef(value)
   const needsMeasureRef = useRef(true)
 
@@ -518,6 +519,7 @@ function MultipleTriggerContent({
       }
       // Show at least 1 chip when there are items
       setVisibleCount(Math.max(1, count))
+      setMeasured(true)
     }
 
     const observer = new ResizeObserver(calculate)
@@ -558,6 +560,39 @@ function MultipleTriggerContent({
 
   const displayed = value.slice(0, displayCount)
   const overflowItems = value.slice(displayCount)
+
+  // Hide until first measurement to avoid flash of all chips overflowing.
+  // We keep the real container in the DOM (for layout measurement) but
+  // visually show a placeholder until `calculate()` has run.
+  const showContent = collapsed || measured
+
+  if (!showContent) {
+    // Render the real chips invisibly for measurement, overlaid with a
+    // short placeholder so the trigger doesn't flash a tall chip list.
+    return (
+      <div className="relative flex min-w-0 flex-1 items-center gap-1">
+        {/* Invisible measurement layer */}
+        <div
+          ref={containerRef}
+          className="pointer-events-none absolute inset-0 flex items-center gap-1 overflow-hidden opacity-0"
+        >
+          {value.map((opt) => (
+            <Chip
+              key={opt.value}
+              option={opt}
+              readOnly={readOnly}
+              disabled={disabled}
+              className="shrink-0"
+            />
+          ))}
+        </div>
+        {/* Visible placeholder */}
+        <span className="truncate text-muted-foreground">
+          {value.length} selected
+        </span>
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-w-0 flex-1 items-center gap-1">
