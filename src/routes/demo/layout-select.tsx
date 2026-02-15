@@ -342,7 +342,7 @@ function LayoutSelectDemo() {
           onChange={(val) => setLarge(val)}
           label="Large dataset"
           sortable
-          
+          onSortEnd={(sorted) => console.log('sorted', sorted)}
         />
         <pre className="self-center text-xs text-muted-foreground">
           selected: {large ? large.label : 'none'}
@@ -359,6 +359,7 @@ function LayoutSelectDemo() {
           selectValue={sortableVal}
           onChange={(val) => setSortableVal(val)}
           sortable
+          onSortEnd={(sorted) => console.log('sorted', sorted)}
           label="Reorderable"
           className="w-72"
         />

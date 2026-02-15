@@ -24,7 +24,10 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
+import {
+  restrictToFirstScrollableAncestor,
+  restrictToVerticalAxis,
+} from '@dnd-kit/modifiers'
 import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual'
 import { ChevronDown, GripVertical, X } from 'lucide-react'
 
@@ -93,8 +96,6 @@ interface SharedSelectProps {
   error?: boolean
   /** Allow the user to clear the selection. */
   clearable?: boolean
-  /** Enable drag‑and‑drop reordering of options in the list. */
-  sortable?: boolean
   /** Custom class for the root wrapper. */
   className?: string
   /** Custom class for the trigger. */
@@ -138,8 +139,24 @@ interface SharedSelectProps {
   label?: string
 }
 
+// ---- Sortable types ----
+
+interface SortableEnabledProps {
+  /** Enable drag‑and‑drop reordering of options in the list. */
+  sortable: true
+  /** Called after the user finishes reordering. Receives the new sorted
+   *  array of options. Required when `sortable` is `true`. */
+  onSortEnd: (sortedOptions: Array<IOption>) => void
+}
+
+interface SortableDisabledProps {
+  sortable?: false
+  onSortEnd?: never
+}
+
 export type LayoutSelectProps = SharedSelectProps &
-  (SingleSelectProps | MultipleSelectProps)
+  (SingleSelectProps | MultipleSelectProps) &
+  (SortableEnabledProps | SortableDisabledProps)
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -707,7 +724,7 @@ function VirtualList({
   if (sortable) {
     return (
       <DndContext
-        modifiers={[restrictToVerticalAxis]}
+        modifiers={[restrictToVerticalAxis, restrictToFirstScrollableAncestor]}
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragStart={(event) => {
@@ -745,7 +762,6 @@ export function LayoutSelect(props: LayoutSelectProps) {
     readOnly = false,
     error = false,
     clearable = false,
-    sortable = false,
     className,
     triggerClassName,
     popupClassName,
@@ -900,10 +916,19 @@ export function LayoutSelect(props: LayoutSelectProps) {
     )
   }, [type, currentValue, flatOptions])
 
+  const sortable = props.sortable ?? false
+  const consumerOnSortEnd = props.sortable
+    ? (props as SortableEnabledProps).onSortEnd
+    : undefined
+
   // ---- Sort handler ----
-  const handleSortEnd = useCallback((sorted: Array<IOption>) => {
-    setInternalSortedOptions(sorted)
-  }, [])
+  const handleSortEnd = useCallback(
+    (sorted: Array<IOption>) => {
+      setInternalSortedOptions(sorted)
+      consumerOnSortEnd?.(sorted)
+    },
+    [consumerOnSortEnd],
+  )
 
   // ---- Open handler ----
   const handleOpenChange = useCallback(
