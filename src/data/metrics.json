@@ -1,6 +1,6 @@
 {
   "solana": {
-    "finality_ms": 12387,
+    "finality_ms": 12308,
     "description": "Live data",
     "status": "LIVE NOW"
   },
@@ -15,7 +15,7 @@
     "status": "LIVE NOW"
   },
   "somnia": {
-    "finality_ms": 150,
+    "finality_ms": 375,
     "description": "Live data",
     "status": "LIVE NOW"
   }

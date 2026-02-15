@@ -24,15 +24,12 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { useVirtualizer } from '@tanstack/react-virtual'
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
+import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual'
 import { ChevronDown, GripVertical, X } from 'lucide-react'
 
+import type { Range } from '@tanstack/react-virtual'
 import type { DragEndEvent } from '@dnd-kit/core'
-import {
-  restrictToVerticalAxis,
-  restrictToParentElement,
-  restrictToFirstScrollableAncestor,
-} from '@dnd-kit/modifiers'
 
 import { cn } from '@/lib/utils'
 
@@ -601,12 +598,28 @@ function VirtualList({
   onSortEnd,
 }: VirtualListProps) {
   const parentRef = useRef<HTMLDivElement>(null)
+  const [activeIndex, setActiveIndex] = useState<number | null>(null)
+
+  // Custom range extractor: always include the actively-dragged item so the
+  // virtualizer never unmounts it (dnd-kit needs the DOM node to stay alive).
+  const rangeExtractor = useCallback(
+    (range: Range) => {
+      const result = defaultRangeExtractor(range)
+      if (activeIndex !== null && !result.includes(activeIndex)) {
+        result.push(activeIndex)
+        result.sort((a, b) => a - b)
+      }
+      return result
+    },
+    [activeIndex],
+  )
 
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 36,
     overscan: 8,
+    rangeExtractor,
   })
 
   const sensors = useSensors(
@@ -616,6 +629,7 @@ function VirtualList({
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
+      setActiveIndex(null)
       const { active, over } = event
       if (!over || active.id === over.id || !onSortEnd) return
       const oldIndex = items.findIndex((i) => `${i.value}` === `${active.id}`)
@@ -630,7 +644,13 @@ function VirtualList({
   const sortableIds = useMemo(() => items.map((i) => `${i.value}`), [items])
 
   const listContent = (
-    <div ref={parentRef} className="max-h-75 overflow-y-auto overflow-x-hidden">
+    <div
+      ref={parentRef}
+      className={cn(
+        'max-h-75 overflow-x-hidden',
+        activeIndex !== null ? 'overflow-y-visible' : 'overflow-y-auto',
+      )}
+    >
       <div
         style={{
           height: `${virtualizer.getTotalSize()}px`,
@@ -687,10 +707,17 @@ function VirtualList({
   if (sortable) {
     return (
       <DndContext
-        modifiers={[restrictToVerticalAxis, restrictToFirstScrollableAncestor]}
+        modifiers={[restrictToVerticalAxis]}
         sensors={sensors}
         collisionDetection={closestCenter}
+        onDragStart={(event) => {
+          const idx = items.findIndex(
+            (i) => `${i.value}` === `${event.active.id}`,
+          )
+          setActiveIndex(idx !== -1 ? idx : null)
+        }}
         onDragEnd={handleDragEnd}
+        onDragCancel={() => setActiveIndex(null)}
       >
         <SortableContext
           items={sortableIds}
