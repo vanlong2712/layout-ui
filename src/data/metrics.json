@@ -1,0 +1,22 @@
+{
+  "solana": {
+    "finality_ms": 12387,
+    "description": "Live data",
+    "status": "LIVE NOW"
+  },
+  "sui": {
+    "finality_ms": 390,
+    "description": "Live data",
+    "status": "LIVE NOW"
+  },
+  "bnb": {
+    "finality_ms": 1250,
+    "description": "Live data",
+    "status": "LIVE NOW"
+  },
+  "somnia": {
+    "finality_ms": 150,
+    "description": "Live data",
+    "status": "LIVE NOW"
+  }
+}
