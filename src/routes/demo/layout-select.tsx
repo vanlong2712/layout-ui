@@ -257,7 +257,7 @@ function LayoutSelectDemo() {
     <div className="mx-auto max-w-5xl space-y-8 p-8">
       <div>
         <h1 className="text-3xl font-bold text-foreground">
-          LayoutSelect Demo
+          Dndkit Sortable - Tanstack Virtual Select Demo
         </h1>
         <p className="text-muted-foreground">
           Each section shows both single &amp; multiple selection with toggle

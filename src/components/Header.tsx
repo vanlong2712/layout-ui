@@ -74,6 +74,21 @@ export default function Header() {
           {/* Demo Links Start */}
 
           <Link
+            to="/demo/layout-select"
+            onClick={() => setIsOpen(false)}
+            className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-800 transition-colors mb-2"
+            activeProps={{
+              className:
+                'flex items-center gap-3 p-3 rounded-lg bg-cyan-600 hover:bg-cyan-700 transition-colors mb-2',
+            }}
+          >
+            <SquareFunction size={20} />
+            <span className="font-medium">
+              Dndkit Sortable - Tanstack Virtual Select
+            </span>
+          </Link>
+
+          {/* <Link
             to="/demo/start/chains"
             onClick={() => setIsOpen(false)}
             className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-800 transition-colors mb-2"
@@ -234,7 +249,7 @@ export default function Header() {
           >
             <Network size={20} />
             <span className="font-medium">TanStack Query</span>
-          </Link>
+          </Link> */}
 
           {/* Demo Links End */}
         </nav>
