@@ -1,6 +1,6 @@
-import * as React from 'react'
 import { Select as BaseSelect } from '@base-ui/react/select'
-import { ChevronDownIcon, CheckIcon } from 'lucide-react'
+import { CheckIcon, ChevronDownIcon } from 'lucide-react'
+import * as React from 'react'
 
 import { cn } from '@/lib/utils'
 

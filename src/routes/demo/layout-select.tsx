@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { FileText, Globe, Mail, MapPin, Phone, User } from 'lucide-react'
 
@@ -8,6 +8,28 @@ import { LayoutSelect } from '@/layout/select'
 export const Route = createFileRoute('/demo/layout-select')({
   component: LayoutSelectDemo,
 })
+
+// ---------------------------------------------------------------------------
+// TypeScript helper: conditional sortable props
+// ---------------------------------------------------------------------------
+// The discriminated union `SortableEnabledProps | SortableDisabledProps`
+// loses narrowing when spread via `...(flag ? {...} : {})`. This helper casts
+// to one branch or the other so the spread is accepted.
+
+type SortableOn = {
+  sortable: true
+  onSortEnd: (s: Array<IOption>) => void
+  sortableAcrossGroups?: boolean
+}
+type SortableOff = { sortable?: undefined; onSortEnd?: undefined }
+
+function sortableIf(
+  enabled: boolean,
+  onSortEnd: (s: Array<IOption>) => void,
+  sortableAcrossGroups?: boolean,
+): SortableOn | SortableOff {
+  return enabled ? { sortable: true, onSortEnd, sortableAcrossGroups } : {}
+}
 
 // ---------------------------------------------------------------------------
 // Shared option data
@@ -85,7 +107,6 @@ const NESTED_OPTIONS: Array<IOption> = [
   },
 ]
 
-/** Lazy icon — the function is only called when the row is rendered. */
 const lazyIconFactory = () => <FileText className="size-4" />
 
 const LARGE_OPTIONS: Array<IOption> = Array.from({ length: 5000 }, (_, i) => ({
@@ -104,6 +125,34 @@ const MANY_SELECTED: Array<IOption> = [
 ]
 
 // ---------------------------------------------------------------------------
+// Toggle button
+// ---------------------------------------------------------------------------
+
+function Toggle({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string
+  checked: boolean
+  onChange: (v: boolean) => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+        checked
+          ? 'border-primary bg-primary text-primary-foreground'
+          : 'border-border bg-muted text-muted-foreground hover:bg-accent'
+      }`}
+    >
+      {label}
+    </button>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Section helper
 // ---------------------------------------------------------------------------
 
@@ -117,12 +166,12 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <div className="space-y-3 rounded-lg border border-border bg-card p-6">
+    <div className="space-y-4 rounded-lg border border-border bg-card p-6">
       <div>
         <h3 className="text-lg font-semibold text-card-foreground">{title}</h3>
         <p className="text-sm text-muted-foreground">{description}</p>
       </div>
-      <div className="flex flex-wrap gap-4">{children}</div>
+      {children}
     </div>
   )
 }
@@ -132,395 +181,586 @@ function Section({
 // ---------------------------------------------------------------------------
 
 function LayoutSelectDemo() {
-  // ---- Simple single ----
-  const [single1, setSingle1] = useState<IOption | null>(null)
-  const [single2, setSingle2] = useState<IOption | null>(OPTIONS_WITH_ICONS[1])
+  // ---- 1. Basic ----
+  const [basicSingle, setBasicSingle] = useState<IOption | null>(null)
+  const [basicMulti, setBasicMulti] = useState<Array<IOption>>([])
+  const [basicDisabled, setBasicDisabled] = useState(false)
+  const [basicReadOnly, setBasicReadOnly] = useState(false)
+  const [basicError, setBasicError] = useState(false)
+  const [basicClearable, setBasicClearable] = useState(false)
+  const [basicSortable, setBasicSortable] = useState(false)
 
-  // ---- Simple multiple ----
-  const [multi1, setMulti1] = useState<Array<IOption>>([])
-  const [multi2, setMulti2] = useState<Array<IOption>>(
-    MANY_SELECTED.slice(0, 4),
+  // ---- 2. With Icons ----
+  const [iconsSingle, setIconsSingle] = useState<IOption | null>(
+    OPTIONS_WITH_ICONS[1],
   )
+  const [iconsMulti, setIconsMulti] = useState<Array<IOption>>(
+    MANY_SELECTED.slice(0, 3),
+  )
+  const [iconsDisabled, setIconsDisabled] = useState(false)
+  const [iconsSortable, setIconsSortable] = useState(false)
+  const [iconsClearable, setIconsClearable] = useState(false)
 
-  // ---- States ----
-  const [errorSingle, setErrorSingle] = useState<IOption | null>(null)
+  // ---- 3. Disabled Options ----
+  const [disabledOptsSingle, setDisabledOptsSingle] = useState<IOption | null>(
+    null,
+  )
+  const [disabledOptsMulti, setDisabledOptsMulti] = useState<Array<IOption>>([])
+  const [disabledOptsSortable, setDisabledOptsSortable] = useState(false)
 
-  // ---- Complex ----
-  const [nested, setNested] = useState<IOption | null>(null)
-  const [large, setLarge] = useState<IOption | null>(null)
-  const [sortableVal, setSortableVal] = useState<Array<IOption>>(
-    SIMPLE_OPTIONS.slice(0, 3),
-  )
-  const [asyncVal, setAsyncVal] = useState<IOption | null>(null)
-  const [clearableSingle, setClearableSingle] = useState<IOption | null>(
-    SIMPLE_OPTIONS[0],
-  )
-  const [customRendered, setCustomRendered] = useState<IOption | null>(null)
-  const [collapsedMulti, setCollapsedMulti] =
+  // ---- 4. Nested ----
+  const [nestedSingle, setNestedSingle] = useState<IOption | null>(null)
+  const [nestedMulti, setNestedMulti] = useState<Array<IOption>>([])
+  const [nestedSortable, setNestedSortable] = useState(false)
+  const [nestedCrossGroup, setNestedCrossGroup] = useState(false)
+
+  // ---- 5. Large List ----
+  const [largeSingle, setLargeSingle] = useState<IOption | null>(null)
+  const [largeMulti, setLargeMulti] = useState<Array<IOption>>([])
+  const [largeSortable, setLargeSortable] = useState(false)
+
+  // ---- 6. Overflow chips ----
+  const [overflowMulti, setOverflowMulti] =
     useState<Array<IOption>>(MANY_SELECTED)
-  const [showItemsMulti, setShowItemsMulti] =
-    useState<Array<IOption>>(MANY_SELECTED)
+  const [overflowCollapsed, setOverflowCollapsed] = useState(false)
+  const [overflowShowItems, setOverflowShowItems] = useState(false)
+
+  // ---- 7. Async ----
+  const [asyncSingle, setAsyncSingle] = useState<IOption | null>(null)
+  const [asyncMulti, setAsyncMulti] = useState<Array<IOption>>([])
+
+  // ---- 8. Custom Renderers ----
+  const [customSingle, setCustomSingle] = useState<IOption | null>(null)
+  const [customMulti, setCustomMulti] = useState<Array<IOption>>([])
+
+  // ---- 9. List Prefix/Suffix ----
+  const [chromeSingle, setChromeSingle] = useState<IOption | null>(null)
+  const [chromeMulti, setChromeMulti] = useState<Array<IOption>>([])
+
+  // ---- Sort handler factory ----
+  const logSort = useCallback((sorted: Array<IOption>) => {
+    console.log('onSortEnd', sorted)
+  }, [])
+
+  // ---- Async query factory ----
+  const asyncQueryFn = useCallback(async () => {
+    await new Promise((r) => setTimeout(r, 1000))
+    return [
+      { label: 'Fetched A', value: 'fa' },
+      { label: 'Fetched B', value: 'fb' },
+      { label: 'Fetched C', value: 'fc' },
+      { label: 'Fetched D', value: 'fd' },
+    ]
+  }, [])
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8 p-8">
+    <div className="mx-auto max-w-5xl space-y-8 p-8">
       <div>
         <h1 className="text-3xl font-bold text-foreground">
           LayoutSelect Demo
         </h1>
         <p className="text-muted-foreground">
-          Comprehensive test cases for the LayoutSelect component
+          Each section shows both single &amp; multiple selection with toggle
+          controls.
         </p>
       </div>
 
       {/* ================================================================
-          SIMPLE TEST CASES
+          1. Basic
           ================================================================ */}
-
-      <h2 className="text-xl font-semibold text-foreground">
-        Simple Test Cases
-      </h2>
-
       <Section
-        title="1. Single Select — Empty"
-        description="Basic single selection with no initial value."
+        title="1. Basic Select"
+        description="Simple options with no icons. Toggle states to test different configurations."
       >
-        <LayoutSelect
-          type="single"
-          options={SIMPLE_OPTIONS}
-          selectValue={single1}
-          onChange={(val) => setSingle1(val)}
-          label="Fruit"
-        />
-        <pre className="self-center text-xs text-muted-foreground">
-          selected: {single1 ? single1.label : 'none'}
-        </pre>
-      </Section>
-
-      <Section
-        title="2. Single Select — Preselected with Icons"
-        description="Single selection with an initial value and icons on each option."
-      >
-        <LayoutSelect
-          type="single"
-          options={OPTIONS_WITH_ICONS}
-          selectValue={single2}
-          onChange={(val) => setSingle2(val)}
-          label="Contact"
-          placeholder="Pick a contact"
-        />
-        <pre className="self-center text-xs text-muted-foreground">
-          selected: {single2 ? single2.label : 'none'}
-        </pre>
-      </Section>
-
-      <Section
-        title="3. Multiple Select — Empty"
-        description="Multi-select starting with nothing selected."
-      >
-        <LayoutSelect
-          type="multiple"
-          options={OPTIONS_WITH_ICONS}
-          selectValue={multi1}
-          onChange={(val) => setMulti1(val)}
-          label="Team members"
-          placeholder="Select members"
-          className="w-80"
-        />
-        <pre className="self-center text-xs text-muted-foreground">
-          selected: {multi1.length}
-        </pre>
-      </Section>
-
-      <Section
-        title="4. Multiple Select — Preselected (Overflow)"
-        description="Four chips preselected in a constrained width → automatic +N overflow badge."
-      >
-        <LayoutSelect
-          type="multiple"
-          options={MANY_SELECTED}
-          selectValue={multi2}
-          onChange={(val) => setMulti2(val)}
-          label="Assignees"
-          className="w-72"
-        />
+        <div className="mb-2 flex flex-wrap gap-2">
+          <Toggle
+            label="Disabled"
+            checked={basicDisabled}
+            onChange={setBasicDisabled}
+          />
+          <Toggle
+            label="Read-only"
+            checked={basicReadOnly}
+            onChange={setBasicReadOnly}
+          />
+          <Toggle label="Error" checked={basicError} onChange={setBasicError} />
+          <Toggle
+            label="Clearable"
+            checked={basicClearable}
+            onChange={setBasicClearable}
+          />
+          <Toggle
+            label="Sortable"
+            checked={basicSortable}
+            onChange={setBasicSortable}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-6">
+          <div className="space-y-1">
+            <LayoutSelect
+              className="w-full"
+              type="single"
+              options={SIMPLE_OPTIONS}
+              selectValue={basicSingle}
+              onChange={(val) => setBasicSingle(val)}
+              label="Single"
+              placeholder="Pick a fruit"
+              disabled={basicDisabled}
+              readOnly={basicReadOnly}
+              error={basicError}
+              clearable={basicClearable}
+              {...sortableIf(basicSortable, logSort)}
+            />
+            <pre className="text-xs text-muted-foreground">
+              {basicSingle ? basicSingle.label : 'none'}
+            </pre>
+          </div>
+          <div className="space-y-1">
+            <LayoutSelect
+              className="w-full"
+              type="multiple"
+              options={SIMPLE_OPTIONS}
+              selectValue={basicMulti}
+              onChange={(val) => setBasicMulti(val)}
+              label="Multiple"
+              placeholder="Pick fruits"
+              disabled={basicDisabled}
+              readOnly={basicReadOnly}
+              error={basicError}
+              clearable={basicClearable}
+              {...sortableIf(basicSortable, logSort)}
+            />
+            <pre className="text-xs text-muted-foreground">
+              {basicMulti.length} selected
+            </pre>
+          </div>
+        </div>
       </Section>
 
       {/* ================================================================
-          STATE TEST CASES
+          2. With Icons
           ================================================================ */}
-
-      <h2 className="text-xl font-semibold text-foreground">
-        State Test Cases
-      </h2>
-
       <Section
-        title="5. Disabled State"
-        description="The select is fully disabled and cannot be opened."
+        title="2. With Icons"
+        description="Options with icons. Single starts preselected."
       >
-        <LayoutSelect
-          type="single"
-          options={SIMPLE_OPTIONS}
-          selectValue={SIMPLE_OPTIONS[2]}
-          disabled
-          label="Disabled"
-        />
-      </Section>
-
-      <Section
-        title="6. Read-Only State"
-        description="Looks like a normal select but cannot be interacted with."
-      >
-        <LayoutSelect
-          type="single"
-          options={SIMPLE_OPTIONS}
-          selectValue={SIMPLE_OPTIONS[1]}
-          readOnly
-          label="Read only"
-        />
-      </Section>
-
-      <Section
-        title="7. Error State"
-        description="The select is marked with a validation error."
-      >
-        <LayoutSelect
-          type="single"
-          options={SIMPLE_OPTIONS}
-          selectValue={errorSingle}
-          onChange={(val) => setErrorSingle(val)}
-          error
-          label="Required field"
-          placeholder="Select a fruit"
-        />
-      </Section>
-
-      <Section
-        title="8. Disabled Options with Tooltips"
-        description="Some options are disabled and show a tooltip explaining why."
-      >
-        <LayoutSelect
-          type="single"
-          options={OPTIONS_WITH_DISABLED}
-          selectValue={null}
-          onChange={() => {}}
-          label="Plan options"
-        />
+        <div className="mb-2 flex flex-wrap gap-2">
+          <Toggle
+            label="Disabled"
+            checked={iconsDisabled}
+            onChange={setIconsDisabled}
+          />
+          <Toggle
+            label="Clearable"
+            checked={iconsClearable}
+            onChange={setIconsClearable}
+          />
+          <Toggle
+            label="Sortable"
+            checked={iconsSortable}
+            onChange={setIconsSortable}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-6">
+          <div className="space-y-1">
+            <LayoutSelect
+              className="w-full"
+              type="single"
+              options={OPTIONS_WITH_ICONS}
+              selectValue={iconsSingle}
+              onChange={(val) => setIconsSingle(val)}
+              label="Single"
+              placeholder="Pick a contact"
+              disabled={iconsDisabled}
+              clearable={iconsClearable}
+              {...sortableIf(iconsSortable, logSort)}
+            />
+            <pre className="text-xs text-muted-foreground">
+              {iconsSingle ? iconsSingle.label : 'none'}
+            </pre>
+          </div>
+          <div className="space-y-1">
+            <LayoutSelect
+              className="w-full"
+              type="multiple"
+              options={OPTIONS_WITH_ICONS}
+              selectValue={iconsMulti}
+              onChange={(val) => setIconsMulti(val)}
+              label="Multiple"
+              placeholder="Select contacts"
+              disabled={iconsDisabled}
+              clearable={iconsClearable}
+              {...sortableIf(iconsSortable, logSort)}
+            />
+            <pre className="text-xs text-muted-foreground">
+              {iconsMulti.length} selected
+            </pre>
+          </div>
+        </div>
       </Section>
 
       {/* ================================================================
-          COMPLEX TEST CASES
+          3. Disabled Options with Tooltips
           ================================================================ */}
-
-      <h2 className="text-xl font-semibold text-foreground">
-        Complex Test Cases
-      </h2>
-
       <Section
-        title="9. Nested Options"
+        title="3. Disabled Options with Tooltips"
+        description="Some options are disabled. Hover disabled items to see tooltip."
+      >
+        <div className="mb-2 flex flex-wrap gap-2">
+          <Toggle
+            label="Sortable"
+            checked={disabledOptsSortable}
+            onChange={setDisabledOptsSortable}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-6">
+          <div className="space-y-1">
+            <LayoutSelect
+              className="w-full"
+              type="single"
+              options={OPTIONS_WITH_DISABLED}
+              selectValue={disabledOptsSingle}
+              onChange={(val) => setDisabledOptsSingle(val)}
+              label="Single"
+              {...sortableIf(disabledOptsSortable, logSort)}
+            />
+            <pre className="text-xs text-muted-foreground">
+              {disabledOptsSingle ? disabledOptsSingle.label : 'none'}
+            </pre>
+          </div>
+          <div className="space-y-1">
+            <LayoutSelect
+              className="w-full"
+              type="multiple"
+              options={OPTIONS_WITH_DISABLED}
+              selectValue={disabledOptsMulti}
+              onChange={(val) => setDisabledOptsMulti(val)}
+              label="Multiple"
+              {...sortableIf(disabledOptsSortable, logSort)}
+            />
+            <pre className="text-xs text-muted-foreground">
+              {disabledOptsMulti.length} selected
+            </pre>
+          </div>
+        </div>
+      </Section>
+
+      {/* ================================================================
+          4. Nested Options
+          ================================================================ */}
+      <Section
+        title="4. Nested Options"
         description="Options with children — flattened in the dropdown list."
       >
-        <LayoutSelect
-          type="single"
-          options={NESTED_OPTIONS}
-          selectValue={nested}
-          onChange={(val) => setNested(val)}
-          label="Category"
-        />
-        <pre className="self-center text-xs text-muted-foreground">
-          selected: {nested ? nested.label : 'none'}
-        </pre>
+        <div className="mb-2 flex flex-wrap gap-2">
+          <Toggle
+            label="Sortable"
+            checked={nestedSortable}
+            onChange={setNestedSortable}
+          />
+          <Toggle
+            label="Cross-group sort"
+            checked={nestedCrossGroup}
+            onChange={setNestedCrossGroup}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-6">
+          <div className="space-y-1">
+            <LayoutSelect
+              className="w-full"
+              type="single"
+              options={NESTED_OPTIONS}
+              selectValue={nestedSingle}
+              onChange={(val) => setNestedSingle(val)}
+              label="Single"
+              {...sortableIf(nestedSortable, logSort, nestedCrossGroup)}
+            />
+            <pre className="text-xs text-muted-foreground">
+              {nestedSingle ? nestedSingle.label : 'none'}
+            </pre>
+          </div>
+          <div className="space-y-1">
+            <LayoutSelect
+              className="w-full"
+              type="multiple"
+              options={NESTED_OPTIONS}
+              selectValue={nestedMulti}
+              onChange={(val) => setNestedMulti(val)}
+              label="Multiple"
+              {...sortableIf(nestedSortable, logSort, nestedCrossGroup)}
+            />
+            <pre className="text-xs text-muted-foreground">
+              {nestedMulti.length} selected
+            </pre>
+          </div>
+        </div>
       </Section>
 
+      {/* ================================================================
+          5. Large Virtualized List
+          ================================================================ */}
       <Section
-        title="10. Large Virtualized List (5 000 items)"
+        title="5. Large Virtualized List (5 000 items)"
         description="5 000 items with lazy icon functions — opens instantly thanks to virtualisation."
       >
-        <LayoutSelect
-          type="single"
-          options={LARGE_OPTIONS}
-          selectValue={large}
-          onChange={(val) => setLarge(val)}
-          label="Large dataset"
-          sortable
-          onSortEnd={(sorted) => console.log('sorted', sorted)}
-        />
-        <pre className="self-center text-xs text-muted-foreground">
-          selected: {large ? large.label : 'none'}
-        </pre>
+        <div className="mb-2 flex flex-wrap gap-2">
+          <Toggle
+            label="Sortable"
+            checked={largeSortable}
+            onChange={setLargeSortable}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-6">
+          <div className="space-y-1">
+            <LayoutSelect
+              className="w-full"
+              type="single"
+              options={LARGE_OPTIONS}
+              selectValue={largeSingle}
+              onChange={(val) => setLargeSingle(val)}
+              label="Single"
+              {...sortableIf(largeSortable, logSort)}
+            />
+            <pre className="text-xs text-muted-foreground">
+              {largeSingle ? largeSingle.label : 'none'}
+            </pre>
+          </div>
+          <div className="space-y-1">
+            <LayoutSelect
+              className="w-full"
+              type="multiple"
+              options={LARGE_OPTIONS}
+              selectValue={largeMulti}
+              onChange={(val) => setLargeMulti(val)}
+              label="Multiple"
+              {...sortableIf(largeSortable, logSort)}
+            />
+            <pre className="text-xs text-muted-foreground">
+              {largeMulti.length} selected
+            </pre>
+          </div>
+        </div>
       </Section>
 
+      {/* ================================================================
+          6. Overflow Chips (Multiple only)
+          ================================================================ */}
       <Section
-        title="11. Sortable Multi-Select"
-        description="Drag & drop reordering of options inside the popup list."
+        title="6. Overflow Chips"
+        description="Multiple select with many preselected items. Toggle collapsed / showItemsLength."
       >
-        <LayoutSelect
-          type="multiple"
-          options={SIMPLE_OPTIONS}
-          selectValue={sortableVal}
-          onChange={(val) => setSortableVal(val)}
-          sortable
-          onSortEnd={(sorted) => console.log('sorted', sorted)}
-          label="Reorderable"
-          className="w-72"
-        />
+        <div className="mb-2 flex flex-wrap gap-2">
+          <Toggle
+            label="Collapsed"
+            checked={overflowCollapsed}
+            onChange={(v) => {
+              setOverflowCollapsed(v)
+              if (v) setOverflowShowItems(false)
+            }}
+          />
+          <Toggle
+            label="showItemsLength=2"
+            checked={overflowShowItems}
+            onChange={(v) => {
+              setOverflowShowItems(v)
+              if (v) setOverflowCollapsed(false)
+            }}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-6">
+          <div className="space-y-1">
+            <LayoutSelect
+              className="w-full"
+              type="multiple"
+              options={MANY_SELECTED}
+              selectValue={overflowMulti}
+              onChange={(val) => setOverflowMulti(val)}
+              label="Multiple"
+              collapsed={overflowCollapsed || undefined}
+              showItemsLength={overflowShowItems ? 2 : undefined}
+            />
+            <pre className="text-xs text-muted-foreground">
+              {overflowMulti.length} selected
+            </pre>
+          </div>
+        </div>
       </Section>
 
+      {/* ================================================================
+          7. Async / Lazy-loaded Options
+          ================================================================ */}
       <Section
-        title="12. Async / Lazy-loaded Options (queryFn)"
+        title="7. Async / Lazy-loaded Options (queryFn)"
         description="Options are fetched when the popup opens (simulated 1s delay)."
       >
-        <LayoutSelect
-          type="single"
-          options={[]}
-          selectValue={asyncVal}
-          onChange={(val) => setAsyncVal(val)}
-          queryFn={async () => {
-            await new Promise((r) => setTimeout(r, 1000))
-            return [
-              { label: 'Fetched A', value: 'fa' },
-              { label: 'Fetched B', value: 'fb' },
-              { label: 'Fetched C', value: 'fc' },
-              { label: 'Fetched D', value: 'fd' },
-            ]
-          }}
-          label="Async options"
-        />
-        <pre className="self-center text-xs text-muted-foreground">
-          selected: {asyncVal ? asyncVal.label : 'none'}
-        </pre>
+        <div className="grid grid-cols-2 gap-6">
+          <div className="space-y-1">
+            <LayoutSelect
+              className="w-full"
+              type="single"
+              options={[]}
+              selectValue={asyncSingle}
+              onChange={(val) => setAsyncSingle(val)}
+              queryFn={asyncQueryFn}
+              label="Single"
+            />
+            <pre className="text-xs text-muted-foreground">
+              {asyncSingle ? asyncSingle.label : 'none'}
+            </pre>
+          </div>
+          <div className="space-y-1">
+            <LayoutSelect
+              className="w-full"
+              type="multiple"
+              options={[]}
+              selectValue={asyncMulti}
+              onChange={(val) => setAsyncMulti(val)}
+              queryFn={asyncQueryFn}
+              label="Multiple"
+            />
+            <pre className="text-xs text-muted-foreground">
+              {asyncMulti.length} selected
+            </pre>
+          </div>
+        </div>
       </Section>
 
+      {/* ================================================================
+          8. Custom Item Renderer
+          ================================================================ */}
       <Section
-        title="13. Clearable Single Select"
-        description="Click the already-selected option again to deselect it."
-      >
-        <LayoutSelect
-          type="single"
-          options={SIMPLE_OPTIONS}
-          selectValue={clearableSingle}
-          onChange={(val) => setClearableSingle(val)}
-          clearable
-          label="Clearable"
-        />
-        <pre className="self-center text-xs text-muted-foreground">
-          selected: {clearableSingle ? clearableSingle.label : 'none'}
-        </pre>
-      </Section>
-
-      <Section
-        title="14. Custom Item Renderer"
+        title="8. Custom Item Renderer"
         description="Each option row is replaced with a custom renderer showing a colored dot."
       >
-        <LayoutSelect
-          type="single"
-          options={SIMPLE_OPTIONS}
-          selectValue={customRendered}
-          onChange={(val) => setCustomRendered(val)}
-          label="Custom renderer"
-          renderItem={(option, state) => (
-            <div className="flex w-full items-center gap-3">
-              <span
-                className="size-3 rounded-full"
-                style={{
-                  backgroundColor: state.selected
-                    ? 'var(--primary)'
-                    : 'var(--muted)',
-                }}
-              />
-              <span
-                className={
-                  state.disabled ? 'line-through opacity-50' : undefined
-                }
-              >
-                {option.label}
-              </span>
-              {state.selected && (
-                <span className="ml-auto text-xs text-primary">✓</span>
+        <div className="grid grid-cols-2 gap-6">
+          <div className="space-y-1">
+            <LayoutSelect
+              className="w-full"
+              type="single"
+              options={SIMPLE_OPTIONS}
+              selectValue={customSingle}
+              onChange={(val) => setCustomSingle(val)}
+              label="Single"
+              renderItem={(option, state) => (
+                <div className="flex w-full items-center gap-3">
+                  <span
+                    className="size-3 rounded-full"
+                    style={{
+                      backgroundColor: state.selected
+                        ? 'var(--primary)'
+                        : 'var(--muted)',
+                    }}
+                  />
+                  <span
+                    className={
+                      state.disabled ? 'line-through opacity-50' : undefined
+                    }
+                  >
+                    {option.label}
+                  </span>
+                  {state.selected && (
+                    <span className="ml-auto text-xs text-primary">✓</span>
+                  )}
+                </div>
               )}
-            </div>
-          )}
-        />
+            />
+            <pre className="text-xs text-muted-foreground">
+              {customSingle ? customSingle.label : 'none'}
+            </pre>
+          </div>
+          <div className="space-y-1">
+            <LayoutSelect
+              className="w-full"
+              type="multiple"
+              options={SIMPLE_OPTIONS}
+              selectValue={customMulti}
+              onChange={(val) => setCustomMulti(val)}
+              label="Multiple"
+              renderItem={(option, state) => (
+                <div className="flex w-full items-center gap-3">
+                  <span
+                    className="size-3 rounded-full"
+                    style={{
+                      backgroundColor: state.selected
+                        ? 'var(--primary)'
+                        : 'var(--muted)',
+                    }}
+                  />
+                  <span
+                    className={
+                      state.disabled ? 'line-through opacity-50' : undefined
+                    }
+                  >
+                    {option.label}
+                  </span>
+                  {state.selected && (
+                    <span className="ml-auto text-xs text-primary">✓</span>
+                  )}
+                </div>
+              )}
+            />
+            <pre className="text-xs text-muted-foreground">
+              {customMulti.length} selected
+            </pre>
+          </div>
+        </div>
       </Section>
 
+      {/* ================================================================
+          9. List Prefix & Suffix
+          ================================================================ */}
       <Section
-        title="15. Multiple with collapsed=true"
-        description="All chips are visible regardless of overflow (collapsed bypasses overflow detection)."
-      >
-        <LayoutSelect
-          type="multiple"
-          options={MANY_SELECTED}
-          selectValue={collapsedMulti}
-          onChange={(val) => setCollapsedMulti(val)}
-          collapsed
-          label="Collapsed (show all)"
-          className="w-72"
-        />
-      </Section>
-
-      <Section
-        title="16. Multiple with showItemsLength=2"
-        description="At most 2 chips are shown, remaining displayed as +N badge."
-      >
-        <LayoutSelect
-          type="multiple"
-          options={MANY_SELECTED}
-          selectValue={showItemsMulti}
-          onChange={(val) => setShowItemsMulti(val)}
-          showItemsLength={2}
-          label="Max 2 visible"
-          className="w-80"
-        />
-      </Section>
-
-      <Section
-        title="17. List Prefix & Suffix"
+        title="9. List Prefix & Suffix"
         description="Custom components rendered before and after the option list."
       >
-        <LayoutSelect
-          type="single"
-          options={SIMPLE_OPTIONS}
-          selectValue={null}
-          onChange={() => {}}
-          label="With chrome"
-          listPrefix={
-            <div className="text-xs font-medium text-muted-foreground">
-              🔍 Tip: type to search
-            </div>
-          }
-          listSuffix={
-            <button
-              type="button"
-              className="w-full text-left text-xs text-primary hover:underline"
-            >
-              + Add new option…
-            </button>
-          }
-        />
-      </Section>
-
-      <Section
-        title="18. Custom Trigger Renderer"
-        description="The entire trigger is replaced with a custom UI."
-      >
-        <LayoutSelect
-          type="single"
-          options={SIMPLE_OPTIONS}
-          selectValue={single1}
-          onChange={(val) => setSingle1(val)}
-          label="Custom trigger"
-          renderTrigger={({ value, open }) => (
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">
-                {(value as IOption | null)?.label ?? '— pick one —'}
-              </span>
-              <span
-                className={`text-xs transition-transform ${open ? 'rotate-180' : ''}`}
-              >
-                ▼
-              </span>
-            </div>
-          )}
-        />
+        <div className="grid grid-cols-2 gap-6">
+          <div className="space-y-1">
+            <LayoutSelect
+              className="w-full"
+              type="single"
+              options={SIMPLE_OPTIONS}
+              selectValue={chromeSingle}
+              onChange={(val) => setChromeSingle(val)}
+              label="Single"
+              listPrefix={
+                <div className="text-xs font-medium text-muted-foreground">
+                  🔍 Tip: type to search
+                </div>
+              }
+              listSuffix={
+                <button
+                  type="button"
+                  className="w-full text-left text-xs text-primary hover:underline"
+                >
+                  + Add new option…
+                </button>
+              }
+            />
+          </div>
+          <div className="space-y-1">
+            <LayoutSelect
+              className="w-full"
+              type="multiple"
+              options={SIMPLE_OPTIONS}
+              selectValue={chromeMulti}
+              onChange={(val) => setChromeMulti(val)}
+              label="Multiple"
+              listPrefix={
+                <div className="text-xs font-medium text-muted-foreground">
+                  🔍 Tip: type to search
+                </div>
+              }
+              listSuffix={
+                <button
+                  type="button"
+                  className="w-full text-left text-xs text-primary hover:underline"
+                >
+                  + Add new option…
+                </button>
+              }
+            />
+          </div>
+        </div>
       </Section>
     </div>
   )

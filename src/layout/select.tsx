@@ -29,10 +29,14 @@ import {
   restrictToVerticalAxis,
 } from '@dnd-kit/modifiers'
 import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual'
-import { ChevronDown, GripVertical, X } from 'lucide-react'
+import { Check, ChevronDown, GripVertical, X } from 'lucide-react'
 
 import type { Range } from '@tanstack/react-virtual'
-import type { DragEndEvent } from '@dnd-kit/core'
+import type {
+  CollisionDetection,
+  DragEndEvent,
+  DragOverEvent,
+} from '@dnd-kit/core'
 
 import { cn } from '@/lib/utils'
 
@@ -147,11 +151,15 @@ interface SortableEnabledProps {
   /** Called after the user finishes reordering. Receives the new sorted
    *  array of options. Required when `sortable` is `true`. */
   onSortEnd: (sortedOptions: Array<IOption>) => void
+  /** When `true` and options are grouped (have `children`), items can be
+   *  dragged across groups.  By default sorting is scoped within each group. */
+  sortableAcrossGroups?: boolean
 }
 
 interface SortableDisabledProps {
   sortable?: false
   onSortEnd?: never
+  sortableAcrossGroups?: never
 }
 
 export type LayoutSelectProps = SharedSelectProps &
@@ -170,16 +178,54 @@ function resolveIcon(icon: IconProp | undefined): React.ReactNode {
   return icon
 }
 
-/** Flatten a potentially nested option tree into a flat list (depth‑first). */
+/** Flatten a potentially nested option tree into a flat list (depth‑first).
+ *  Group parents (options with `children`) are **excluded** – only leaves. */
 function flattenOptions(options: Array<IOption>): Array<IOption> {
   const result: Array<IOption> = []
   for (const opt of options) {
-    result.push(opt)
-    if (opt.children) {
+    if (opt.children && opt.children.length > 0) {
       result.push(...flattenOptions(opt.children))
+    } else {
+      result.push(opt)
     }
   }
   return result
+}
+
+// ---------------------------------------------------------------------------
+// Display row types for virtualised list (group headers + leaf options)
+// ---------------------------------------------------------------------------
+
+type DisplayRow =
+  | { kind: 'group-header'; label: string; groupValue: string | number }
+  | { kind: 'option'; option: IOption; groupValue?: string | number }
+
+/** Build a display-row list from potentially grouped options.
+ *  If an option has `children`, emit a group-header row followed by child
+ *  option rows.  Options without `children` are emitted as top-level
+ *  option rows (groupValue = undefined). */
+function buildDisplayRows(options: Array<IOption>): Array<DisplayRow> {
+  const rows: Array<DisplayRow> = []
+  for (const opt of options) {
+    if (opt.children && opt.children.length > 0) {
+      rows.push({
+        kind: 'group-header',
+        label: opt.label,
+        groupValue: opt.value,
+      })
+      for (const child of opt.children) {
+        rows.push({ kind: 'option', option: child, groupValue: opt.value })
+      }
+    } else {
+      rows.push({ kind: 'option', option: opt })
+    }
+  }
+  return rows
+}
+
+/** Check whether the options list contains any grouped entries. */
+function hasGroups(options: Array<IOption>): boolean {
+  return options.some((o) => o.children && o.children.length > 0)
 }
 
 /** Simple value equality check for options. */
@@ -275,14 +321,26 @@ interface ChipProps {
   onRemove?: () => void
   readOnly?: boolean
   disabled?: boolean
+  className?: string
+  /** Mark as the "partial" chip that may be squeezed to truncate. */
+  partial?: boolean
 }
 
-function Chip({ option, onRemove, readOnly, disabled }: ChipProps) {
+function Chip({
+  option,
+  onRemove,
+  readOnly,
+  disabled,
+  className,
+  partial,
+}: ChipProps) {
   return (
     <span
+      data-partial-chip={partial || undefined}
       className={cn(
         'inline-flex max-w-35 items-center gap-1 rounded-md border border-border bg-secondary px-2 py-0.5 text-xs leading-5 text-secondary-foreground',
         disabled && 'opacity-50',
+        className,
       )}
     >
       {option.icon && (
@@ -413,6 +471,7 @@ function MultipleTriggerContent({
   disabled?: boolean
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const badgeRef = useRef<HTMLSpanElement>(null)
   const [visibleCount, setVisibleCount] = useState(value.length)
   const prevValueRef = useRef(value)
   const needsMeasureRef = useRef(true)
@@ -440,13 +499,16 @@ function MultipleTriggerContent({
 
       const children = Array.from(container.children) as Array<HTMLElement>
       const containerRight = container.getBoundingClientRect().right
-      // Reserve space for overflow badge ~40px
-      const reservedSpace = 40
+      // When the badge is already rendered it takes space from the outer
+      // flex, so the container is already narrower — no extra reservation.
+      // On the first measurement the badge hasn't mounted yet, so we
+      // reserve ~40 px for it.
+      const reservedSpace = badgeRef.current?.offsetWidth ? 0 : 40
       let count = 0
 
       for (const child of children) {
-        // skip hidden overflow badge placeholder
-        if (child.dataset.overflowBadge) continue
+        // Skip the partial (squeezed) chip — only count full-size chips
+        if (child.dataset.partialChip !== undefined) continue
         const childRight = child.getBoundingClientRect().right
         if (childRight + reservedSpace <= containerRight) {
           count++
@@ -476,35 +538,58 @@ function MultipleTriggerContent({
     return <span className="truncate text-muted-foreground">{placeholder}</span>
   }
 
-  // Determine maximum chips to show
+  // Determine maximum fully-visible chips
   let maxVisible = collapsed ? value.length : visibleCount
-  if (!collapsed && showItemsLength !== undefined) {
-    maxVisible = Math.min(maxVisible, showItemsLength)
+  const hasExplicitLimit = !collapsed && showItemsLength !== undefined
+  if (hasExplicitLimit) {
+    // showItemsLength is authoritative – always show that many chips even
+    // if they don't all fit at full size (they'll shrink to fit).
+    maxVisible = showItemsLength
   }
 
-  const visible = value.slice(0, maxVisible)
-  const overflow = value.slice(maxVisible)
+  const hasOverflow = maxVisible < value.length
+  // Show one extra "partial" chip that truncates when overflow is detected
+  // by container measurement. Skip the partial chip when showItemsLength is
+  // explicitly set — the user wants an exact count, not a truncated extra.
+  const displayCount =
+    hasOverflow && !hasExplicitLimit
+      ? Math.min(maxVisible + 1, value.length)
+      : maxVisible
+
+  const displayed = value.slice(0, displayCount)
+  const overflowItems = value.slice(displayCount)
 
   return (
-    <div
-      ref={containerRef}
-      className={cn(
-        'flex min-w-0 flex-1 items-center gap-1',
-        collapsed ? 'flex-wrap' : 'overflow-hidden',
-      )}
-    >
-      {visible.map((opt) => (
-        <Chip
-          key={opt.value}
-          option={opt}
-          onRemove={onRemove ? () => onRemove(opt) : undefined}
-          readOnly={readOnly}
-          disabled={disabled}
-        />
-      ))}
-      {overflow.length > 0 && (
-        <span data-overflow-badge>
-          <OverflowBadge items={overflow} onRemove={onRemove} />
+    <div className="flex min-w-0 flex-1 items-center gap-1">
+      <div
+        ref={containerRef}
+        className={cn(
+          'flex min-w-0 flex-1 items-center gap-1',
+          collapsed ? 'flex-wrap' : 'overflow-hidden',
+        )}
+      >
+        {displayed.map((opt, i) => {
+          const isPartial =
+            hasOverflow && !hasExplicitLimit && i === displayed.length - 1
+          // When the user provides an explicit showItemsLength, all chips
+          // should be shrinkable so they share the available space evenly.
+          const shouldShrink = isPartial || hasExplicitLimit
+          return (
+            <Chip
+              key={opt.value}
+              option={opt}
+              onRemove={onRemove ? () => onRemove(opt) : undefined}
+              readOnly={readOnly}
+              disabled={disabled}
+              partial={isPartial}
+              className={shouldShrink ? 'min-w-0 shrink' : 'shrink-0'}
+            />
+          )
+        })}
+      </div>
+      {overflowItems.length > 0 && (
+        <span ref={badgeRef} className="shrink-0">
+          <OverflowBadge items={overflowItems} onRemove={onRemove} />
         </span>
       )}
     </div>
@@ -546,19 +631,7 @@ function OptionRow({
       <span className="flex-1 truncate">{option.label}</span>
       {selected && (
         <span className="ml-auto flex shrink-0 items-center text-primary">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M20 6 9 17l-5-5" />
-          </svg>
+          <Check className="size-4" />
         </span>
       )}
     </div>
@@ -598,24 +671,70 @@ function OptionRow({
 // ---------------------------------------------------------------------------
 
 interface VirtualListProps {
+  /** Raw (potentially grouped) options – used to build display rows. */
+  options: Array<IOption>
+  /** Flat leaf items for backward-compat (used when there are no groups). */
   items: Array<IOption>
   selectedValue: IOption | Array<IOption> | null
   renderItem?: LayoutSelectProps['renderItem']
   onSelect: (option: IOption) => void
   sortable?: boolean
+  sortableAcrossGroups?: boolean
   onSortEnd?: (items: Array<IOption>) => void
+  /** Called when items within a group are reordered (grouped mode). Receives
+   *  the group parent value and the new ordered children. */
+  onGroupSortEnd?: (
+    groupValue: string | number,
+    children: Array<IOption>,
+  ) => void
+  /** Called when a cross-group drag produces a new grouped tree. */
+  onTreeSort?: (tree: Array<IOption>) => void
 }
 
 function VirtualList({
+  options,
   items,
   selectedValue,
   renderItem,
   onSelect,
   sortable,
+  sortableAcrossGroups,
   onSortEnd,
+  onGroupSortEnd,
+  onTreeSort,
 }: VirtualListProps) {
   const parentRef = useRef<HTMLDivElement>(null)
-  const [activeIndex, setActiveIndex] = useState<number | null>(null)
+  const [activeId, setActiveId] = useState<string | null>(null)
+
+  // During a cross-group drag, holds the intermediate tree with the dragged
+  // item moved to the destination group.  When null, `options` prop is used.
+  const [dragTree, setDragTree] = useState<Array<IOption> | null>(null)
+
+  const effectiveOptions = dragTree ?? options
+
+  const grouped = useMemo(() => hasGroups(effectiveOptions), [effectiveOptions])
+  const displayRows = useMemo(
+    () => (grouped ? buildDisplayRows(effectiveOptions) : undefined),
+    [grouped, effectiveOptions],
+  )
+
+  // The flat list used by the virtualizer – either from display rows or the
+  // legacy flat items.
+  const flatDisplayRows = useMemo(
+    () => items.map<DisplayRow>((o) => ({ kind: 'option', option: o })),
+    [items],
+  )
+  const virtualItems = displayRows ?? flatDisplayRows
+
+  // Derive activeIndex from activeId so it stays correct after cross-group
+  // moves update the tree mid-drag.
+  const activeIndex = useMemo(() => {
+    if (!activeId) return null
+    const idx = virtualItems.findIndex(
+      (r) => r.kind === 'option' && `${r.option.value}` === activeId,
+    )
+    return idx !== -1 ? idx : null
+  }, [activeId, virtualItems])
 
   // Custom range extractor: always include the actively-dragged item so the
   // virtualizer never unmounts it (dnd-kit needs the DOM node to stay alive).
@@ -632,21 +751,157 @@ function VirtualList({
   )
 
   const virtualizer = useVirtualizer({
-    count: items.length,
+    count: virtualItems.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 36,
+    estimateSize: (index) =>
+      virtualItems[index].kind === 'group-header' ? 28 : 36,
     overscan: 8,
     rangeExtractor,
   })
+
+  // After a cross-group drop the tree rebuilds and displayRows changes.
+  // Force the virtualizer to discard stale position caches BEFORE paint
+  // so every row gets the correct translateY immediately.
+  useLayoutEffect(() => {
+    virtualizer.measure()
+  }, [virtualizer, displayRows])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor),
   )
 
-  const handleDragEnd = useCallback(
+  // Flat sortable IDs for the single SortableContext wrapping all items.
+  const flatSortableIds = useMemo(
+    () =>
+      virtualItems
+        .filter(
+          (r): r is DisplayRow & { kind: 'option' } => r.kind === 'option',
+        )
+        .map((r) => `${r.option.value}`),
+    [virtualItems],
+  )
+
+  // Custom collision detection: restrict collisions to same-group items
+  // when sortableAcrossGroups is disabled.
+  const sameGroupCollision: CollisionDetection = useCallback(
+    (args) => {
+      if (!displayRows) return closestCenter(args)
+      const draggedId = args.active.id
+      const activeRow = displayRows.find(
+        (r) => r.kind === 'option' && `${r.option.value}` === `${draggedId}`,
+      )
+      if (!activeRow || activeRow.kind !== 'option') return closestCenter(args)
+      const activeGroup = activeRow.groupValue
+      const filtered = args.droppableContainers.filter((container) => {
+        const row = displayRows.find(
+          (r) =>
+            r.kind === 'option' && `${r.option.value}` === `${container.id}`,
+        )
+        return row && row.kind === 'option' && row.groupValue === activeGroup
+      })
+      return closestCenter({ ...args, droppableContainers: filtered })
+    },
+    [displayRows],
+  )
+
+  // Custom sorting strategy for grouped options.
+  // Only displace items that are in the same group as the active (dragged)
+  // item. Cross-group items are never displaced — group headers are at
+  // fixed virtualizer positions and can't participate in dnd-kit transforms,
+  // so shifting items across groups would cause overlaps.
+  const sortingStrategy = useMemo(() => {
+    if (!grouped || !displayRows) return verticalListSortingStrategy
+    const idToGroup = new Map<string, string | number | undefined>()
+    for (const row of displayRows) {
+      if (row.kind === 'option') {
+        idToGroup.set(`${row.option.value}`, row.groupValue)
+      }
+    }
+    const noMove = { x: 0, y: 0, scaleX: 1, scaleY: 1 }
+    return (
+      args: Parameters<typeof verticalListSortingStrategy>[0],
+    ): ReturnType<typeof verticalListSortingStrategy> => {
+      const draggedId = flatSortableIds[args.activeIndex]
+      const currentId = flatSortableIds[args.index]
+      if (
+        draggedId &&
+        currentId &&
+        idToGroup.get(draggedId) !== idToGroup.get(currentId)
+      ) {
+        return noMove
+      }
+      return verticalListSortingStrategy(args)
+    }
+  }, [grouped, displayRows, flatSortableIds])
+
+  // ---- onDragOver: move item between groups during drag ----
+  const handleDragOver = useCallback(
+    (event: DragOverEvent) => {
+      if (!sortableAcrossGroups || !grouped) return
+      const { active, over } = event
+      if (!over || active.id === over.id) return
+
+      const currentTree = dragTree ?? options
+      const currentRows = buildDisplayRows(currentTree)
+
+      const activeRow = currentRows.find(
+        (r) => r.kind === 'option' && `${r.option.value}` === `${active.id}`,
+      )
+      const overRow = currentRows.find(
+        (r) => r.kind === 'option' && `${r.option.value}` === `${over.id}`,
+      )
+
+      if (
+        !activeRow ||
+        activeRow.kind !== 'option' ||
+        !overRow ||
+        overRow.kind !== 'option'
+      )
+        return
+
+      // Same group — let dnd-kit's sorting strategy handle displacement
+      if (activeRow.groupValue === overRow.groupValue) return
+
+      // Cross-group: move item from source group to destination group
+      const newTree = currentTree.map((opt) => {
+        if (!opt.children) return opt
+        if (opt.value === activeRow.groupValue) {
+          return {
+            ...opt,
+            children: opt.children.filter(
+              (c) => `${c.value}` !== `${active.id}`,
+            ),
+          }
+        }
+        if (opt.value === overRow.groupValue) {
+          // Remove first in case of duplicate, then insert at over position
+          const destChildren = opt.children.filter(
+            (c) => `${c.value}` !== `${active.id}`,
+          )
+          const overIdx = destChildren.findIndex(
+            (c) => `${c.value}` === `${over.id}`,
+          )
+          destChildren.splice(
+            overIdx !== -1 ? overIdx : destChildren.length,
+            0,
+            activeRow.option,
+          )
+          return { ...opt, children: destChildren }
+        }
+        return opt
+      })
+
+      setDragTree(newTree)
+    },
+    [sortableAcrossGroups, grouped, dragTree, options],
+  )
+
+  // ---- Drag end handlers ----
+  const handleDragEndFlat = useCallback(
     (event: DragEndEvent) => {
-      setActiveIndex(null)
+      setActiveId(null)
+      setDragTree(null)
       const { active, over } = event
       if (!over || active.id === over.id || !onSortEnd) return
       const oldIndex = items.findIndex((i) => `${i.value}` === `${active.id}`)
@@ -658,8 +913,114 @@ function VirtualList({
     [items, onSortEnd],
   )
 
-  const sortableIds = useMemo(() => items.map((i) => `${i.value}`), [items])
+  const handleDragEndGrouped = useCallback(
+    (event: DragEndEvent) => {
+      setActiveId(null)
+      const { active, over } = event
 
+      if (!over || active.id === over.id) {
+        // No move — revert intermediate drag tree
+        if (dragTree) onTreeSort?.(dragTree)
+        setDragTree(null)
+        return
+      }
+
+      if (!displayRows) {
+        setDragTree(null)
+        return
+      }
+
+      const activeRow = displayRows.find(
+        (r) => r.kind === 'option' && `${r.option.value}` === `${active.id}`,
+      )
+      const overRow = displayRows.find(
+        (r) => r.kind === 'option' && `${r.option.value}` === `${over.id}`,
+      )
+
+      if (
+        !activeRow ||
+        activeRow.kind !== 'option' ||
+        !overRow ||
+        overRow.kind !== 'option'
+      ) {
+        setDragTree(null)
+        return
+      }
+
+      const activeGroup = activeRow.groupValue
+      const overGroup = overRow.groupValue
+      const baseTree = dragTree ?? options
+
+      if (activeGroup === overGroup) {
+        // Same-group reorder (applies on top of any earlier cross-group move)
+        const groupChildren = displayRows
+          .filter(
+            (r): r is DisplayRow & { kind: 'option' } =>
+              r.kind === 'option' && r.groupValue === activeGroup,
+          )
+          .map((r) => r.option)
+
+        const oldIdx = groupChildren.findIndex(
+          (i) => `${i.value}` === `${active.id}`,
+        )
+        const newIdx = groupChildren.findIndex(
+          (i) => `${i.value}` === `${over.id}`,
+        )
+
+        if (oldIdx !== -1 && newIdx !== -1 && oldIdx !== newIdx) {
+          const reordered = arrayMove(groupChildren, oldIdx, newIdx)
+          if (dragTree) {
+            // Cross-group move happened earlier — commit full tree
+            const finalTree = baseTree.map((opt) => {
+              if (opt.value === activeGroup && opt.children) {
+                return { ...opt, children: reordered }
+              }
+              return opt
+            })
+            onTreeSort?.(finalTree)
+          } else {
+            // Pure within-group reorder
+            onGroupSortEnd?.(activeGroup!, reordered)
+          }
+        } else if (dragTree) {
+          // Cross-group happened but no final reorder within group
+          onTreeSort?.(baseTree)
+        }
+      } else {
+        // Fallback: active and over still in different groups at drop time
+        const finalTree = baseTree.map((opt) => {
+          if (!opt.children) return opt
+          if (opt.value === activeGroup) {
+            return {
+              ...opt,
+              children: opt.children.filter(
+                (c) => `${c.value}` !== `${active.id}`,
+              ),
+            }
+          }
+          if (opt.value === overGroup) {
+            const destChildren = [...opt.children]
+            const overIdx = destChildren.findIndex(
+              (c) => `${c.value}` === `${over.id}`,
+            )
+            destChildren.splice(
+              overIdx !== -1 ? overIdx + 1 : destChildren.length,
+              0,
+              activeRow.option,
+            )
+            return { ...opt, children: destChildren }
+          }
+          return opt
+        })
+        onTreeSort?.(finalTree)
+      }
+
+      setDragTree(null)
+    },
+    [dragTree, options, displayRows, onTreeSort, onGroupSortEnd],
+  )
+
+  // ---- Render the scrollable virtualised content ----
   const listContent = (
     <div
       ref={parentRef}
@@ -676,7 +1037,32 @@ function VirtualList({
         }}
       >
         {virtualizer.getVirtualItems().map((vItem) => {
-          const option = items[vItem.index]
+          const displayRow = virtualItems[vItem.index]
+
+          // ----- Group header row -----
+          if (displayRow.kind === 'group-header') {
+            return (
+              <div
+                key={`gh-${displayRow.groupValue}`}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${vItem.start}px)`,
+                }}
+                data-index={vItem.index}
+                ref={virtualizer.measureElement}
+              >
+                <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">
+                  {displayRow.label}
+                </div>
+              </div>
+            )
+          }
+
+          // ----- Leaf option row -----
+          const option = displayRow.option
 
           const row = (
             <OptionRow
@@ -722,24 +1108,29 @@ function VirtualList({
   )
 
   if (sortable) {
+    const handleDragStart = (event: { active: { id: string | number } }) => {
+      setActiveId(`${event.active.id}`)
+    }
+    const handleCancel = () => {
+      setActiveId(null)
+      setDragTree(null)
+    }
+
+    // Single SortableContext wrapping everything.
+    // Custom sortingStrategy handles per-group displacement.
     return (
       <DndContext
         modifiers={[restrictToVerticalAxis, restrictToFirstScrollableAncestor]}
         sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={(event) => {
-          const idx = items.findIndex(
-            (i) => `${i.value}` === `${event.active.id}`,
-          )
-          setActiveIndex(idx !== -1 ? idx : null)
-        }}
-        onDragEnd={handleDragEnd}
-        onDragCancel={() => setActiveIndex(null)}
+        collisionDetection={
+          grouped && !sortableAcrossGroups ? sameGroupCollision : closestCenter
+        }
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={grouped ? handleDragEndGrouped : handleDragEndFlat}
+        onDragCancel={handleCancel}
       >
-        <SortableContext
-          items={sortableIds}
-          strategy={verticalListSortingStrategy}
-        >
+        <SortableContext items={flatSortableIds} strategy={sortingStrategy}>
           {listContent}
         </SortableContext>
       </DndContext>
@@ -800,14 +1191,32 @@ export function LayoutSelect(props: LayoutSelectProps) {
   )
 
   // ---- Filtered options (search) ----
-  // cmdk handles filtering internally via its `shouldFilter` + `filter` but
-  // we still need the flat list for virtualisation.  We let cmdk filter by
-  // default (shouldFilter=true) when there is a search term.
+  // For virtualisation we need a flat list of leaf options, and when options
+  // are grouped we also keep a filtered version of the grouped tree so that
+  // VirtualList can render group headers correctly.
   const filteredOptions = useMemo(() => {
     if (!search) return flatOptions
     const q = search.toLowerCase()
     return flatOptions.filter((o) => o.label.toLowerCase().includes(q))
   }, [flatOptions, search])
+
+  /** Resolved options filtered by search, preserving group structure. */
+  const filteredGroupedOptions = useMemo(() => {
+    if (!search) return resolvedOptions
+    const q = search.toLowerCase()
+    return resolvedOptions
+      .map((opt) => {
+        if (opt.children && opt.children.length > 0) {
+          const matched = opt.children.filter((c) =>
+            c.label.toLowerCase().includes(q),
+          )
+          if (matched.length === 0) return null
+          return { ...opt, children: matched }
+        }
+        return opt.label.toLowerCase().includes(q) ? opt : null
+      })
+      .filter(Boolean) as Array<IOption>
+  }, [resolvedOptions, search])
 
   // ---- Async loading ----
   useEffect(() => {
@@ -917,15 +1326,43 @@ export function LayoutSelect(props: LayoutSelectProps) {
   }, [type, currentValue, flatOptions])
 
   const sortable = props.sortable ?? false
+  const sortableAcrossGroups = props.sortable
+    ? ((props as SortableEnabledProps).sortableAcrossGroups ?? false)
+    : false
   const consumerOnSortEnd = props.sortable
     ? (props as SortableEnabledProps).onSortEnd
     : undefined
 
-  // ---- Sort handler ----
+  // ---- Sort handler (flat) ----
   const handleSortEnd = useCallback(
     (sorted: Array<IOption>) => {
       setInternalSortedOptions(sorted)
       consumerOnSortEnd?.(sorted)
+    },
+    [consumerOnSortEnd],
+  )
+
+  // ---- Sort handler (within a group) ----
+  const handleGroupSortEnd = useCallback(
+    (groupValue: string | number, reorderedChildren: Array<IOption>) => {
+      // Rebuild the full options tree with the updated group
+      const updated = resolvedOptions.map((opt) => {
+        if (opt.value === groupValue && opt.children) {
+          return { ...opt, children: reorderedChildren }
+        }
+        return opt
+      })
+      setInternalSortedOptions(updated)
+      consumerOnSortEnd?.(flattenOptions(updated))
+    },
+    [resolvedOptions, consumerOnSortEnd],
+  )
+
+  // ---- Sort handler (cross-group tree rebuild) ----
+  const handleTreeSort = useCallback(
+    (newTree: Array<IOption>) => {
+      setInternalSortedOptions(newTree)
+      consumerOnSortEnd?.(flattenOptions(newTree))
     },
     [consumerOnSortEnd],
   )
@@ -1078,12 +1515,16 @@ export function LayoutSelect(props: LayoutSelectProps) {
 
                     {!loading && filteredOptions.length > 0 && (
                       <VirtualList
+                        options={filteredGroupedOptions}
                         items={filteredOptions}
                         selectedValue={currentValue}
                         renderItem={renderItem}
                         onSelect={handleSelect}
                         sortable={sortable}
+                        sortableAcrossGroups={sortableAcrossGroups}
                         onSortEnd={handleSortEnd}
+                        onGroupSortEnd={handleGroupSortEnd}
+                        onTreeSort={handleTreeSort}
                       />
                     )}
                   </Command.List>
