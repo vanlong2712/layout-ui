@@ -1,5 +1,5 @@
 {
-  "name": "@vanlong2712/layout-ui",
+  "name": "@longd/layout-ui",
   "version": "0.1.0",
   "description": "A React component library featuring a powerful multi-select with virtualization, drag-and-drop sorting, and overflow chip management. Built with Tailwind CSS v4.",
   "repository": {
@@ -52,7 +52,7 @@
     "layout",
     "component-library"
   ],
-  "author": "vanlong2712",
+  "author": "longd",
   "license": "MIT",
   "scripts": {
     "dev": "vite dev --port 3000",
