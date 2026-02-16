@@ -470,123 +470,126 @@ function MultipleTriggerContent({
   readOnly?: boolean
   disabled?: boolean
 }) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const badgeRef = useRef<HTMLSpanElement>(null)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const measureRef = useRef<HTMLDivElement>(null)
   const [visibleCount, setVisibleCount] = useState(value.length)
+  const [lastIsPartial, setLastIsPartial] = useState(false)
   const [measured, setMeasured] = useState(false)
-  const prevValueRef = useRef(value)
-  const needsMeasureRef = useRef(true)
+
+  // Cap invisible measurement chips – no single-row trigger needs more than
+  // ~20 chips, so we avoid creating thousands of DOM nodes for large lists.
+  const measureCount = Math.min(value.length, 20)
+
+  const calculate = React.useEffectEvent(() => {
+    const measureContainer = measureRef.current
+    if (!measureContainer) return
+
+    const children = Array.from(measureContainer.children) as Array<HTMLElement>
+    const containerRight = measureContainer.getBoundingClientRect().right
+    // The invisible layer has no badge sibling, so always reserve space
+    // for the badge that will appear in the visible layer.
+    // Estimate badge width based on overflow digit count:
+    // "+N" at text-xs with px-1.5 + border ≈ 14px + 8px per character.
+    const estimateBadgeWidth = (overflowCount: number) =>
+      overflowCount > 0 ? 14 + 8 * String(overflowCount).length : 0
+    let count = 0
+    let partial = false
+
+    for (const child of children) {
+      const childRight = child.getBoundingClientRect().right
+      const overflow = value.length - (count + 1)
+      const reserve =
+        overflow > 0 ? Math.max(40, estimateBadgeWidth(overflow)) : 0
+      if (childRight + reserve <= containerRight) {
+        count++
+      } else {
+        break
+      }
+    }
+    // Show at least 1 chip when there are items
+    count = Math.max(1, count)
+
+    // If there are overflow items, check whether an extra "partial"
+    // (squeezed) chip can fit.  Chips with icons need more space.
+    if (count < value.length && children.length >= count) {
+      const lastRight = children[count - 1].getBoundingClientRect().right
+      // If the partial chip would be the LAST item, no badge is needed.
+      const needsBadge = count + 1 < value.length
+      const badgeReserve = needsBadge
+        ? Math.max(40, estimateBadgeWidth(value.length - count - 1))
+        : 0
+      const spaceForPartial = containerRight - badgeReserve - lastRight - 4 // 4px = gap-1
+      const nextChip = value[count]
+      const minPartialWidth = nextChip.icon ? 80 : 50
+      if (spaceForPartial >= minPartialWidth) {
+        count++ // include partial chip in the count
+        partial = true
+      }
+    }
+
+    setVisibleCount(count)
+    setLastIsPartial(partial)
+    setMeasured(true)
+  })
 
   useLayoutEffect(() => {
-    if (collapsed || !containerRef.current || value.length === 0) {
+    if (collapsed || value.length === 0) {
       setVisibleCount(value.length)
+      setLastIsPartial(false)
+      setMeasured(true)
       return
     }
 
-    // When value changes, reset to show ALL chips so the next run can
-    // measure the real DOM.  The early return prevents measuring stale DOM.
-    const valueChanged = prevValueRef.current !== value
-    prevValueRef.current = value
+    const wrapper = wrapperRef.current
+    const container = measureRef.current
+    if (!wrapper || !container) return
 
-    if (valueChanged) {
-      needsMeasureRef.current = true
-      setVisibleCount(value.length)
-      return // triggers sync re-render → effect re-runs with all chips visible
-    }
+    // Measure immediately (synchronous, before browser paint)
+    calculate()
 
-    const calculate = () => {
-      const container = containerRef.current
-      if (!container) return
-
-      const children = Array.from(container.children) as Array<HTMLElement>
-      const containerRight = container.getBoundingClientRect().right
-      // When the badge is already rendered it takes space from the outer
-      // flex, so the container is already narrower — no extra reservation.
-      // On the first measurement the badge hasn't mounted yet, so we
-      // reserve ~40 px for it.
-      const reservedSpace = badgeRef.current?.offsetWidth ? 0 : 40
-      let count = 0
-
-      for (const child of children) {
-        // Skip the partial (squeezed) chip — only count full-size chips
-        if (child.dataset.partialChip !== undefined) continue
-        const childRight = child.getBoundingClientRect().right
-        if (childRight + reservedSpace <= containerRight) {
-          count++
-        } else {
-          break
-        }
-      }
-      // Show at least 1 chip when there are items
-      setVisibleCount(Math.max(1, count))
-      setMeasured(true)
-    }
-
+    // Re-measure whenever the wrapper resizes (window resize, container
+    // layout change).  Because we always measure the invisible layer
+    // (which has ALL chips as shrink-0), this correctly handles both
+    // resize-smaller AND resize-larger.
     const observer = new ResizeObserver(calculate)
-    observer.observe(containerRef.current)
-
-    // Only calculate immediately after a reset or on initial mount
-    if (needsMeasureRef.current) {
-      needsMeasureRef.current = false
-      calculate()
-    }
-
-    return () => {
-      observer.disconnect()
-    }
-  }, [collapsed, value, visibleCount])
+    observer.observe(wrapper)
+    return () => observer.disconnect()
+  }, [collapsed, value])
 
   if (value.length === 0) {
     return <span className="truncate text-muted-foreground">{placeholder}</span>
   }
 
-  // Determine maximum fully-visible chips
-  let maxVisible = collapsed ? value.length : visibleCount
-  const hasExplicitLimit = !collapsed && showItemsLength !== undefined
-  if (hasExplicitLimit) {
-    // showItemsLength is authoritative – always show that many chips even
-    // if they don't all fit at full size (they'll shrink to fit).
-    maxVisible = showItemsLength
-  }
+  // Invisible measurement layer – always present, always has ALL chips
+  // rendered at natural (shrink-0) size for stable measurement.
+  const measureLayer = !collapsed && (
+    <div
+      ref={measureRef}
+      className="pointer-events-none absolute inset-0 flex items-center gap-1 overflow-hidden opacity-0"
+      aria-hidden
+    >
+      {value.slice(0, measureCount).map((opt) => (
+        <Chip
+          key={opt.value}
+          option={opt}
+          onRemove={onRemove ? () => {} : undefined}
+          readOnly={readOnly}
+          disabled={disabled}
+          className="shrink-0"
+        />
+      ))}
+    </div>
+  )
 
-  const hasOverflow = maxVisible < value.length
-  // Show one extra "partial" chip that truncates when overflow is detected
-  // by container measurement. Skip the partial chip when showItemsLength is
-  // explicitly set — the user wants an exact count, not a truncated extra.
-  const displayCount =
-    hasOverflow && !hasExplicitLimit
-      ? Math.min(maxVisible + 1, value.length)
-      : maxVisible
-
-  const displayed = value.slice(0, displayCount)
-  const overflowItems = value.slice(displayCount)
-
-  // Hide until first measurement to avoid flash of all chips overflowing.
-  // We keep the real container in the DOM (for layout measurement) but
-  // visually show a placeholder until `calculate()` has run.
+  // Wait for first measurement before showing real chips (SSR safety).
   const showContent = collapsed || measured
-
   if (!showContent) {
-    // Render the real chips invisibly for measurement, overlaid with a
-    // short placeholder so the trigger doesn't flash a tall chip list.
     return (
-      <div className="relative flex min-w-0 flex-1 items-center gap-1">
-        {/* Invisible measurement layer */}
-        <div
-          ref={containerRef}
-          className="pointer-events-none absolute inset-0 flex items-center gap-1 overflow-hidden opacity-0"
-        >
-          {value.map((opt) => (
-            <Chip
-              key={opt.value}
-              option={opt}
-              readOnly={readOnly}
-              disabled={disabled}
-              className="shrink-0"
-            />
-          ))}
-        </div>
-        {/* Visible placeholder */}
+      <div
+        ref={wrapperRef}
+        className="relative flex min-w-0 flex-1 items-center gap-1 overflow-hidden"
+      >
+        {measureLayer}
         <span className="truncate text-muted-foreground">
           {value.length} selected
         </span>
@@ -594,10 +597,24 @@ function MultipleTriggerContent({
     )
   }
 
+  // Determine maximum fully-visible chips.
+  let maxVisible = collapsed ? value.length : visibleCount
+  const hasExplicitLimit = !collapsed && showItemsLength !== undefined
+  if (hasExplicitLimit) {
+    maxVisible = showItemsLength
+  }
+
+  const hasOverflow = maxVisible < value.length
+  const displayed = value.slice(0, maxVisible)
+  const overflowItems = value.slice(maxVisible)
+
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-1">
+    <div
+      ref={wrapperRef}
+      className="relative flex min-w-0 flex-1 items-center gap-1"
+    >
+      {measureLayer}
       <div
-        ref={containerRef}
         className={cn(
           'flex min-w-0 flex-1 items-center gap-1',
           collapsed ? 'flex-wrap' : 'overflow-hidden',
@@ -605,9 +622,9 @@ function MultipleTriggerContent({
       >
         {displayed.map((opt, i) => {
           const isPartial =
-            hasOverflow && !hasExplicitLimit && i === displayed.length - 1
-          // When the user provides an explicit showItemsLength, all chips
-          // should be shrinkable so they share the available space evenly.
+            (hasOverflow || lastIsPartial) &&
+            !hasExplicitLimit &&
+            i === displayed.length - 1
           const shouldShrink = isPartial || hasExplicitLimit
           return (
             <Chip
@@ -623,7 +640,7 @@ function MultipleTriggerContent({
         })}
       </div>
       {overflowItems.length > 0 && (
-        <span ref={badgeRef} className="shrink-0">
+        <span className="shrink-0">
           <OverflowBadge items={overflowItems} onRemove={onRemove} />
         </span>
       )}
