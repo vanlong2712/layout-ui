@@ -19,15 +19,6 @@ A React component library featuring a powerful, feature-rich select component wi
 
 ## Installation
 
-This package is published on **GitHub Packages**. Add a `.npmrc` file to your project root to tell npm where to find `@vanlong2712` packages:
-
-```ini
-# .npmrc
-@vanlong2712:registry=https://npm.pkg.github.com
-```
-
-Then install:
-
 ```bash
 npm install @vanlong2712/layout-ui
 ```
