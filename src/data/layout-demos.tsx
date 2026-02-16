@@ -13,6 +13,24 @@ export const layoutDemos = [
         aria-label="Virtualized Select"
       />
     ),
+    // Markdown text for features (used by README/docs and demo pages)
+    featuresMd:
+      `
+- **Single & multiple selection** with chip-based display
+- **Virtualized list** via ` +
+      '@tanstack/react-virtual' +
+      ` — handles 10,000+ options smoothly
+- **Drag-and-drop sorting** (flat & grouped) via ` +
+      '@dnd-kit' +
+      `
+- **Grouped options** with visual headers
+- **Intelligent chip overflow** — auto-detects available space, shows partial (truncated) chips, and collapses into a \`+N\` overflow badge with tooltip
+- **Async option loading** via \`queryFn\`
+- **Search / filter** built-in
+- **Keyboard accessible** — full keyboard navigation
+- **Fully typed** — comprehensive TypeScript definitions
+- **Tailwind CSS v4** — themeable via CSS custom properties (shadcn/ui compatible)
+`,
   },
   {
     name: 'More coming soon...',

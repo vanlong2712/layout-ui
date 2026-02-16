@@ -1,10 +1,83 @@
-import { useCallback, useState } from 'react'
+import React, { useCallback, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { FileText, Globe, Mail, MapPin, Phone, User } from 'lucide-react'
 
 import type { IOption } from '@/layout/select'
 import { LayoutSelect } from '@/layout/select'
 import { layoutDemos } from '@/data/layout-demos'
+
+// Minimal markdown -> JSX renderer supporting headings, unordered lists, bold and inline code.
+function renderMarkdown(md: string): React.ReactNode {
+  if (!md) return null
+  const lines = md.trim().split(/\r?\n/)
+  const nodes: Array<React.ReactNode> = []
+
+  const parseInline = (text: string) => {
+    const parts: Array<React.ReactNode> = []
+    let lastIndex = 0
+    const re = /\*\*(.+?)\*\*|`([^`]+)`/g
+    let m
+    while ((m = re.exec(text)) !== null) {
+      const idx = m.index
+      if (idx > lastIndex) parts.push(text.slice(lastIndex, idx))
+      if (m[1]) parts.push(<strong key={idx}>{m[1]}</strong>)
+      else if (m[2])
+        parts.push(
+          <code key={idx} className="rounded bg-muted px-1">
+            {m[2]}
+          </code>,
+        )
+      lastIndex = idx + m[0].length
+    }
+    if (lastIndex < text.length) parts.push(text.slice(lastIndex))
+    return parts
+  }
+
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i].trim()
+    if (line.startsWith('- ')) {
+      // collect consecutive list items
+      const items: Array<string> = []
+      while (i < lines.length && lines[i].trim().startsWith('- ')) {
+        items.push(lines[i].trim().slice(2))
+        i++
+      }
+      nodes.push(
+        <ul
+          className="list-disc list-inside text-sm text-muted-foreground/80"
+          key={nodes.length}
+        >
+          {items.map((it, idx) => (
+            <li key={idx}>{parseInline(it)}</li>
+          ))}
+        </ul>,
+      )
+      continue
+    }
+    if (line.startsWith('#')) {
+      const level = line.match(/^#+/)?.[0].length ?? 1
+      const text = line.slice(level).trim()
+      nodes.push(
+        React.createElement(
+          'h' + Math.min(3, level),
+          { key: nodes.length, className: 'text-lg font-semibold' },
+          text,
+        ),
+      )
+      i++
+      continue
+    }
+    if (line.length === 0) {
+      nodes.push(<div key={nodes.length} />)
+      i++
+      continue
+    }
+    nodes.push(<p key={nodes.length}>{parseInline(line)}</p>)
+    i++
+  }
+  return <>{nodes}</>
+}
 
 export const Route = createFileRoute('/demo/layout-select')({
   component: LayoutSelectDemo,
@@ -267,6 +340,9 @@ function LayoutSelectDemo() {
                 {demo.name}
               </h1>
               <p className="text-muted-foreground">{demo.description}</p>
+              {demo.featuresMd ? (
+                <div className="mt-3">{renderMarkdown(demo.featuresMd)}</div>
+              ) : null}
             </>
           ) : (
             <>

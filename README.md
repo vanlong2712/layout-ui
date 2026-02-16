@@ -4,6 +4,17 @@ A React component library featuring a powerful, feature-rich select component wi
 
 ## Features
 
+- **Virtualized Select** - LayoutSelect Features - Advanced select with drag-and-drop, virtualization, and custom rendering.
+
+## Demo
+
+- **Full demo site**: https://layout-ui-seven.vercel.app
+- **LayoutSelect component**: https://layout-ui-seven.vercel.app/demo/layout-select
+
+## LayoutSelect Features
+
+Below are the features for the `LayoutSelect` demo (sourced from `src/data/layout-demos.tsx`):
+
 - **Single & multiple selection** with chip-based display
 - **Virtualized list** via `@tanstack/react-virtual` — handles 10,000+ options smoothly
 - **Drag-and-drop sorting** (flat & grouped) via `@dnd-kit`
@@ -14,11 +25,6 @@ A React component library featuring a powerful, feature-rich select component wi
 - **Keyboard accessible** — full keyboard navigation
 - **Fully typed** — comprehensive TypeScript definitions
 - **Tailwind CSS v4** — themeable via CSS custom properties (shadcn/ui compatible)
-
-## Demo
-
-- **Full demo site**: https://layout-ui-seven.vercel.app
-- **LayoutSelect component**: https://layout-ui-seven.vercel.app/demo/layout-select
 
 ---
 
