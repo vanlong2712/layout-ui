@@ -4,6 +4,7 @@ import { FileText, Globe, Mail, MapPin, Phone, User } from 'lucide-react'
 
 import type { IOption } from '@/layout/select'
 import { LayoutSelect } from '@/layout/select'
+import { layoutDemos } from '@/data/layout-demos'
 
 export const Route = createFileRoute('/demo/layout-select')({
   component: LayoutSelectDemo,
@@ -256,13 +257,25 @@ function LayoutSelectDemo() {
   return (
     <div className="mx-auto max-w-5xl space-y-8 p-8">
       <div>
-        <h1 className="text-3xl font-bold text-foreground">
-          Dndkit Sortable - Tanstack Virtual Select Demo
-        </h1>
-        <p className="text-muted-foreground">
-          Each section shows both single &amp; multiple selection with toggle
-          controls.
-        </p>
+        {/* Use layoutDemos data for heading/description */}
+        {(() => {
+          // Import at top: import { layoutDemos } from '../../data/layout-demos'
+          const demo = layoutDemos.find((d) => d.to === '/demo/layout-select')
+          return demo ? (
+            <>
+              <h1 className="text-3xl font-bold text-foreground">
+                {demo.name}
+              </h1>
+              <p className="text-muted-foreground">{demo.description}</p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-3xl font-bold text-foreground">
+                Virtualized Select
+              </h1>
+            </>
+          )
+        })()}
       </div>
 
       {/* ================================================================

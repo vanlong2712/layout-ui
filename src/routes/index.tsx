@@ -1,39 +1,9 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { SquareFunction } from 'lucide-react'
+import { Link, createFileRoute } from '@tanstack/react-router'
+import { layoutDemos } from '../data/layout-demos'
 
 export const Route = createFileRoute('/')({ component: App })
 
 function App() {
-  // Smart, extensible home with layout component links
-  const layoutDemos = [
-    {
-      name: 'Virtualized Select',
-      description:
-        'Advanced select with drag-and-drop, virtualization, and custom rendering.',
-      to: '/demo/layout-select',
-      icon: (
-        <SquareFunction
-          className="w-8 h-8 text-cyan-400"
-          aria-label="Virtualized Select"
-        />
-      ),
-    },
-    {
-      name: 'More coming soon...',
-      description: 'Stay tuned for additional layout components and demos!',
-      to: '#',
-      icon: (
-        <span
-          className="w-8 h-8 flex items-center justify-center text-cyan-400 opacity-50"
-          aria-label="Coming Soon"
-        >
-          ...
-        </span>
-      ),
-      disabled: true,
-    },
-  ]
-
   return (
     <main className="min-h-screen bg-linear-to-b from-slate-900 via-slate-800 to-slate-900 flex flex-col items-center justify-start px-4 py-16">
       <div className="max-w-2xl w-full text-center mb-12">
