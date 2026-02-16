@@ -1,6 +1,6 @@
 {
   "solana": {
-    "finality_ms": 13427,
+    "finality_ms": 12973,
     "description": "Live data",
     "status": "LIVE NOW"
   },
@@ -10,7 +10,7 @@
     "status": "LIVE NOW"
   },
   "bnb": {
-    "finality_ms": 1250,
+    "finality_ms": 625,
     "description": "Live data",
     "status": "LIVE NOW"
   },

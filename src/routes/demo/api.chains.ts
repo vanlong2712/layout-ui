@@ -235,8 +235,8 @@ async function updateMetrics() {
   console.log('Metrics updated:', new Date().toISOString())
 }
 
-updateMetrics()
-setInterval(updateMetrics, 60000)
+// updateMetrics()
+// setInterval(updateMetrics, 60000)
 
 export const Route = createFileRoute('/demo/api/chains')({
   server: {
