@@ -1,4 +1,4 @@
-# layout-ui
+# @vanlong2712/layout-ui
 
 A React component library featuring a powerful, feature-rich select component with virtualization, drag-and-drop sorting, grouped options, and intelligent chip overflow management. Built with **Tailwind CSS v4**.
 
@@ -19,8 +19,17 @@ A React component library featuring a powerful, feature-rich select component wi
 
 ## Installation
 
+This package is published on **GitHub Packages**. Add a `.npmrc` file to your project root to tell npm where to find `@vanlong2712` packages:
+
+```ini
+# .npmrc
+@vanlong2712:registry=https://npm.pkg.github.com
+```
+
+Then install:
+
 ```bash
-npm install layout-ui
+npm install @vanlong2712/layout-ui
 ```
 
 ### Peer dependencies
@@ -43,7 +52,7 @@ Tell Tailwind to scan the library's dist files so it generates the necessary uti
 
 ```css
 @import 'tailwindcss';
-@source "../node_modules/layout-ui/dist";
+@source "../node_modules/@vanlong2712/layout-ui/dist";
 ```
 
 ### 2. Theme CSS variables
@@ -107,8 +116,8 @@ The library bundles its own `cn` helper (`clsx` + `tailwind-merge`) internally. 
 
 ```tsx
 import { useState } from 'react'
-import { LayoutSelect } from 'layout-ui'
-import type { IOption } from 'layout-ui'
+import { LayoutSelect } from '@vanlong2712/layout-ui'
+import type { IOption } from '@vanlong2712/layout-ui'
 
 const options: IOption[] = [
   { label: 'Apple', value: 'apple' },
@@ -134,8 +143,8 @@ function App() {
 ### Deep import (tree-shaking)
 
 ```tsx
-import { LayoutSelect } from 'layout-ui/layout/select'
-import type { IOption } from 'layout-ui/layout/select'
+import { LayoutSelect } from '@vanlong2712/layout-ui/layout/select'
+import type { IOption } from '@vanlong2712/layout-ui/layout/select'
 ```
 
 ---
