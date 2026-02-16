@@ -470,6 +470,10 @@ function MultipleTriggerContent({
   readOnly?: boolean
   disabled?: boolean
 }) {
+  // Shared layout classes so measure layer, display div, and wrappers
+  // always use the same gap / alignment.  Change once, applied everywhere.
+  const chipRowClass = 'flex items-center gap-1'
+
   const wrapperRef = useRef<HTMLDivElement>(null)
   const measureRef = useRef<HTMLDivElement>(null)
   const [visibleCount, setVisibleCount] = useState(value.length)
@@ -486,6 +490,7 @@ function MultipleTriggerContent({
 
     const children = Array.from(measureContainer.children) as Array<HTMLElement>
     const containerRight = measureContainer.getBoundingClientRect().right
+    const gap = parseFloat(getComputedStyle(measureContainer).columnGap) || 0
     // The invisible layer has no badge sibling, so always reserve space
     // for the badge that will appear in the visible layer.
     // Estimate badge width based on overflow digit count:
@@ -518,7 +523,7 @@ function MultipleTriggerContent({
       const badgeReserve = needsBadge
         ? Math.max(40, estimateBadgeWidth(value.length - count - 1))
         : 0
-      const spaceForPartial = containerRight - badgeReserve - lastRight - 4 // 4px = gap-1
+      const spaceForPartial = containerRight - badgeReserve - lastRight - gap
       const nextChip = value[count]
       // Base minimum: 50px (covers label truncation + remove button).
       // If the chip has an icon, add the icon's actual rendered width + gap.
@@ -526,7 +531,7 @@ function MultipleTriggerContent({
       if (nextChip.icon && children.length > count) {
         const iconWrapper = children[count].firstElementChild
         if (iconWrapper) {
-          minPartialWidth += iconWrapper.getBoundingClientRect().width + 4 // 4 = gap-1
+          minPartialWidth += iconWrapper.getBoundingClientRect().width + gap
         }
       }
       if (spaceForPartial >= minPartialWidth) {
@@ -573,7 +578,10 @@ function MultipleTriggerContent({
   const measureLayer = !collapsed && (
     <div
       ref={measureRef}
-      className="pointer-events-none absolute inset-0 flex items-center gap-1 overflow-hidden opacity-0"
+      className={cn(
+        'pointer-events-none absolute inset-0 overflow-hidden opacity-0',
+        chipRowClass,
+      )}
       aria-hidden
     >
       {value.slice(0, measureCount).map((opt) => (
@@ -595,7 +603,7 @@ function MultipleTriggerContent({
     return (
       <div
         ref={wrapperRef}
-        className="relative flex min-w-0 flex-1 items-center gap-1 overflow-hidden"
+        className={cn('relative min-w-0 flex-1 overflow-hidden', chipRowClass)}
       >
         {measureLayer}
         <span className="truncate text-muted-foreground">
@@ -619,12 +627,13 @@ function MultipleTriggerContent({
   return (
     <div
       ref={wrapperRef}
-      className="relative flex min-w-0 flex-1 items-center gap-1"
+      className={cn('relative min-w-0 flex-1', chipRowClass)}
     >
       {measureLayer}
       <div
         className={cn(
-          'flex min-w-0 flex-1 items-center gap-1',
+          'min-w-0 flex-1',
+          chipRowClass,
           collapsed ? 'flex-wrap' : 'overflow-hidden',
         )}
       >
