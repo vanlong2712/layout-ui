@@ -520,7 +520,15 @@ function MultipleTriggerContent({
         : 0
       const spaceForPartial = containerRight - badgeReserve - lastRight - 4 // 4px = gap-1
       const nextChip = value[count]
-      const minPartialWidth = nextChip.icon ? 80 : 50
+      // Base minimum: 50px (covers label truncation + remove button).
+      // If the chip has an icon, add the icon's actual rendered width + gap.
+      let minPartialWidth = 50
+      if (nextChip.icon && children.length > count) {
+        const iconWrapper = children[count].firstElementChild
+        if (iconWrapper) {
+          minPartialWidth += iconWrapper.getBoundingClientRect().width + 4 // 4 = gap-1
+        }
+      }
       if (spaceForPartial >= minPartialWidth) {
         count++ // include partial chip in the count
         partial = true
