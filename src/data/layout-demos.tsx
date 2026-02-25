@@ -1,5 +1,5 @@
 // Shared layout demo definitions for use in navbar and routes
-import { SquareFunction } from 'lucide-react'
+import { Quote, SquareFunction } from 'lucide-react'
 
 export const layoutDemos = [
   {
@@ -31,6 +31,15 @@ export const layoutDemos = [
 - **Fully typed** — comprehensive TypeScript definitions
 - **Tailwind CSS v4** — themeable via CSS custom properties (shadcn/ui compatible)
 `,
+  },
+  {
+    name: 'Detect Quotes',
+    description:
+      'Analyze text for single and double quote ranges with contraction escaping, nesting control, and inner-quote detection.',
+    to: '/demo/detect-quotes',
+    icon: (
+      <Quote className="w-8 h-8 text-cyan-400" aria-label="Detect Quotes" />
+    ),
   },
   {
     name: 'More coming soon...',

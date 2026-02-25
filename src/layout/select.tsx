@@ -617,8 +617,9 @@ function MultipleTriggerContent({
   let maxVisible = collapsed ? value.length : visibleCount
   const hasExplicitLimit = !collapsed && showItemsLength !== undefined
   if (hasExplicitLimit) {
-    maxVisible = showItemsLength
+    maxVisible = Math.min(visibleCount, showItemsLength)
   }
+  maxVisible = Math.max(1, maxVisible)
 
   const hasOverflow = maxVisible < value.length
   const displayed = value.slice(0, maxVisible)

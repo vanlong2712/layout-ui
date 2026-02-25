@@ -240,7 +240,7 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <div className="space-y-4 rounded-lg border border-border bg-card p-6">
+    <div className="space-y-4 rounded-lg border border-border bg-card p-4 md:p-6">
       <div>
         <h3 className="text-lg font-semibold text-card-foreground">{title}</h3>
         <p className="text-sm text-muted-foreground">{description}</p>
@@ -328,7 +328,7 @@ function LayoutSelectDemo() {
   }, [])
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8 p-8">
+    <div className="mx-auto max-w-5xl space-y-6 md:space-y-8 px-4 py-6 md:p-8">
       <div>
         {/* Use layoutDemos data for heading/description */}
         {(() => {
@@ -384,7 +384,7 @@ function LayoutSelectDemo() {
             onChange={setBasicSortable}
           />
         </div>
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
           <div className="space-y-1">
             <LayoutSelect
               className="w-full"
@@ -450,7 +450,7 @@ function LayoutSelectDemo() {
             onChange={setIconsSortable}
           />
         </div>
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
           <div className="space-y-1">
             <LayoutSelect
               className="w-full"
@@ -502,7 +502,7 @@ function LayoutSelectDemo() {
             onChange={setDisabledOptsSortable}
           />
         </div>
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
           <div className="space-y-1">
             <LayoutSelect
               className="w-full"
@@ -553,7 +553,7 @@ function LayoutSelectDemo() {
             onChange={setNestedCrossGroup}
           />
         </div>
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
           <div className="space-y-1">
             <LayoutSelect
               className="w-full"
@@ -599,7 +599,7 @@ function LayoutSelectDemo() {
             onChange={setLargeSortable}
           />
         </div>
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
           <div className="space-y-1">
             <LayoutSelect
               className="w-full"
@@ -656,7 +656,7 @@ function LayoutSelectDemo() {
             }}
           />
         </div>
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
           <div className="space-y-1">
             <LayoutSelect
               className="w-full"
@@ -682,7 +682,7 @@ function LayoutSelectDemo() {
         title="7. Async / Lazy-loaded Options (queryFn)"
         description="Options are fetched when the popup opens (simulated 1s delay)."
       >
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
           <div className="space-y-1">
             <LayoutSelect
               className="w-full"
@@ -721,7 +721,7 @@ function LayoutSelectDemo() {
         title="8. Custom Item Renderer"
         description="Each option row is replaced with a custom renderer showing a colored dot."
       >
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
           <div className="space-y-1">
             <LayoutSelect
               className="w-full"
@@ -802,7 +802,7 @@ function LayoutSelectDemo() {
         title="9. List Prefix & Suffix"
         description="Custom components rendered before and after the option list."
       >
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
           <div className="space-y-1">
             <LayoutSelect
               className="w-full"

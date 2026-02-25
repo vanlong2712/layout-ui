@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
 import { Route as DemoLayoutSelectRouteImport } from './routes/demo/layout-select'
+import { Route as DemoDetectQuotesRouteImport } from './routes/demo/detect-quotes'
 import { Route as DemoDbChatApiRouteImport } from './routes/demo/db-chat-api'
 import { Route as DemoDbChatRouteImport } from './routes/demo/db-chat'
 import { Route as DemoStartServerFuncsRouteImport } from './routes/demo/start.server-funcs'
@@ -40,6 +41,11 @@ const DemoTanstackQueryRoute = DemoTanstackQueryRouteImport.update({
 const DemoLayoutSelectRoute = DemoLayoutSelectRouteImport.update({
   id: '/demo/layout-select',
   path: '/demo/layout-select',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoDetectQuotesRoute = DemoDetectQuotesRouteImport.update({
+  id: '/demo/detect-quotes',
+  path: '/demo/detect-quotes',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DemoDbChatApiRoute = DemoDbChatApiRouteImport.update({
@@ -117,6 +123,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/demo/db-chat': typeof DemoDbChatRoute
   '/demo/db-chat-api': typeof DemoDbChatApiRoute
+  '/demo/detect-quotes': typeof DemoDetectQuotesRoute
   '/demo/layout-select': typeof DemoLayoutSelectRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/demo/api/chains': typeof DemoApiChainsRoute
@@ -136,6 +143,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/demo/db-chat': typeof DemoDbChatRoute
   '/demo/db-chat-api': typeof DemoDbChatApiRoute
+  '/demo/detect-quotes': typeof DemoDetectQuotesRoute
   '/demo/layout-select': typeof DemoLayoutSelectRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/demo/api/chains': typeof DemoApiChainsRoute
@@ -156,6 +164,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/demo/db-chat': typeof DemoDbChatRoute
   '/demo/db-chat-api': typeof DemoDbChatApiRoute
+  '/demo/detect-quotes': typeof DemoDetectQuotesRoute
   '/demo/layout-select': typeof DemoLayoutSelectRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/demo/api/chains': typeof DemoApiChainsRoute
@@ -177,6 +186,7 @@ export interface FileRouteTypes {
     | '/'
     | '/demo/db-chat'
     | '/demo/db-chat-api'
+    | '/demo/detect-quotes'
     | '/demo/layout-select'
     | '/demo/tanstack-query'
     | '/demo/api/chains'
@@ -196,6 +206,7 @@ export interface FileRouteTypes {
     | '/'
     | '/demo/db-chat'
     | '/demo/db-chat-api'
+    | '/demo/detect-quotes'
     | '/demo/layout-select'
     | '/demo/tanstack-query'
     | '/demo/api/chains'
@@ -215,6 +226,7 @@ export interface FileRouteTypes {
     | '/'
     | '/demo/db-chat'
     | '/demo/db-chat-api'
+    | '/demo/detect-quotes'
     | '/demo/layout-select'
     | '/demo/tanstack-query'
     | '/demo/api/chains'
@@ -235,6 +247,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DemoDbChatRoute: typeof DemoDbChatRoute
   DemoDbChatApiRoute: typeof DemoDbChatApiRoute
+  DemoDetectQuotesRoute: typeof DemoDetectQuotesRoute
   DemoLayoutSelectRoute: typeof DemoLayoutSelectRoute
   DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
   DemoApiChainsRoute: typeof DemoApiChainsRoute
@@ -272,6 +285,13 @@ declare module '@tanstack/react-router' {
       path: '/demo/layout-select'
       fullPath: '/demo/layout-select'
       preLoaderRoute: typeof DemoLayoutSelectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/demo/detect-quotes': {
+      id: '/demo/detect-quotes'
+      path: '/demo/detect-quotes'
+      fullPath: '/demo/detect-quotes'
+      preLoaderRoute: typeof DemoDetectQuotesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/demo/db-chat-api': {
@@ -379,6 +399,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DemoDbChatRoute: DemoDbChatRoute,
   DemoDbChatApiRoute: DemoDbChatApiRoute,
+  DemoDetectQuotesRoute: DemoDetectQuotesRoute,
   DemoLayoutSelectRoute: DemoLayoutSelectRoute,
   DemoTanstackQueryRoute: DemoTanstackQueryRoute,
   DemoApiChainsRoute: DemoApiChainsRoute,

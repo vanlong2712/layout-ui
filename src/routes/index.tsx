@@ -5,17 +5,17 @@ export const Route = createFileRoute('/')({ component: App })
 
 function App() {
   return (
-    <main className="min-h-screen bg-linear-to-b from-slate-900 via-slate-800 to-slate-900 flex flex-col items-center justify-start px-4 py-16">
+    <main className="min-h-screen bg-background flex flex-col items-center justify-start px-4 py-16">
       <div className="max-w-2xl w-full text-center mb-12">
         {/* <img
           src="/tanstack-circle-logo.png"
           alt="Logo"
           className="mx-auto w-24 h-24 md:w-32 md:h-32 mb-4"
         /> */}
-        <h1 className="text-5xl md:text-6xl font-black text-white mb-2">
-          <span className="text-gray-300">UI Playground</span>
+        <h1 className="text-5xl md:text-6xl font-black text-foreground mb-2">
+          <span className="text-foreground">UI Playground</span>
         </h1>
-        {/* <p className="text-lg text-gray-400 max-w-2xl mx-auto mb-6">
+        {/* <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-6">
           Explore and interact with modern, extensible UI layout components.
           Quickly prototype, test, and experience advanced features like
           virtualization, drag-and-drop, and more—all in one place.
@@ -23,7 +23,7 @@ function App() {
       </div>
 
       <section className="w-full max-w-3xl mx-auto">
-        <h2 className="text-2xl font-bold text-white mb-6 text-left">
+        <h2 className="text-2xl font-bold text-foreground mb-6 text-left">
           Layout Components
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -31,15 +31,15 @@ function App() {
             demo.disabled ? (
               <div
                 key={demo.name}
-                className="flex items-center gap-4 p-6 rounded-xl bg-slate-800/40 border border-slate-700 opacity-60 cursor-not-allowed select-none"
+                className="flex items-center gap-4 p-6 rounded-xl bg-card border border-border opacity-60 cursor-not-allowed select-none"
                 aria-disabled="true"
               >
                 <span className="shrink-0">{demo.icon}</span>
                 <span className="flex flex-col items-start">
-                  <span className="text-lg font-semibold text-white">
+                  <span className="text-lg font-semibold text-foreground">
                     {demo.name}
                   </span>
-                  <span className="text-gray-400 text-sm mt-1">
+                  <span className="text-muted-foreground text-sm mt-1">
                     {demo.description}
                   </span>
                 </span>
@@ -48,14 +48,14 @@ function App() {
               <Link
                 key={demo.to}
                 to={demo.to}
-                className="flex items-center gap-4 p-6 rounded-xl bg-slate-800/60 border border-slate-700 hover:border-cyan-500/70 transition-all duration-200 shadow-md hover:shadow-cyan-500/10 group"
+                className="flex items-center gap-4 p-6 rounded-xl bg-card border border-border hover:border-primary/70 transition-all duration-200 shadow-md hover:shadow-primary/10 group"
               >
                 <span className="shrink-0">{demo.icon}</span>
                 <span className="flex flex-col items-start">
-                  <span className="text-lg font-semibold text-white group-hover:text-cyan-400 transition-colors">
+                  <span className="text-lg font-semibold text-foreground group-hover:text-primary transition-colors">
                     {demo.name}
                   </span>
-                  <span className="text-gray-400 text-sm mt-1">
+                  <span className="text-muted-foreground text-sm mt-1">
                     {demo.description}
                   </span>
                 </span>
