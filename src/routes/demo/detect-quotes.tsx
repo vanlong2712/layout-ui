@@ -82,11 +82,11 @@ function HighlightedText({
     const color =
       range.quoteType === 'double'
         ? range.closed
-          ? 'bg-cyan-500/20 text-cyan-300 border-b border-cyan-500/50'
-          : 'bg-red-500/20 text-red-300 border-b border-red-500/50'
+          ? 'bg-cyan-200/70 text-cyan-800 border-b border-cyan-400 dark:bg-cyan-500/20 dark:text-cyan-300 dark:border-cyan-500/50'
+          : 'bg-red-200/70 text-red-800 border-b border-red-400 dark:bg-red-500/20 dark:text-red-300 dark:border-red-500/50'
         : range.closed
-          ? 'bg-amber-500/20 text-amber-300 border-b border-amber-500/50'
-          : 'bg-red-500/20 text-red-300 border-b border-red-500/50'
+          ? 'bg-amber-200/70 text-amber-800 border-b border-amber-400 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/50'
+          : 'bg-red-200/70 text-red-800 border-b border-red-400 dark:bg-red-500/20 dark:text-red-300 dark:border-red-500/50'
 
     parts.push(
       <span key={`q-${range.start}`} className={`${color} rounded-sm px-0.5`}>
@@ -150,24 +150,32 @@ function ResultsTable({ quotes }: { quotes: Map<number, QuoteRange> }) {
               <td className="py-2 pr-4 font-mono text-muted-foreground">
                 {q.end != null ? (
                   <>
-                    <span className="text-cyan-400">{q.start}</span>
+                    <span className="text-cyan-700 dark:text-cyan-400">
+                      {q.start}
+                    </span>
                     {', '}
-                    <span className="text-amber-400">{q.end}</span>
+                    <span className="text-amber-700 dark:text-amber-400">
+                      {q.end}
+                    </span>
                   </>
                 ) : (
-                  <span className="text-cyan-400">{q.start}</span>
+                  <span className="text-cyan-700 dark:text-cyan-400">
+                    {q.start}
+                  </span>
                 )}
               </td>
               <td className="py-2 pr-4 font-mono">{q.start}</td>
               <td className="py-2 pr-4 font-mono">
-                {q.end ?? <span className="text-red-400">null</span>}
+                {q.end ?? (
+                  <span className="text-red-600 dark:text-red-400">null</span>
+                )}
               </td>
               <td className="py-2 pr-4">
                 <span
                   className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${
                     q.quoteType === 'double'
-                      ? 'bg-cyan-500/20 text-cyan-300'
-                      : 'bg-amber-500/20 text-amber-300'
+                      ? 'bg-cyan-200/70 text-cyan-800 dark:bg-cyan-500/20 dark:text-cyan-300'
+                      : 'bg-amber-200/70 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300'
                   }`}
                 >
                   {q.quoteType}
@@ -180,9 +188,9 @@ function ResultsTable({ quotes }: { quotes: Map<number, QuoteRange> }) {
               </td>
               <td className="py-2">
                 {q.closed ? (
-                  <span className="text-green-400">✓</span>
+                  <span className="text-green-600 dark:text-green-400">✓</span>
                 ) : (
-                  <span className="text-red-400">✗</span>
+                  <span className="text-red-600 dark:text-red-400">✗</span>
                 )}
               </td>
             </tr>
@@ -421,15 +429,15 @@ function DetectQuotesDemo() {
               </div>
               <div className="flex gap-4 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1.5">
-                  <span className="inline-block w-3 h-3 rounded-sm bg-cyan-500/30 border border-cyan-500/50" />
+                  <span className="inline-block w-3 h-3 rounded-sm bg-cyan-300 border border-cyan-500 dark:bg-cyan-500/30 dark:border-cyan-500/50" />
                   Double quote
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="inline-block w-3 h-3 rounded-sm bg-amber-500/30 border border-amber-500/50" />
+                  <span className="inline-block w-3 h-3 rounded-sm bg-amber-300 border border-amber-500 dark:bg-amber-500/30 dark:border-amber-500/50" />
                   Single quote
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="inline-block w-3 h-3 rounded-sm bg-red-500/30 border border-red-500/50" />
+                  <span className="inline-block w-3 h-3 rounded-sm bg-red-300 border border-red-500 dark:bg-red-500/30 dark:border-red-500/50" />
                   Unclosed
                 </span>
               </div>
