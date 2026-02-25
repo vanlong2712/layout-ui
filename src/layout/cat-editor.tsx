@@ -242,9 +242,9 @@ export class HighlightNode extends TextNode {
     dom.dataset.highlightTypes = this.__highlightTypes
     dom.dataset.ruleIds = this.__ruleIds
 
-    // NL-marker nodes are purely decorative — prevent cursor/selection
+    // NL-marker nodes are purely decorative — prevent selection but allow
+    // cursor placement nearby (no contentEditable=false, which would block carets)
     if (this.__ruleIds.startsWith(NL_MARKER_PREFIX)) {
-      dom.contentEditable = 'false'
       dom.style.userSelect = 'none'
       dom.classList.add('cat-highlight-nl-marker')
     }
@@ -732,6 +732,11 @@ function HighlightsPlugin({ rules, annotationMapRef }: HighlightsPluginProps) {
               const types = [...new Set(nlAnns.map((a) => a.type))].join(',')
               const ids = nlAnns.map((a) => a.id).join(',')
               const symbol = CODEPOINT_DISPLAY_MAP[0x000a]
+              // Ensure there's a text node before the NL marker so the
+              // cursor has a landing spot (NL markers are contentEditable=false)
+              if (paragraph.getChildrenSize() === 0) {
+                paragraph.append($createTextNode(''))
+              }
               paragraph.append(
                 $createHighlightNode(symbol, types, NL_MARKER_PREFIX + ids),
               )
@@ -1125,6 +1130,15 @@ export function CATEditor({
       const ruleIdsAttr = target.getAttribute('data-rule-ids')
       if (!ruleIdsAttr) return
 
+      // NL-marker ruleIds are prefixed with __nl- — strip it for annotation lookup
+      const ruleIds = ruleIdsAttr
+        .split(',')
+        .map((id) =>
+          id.startsWith(NL_MARKER_PREFIX)
+            ? id.slice(NL_MARKER_PREFIX.length)
+            : id,
+        )
+
       isOverHighlightRef.current = true
       cancelHide()
 
@@ -1133,7 +1147,7 @@ export function CATEditor({
         visible: true,
         x: rect.left,
         y: rect.bottom,
-        ruleIds: ruleIdsAttr.split(','),
+        ruleIds,
       })
     }
 

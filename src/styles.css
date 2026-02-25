@@ -229,7 +229,6 @@ code {
 /* NL-marker nodes (↩) are decorative — prevent cursor placement */
 .cat-highlight-nl-marker {
   cursor: default;
-  pointer-events: none;
   opacity: 0.7;
 }
 
