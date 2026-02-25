@@ -226,10 +226,26 @@ code {
   background-color: oklch(0.75 0.14 70 / 0.28);
 }
 
-/* NL-marker nodes (↩) are decorative — prevent cursor placement */
+/* NL-marker nodes (↩) — override all inherited highlight styles and
+   lock font rendering so the glyph is identical everywhere. */
 .cat-highlight-nl-marker {
   cursor: default;
+  background-color: transparent !important;
+  border-bottom: none !important;
+  background-image: none !important;
+  color: oklch(0.55 0.1 70) !important;
   opacity: 0.7;
+  font-size: 0.875rem !important;
+  font-family:
+    'Segoe UI Symbol', 'Apple Symbols', 'Noto Sans Symbols 2', system-ui,
+    sans-serif !important;
+  font-style: normal !important;
+  font-weight: 400 !important;
+  user-select: none;
+}
+.cat-highlight-nl-marker:hover {
+  opacity: 1;
+  background-color: oklch(0.75 0.14 70 / 0.14) !important;
 }
 
 /* Nested highlights (multiple rules overlap) — diagonal stripe overlay */
