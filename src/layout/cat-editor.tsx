@@ -9,6 +9,9 @@ import {
   $getSelection,
   $isRangeSelection,
   $setSelection,
+  COMMAND_PRIORITY_HIGH,
+  KEY_ARROW_RIGHT_COMMAND,
+  SELECTION_CHANGE_COMMAND,
   TextNode,
 } from 'lexical'
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
@@ -25,6 +28,7 @@ import type {
   LexicalEditor,
   LexicalNode,
   NodeKey,
+  PointType,
   SerializedTextNode,
 } from 'lexical'
 
@@ -807,6 +811,148 @@ function EditorRefPlugin({
   return null
 }
 
+// ─── NL Marker Navigation Guard ─────────────────────────────────────────────
+
+/** Helper: given a selection point, check if it sits on or right-after
+ *  an NL-marker node and return a corrected position, or null if fine. */
+function $clampPointAwayFromNlMarker(point: PointType): {
+  key: string
+  offset: number
+  type: 'text' | 'element'
+} | null {
+  const node = point.getNode()
+
+  // Point directly on an NL-marker HighlightNode
+  if ($isHighlightNode(node) && node.__ruleIds.startsWith(NL_MARKER_PREFIX)) {
+    const prev = node.getPreviousSibling()
+    if (prev) {
+      return {
+        key: prev.getKey(),
+        offset: prev.getTextContent().length,
+        type: 'text',
+      }
+    }
+    const parent = node.getParent()
+    if (parent) {
+      return { key: parent.getKey(), offset: 0, type: 'element' }
+    }
+  }
+
+  // Point on an element (paragraph) at a child-index at/past NL marker
+  if (point.type === 'element' && 'getChildren' in node) {
+    const children = node.getChildren()
+    for (const idx of [point.offset - 1, point.offset]) {
+      const child = children[idx] as LexicalNode | undefined
+      if (
+        child &&
+        $isHighlightNode(child) &&
+        child.__ruleIds.startsWith(NL_MARKER_PREFIX)
+      ) {
+        const prev = child.getPreviousSibling()
+        if (prev) {
+          return {
+            key: prev.getKey(),
+            offset: prev.getTextContent().length,
+            type: 'text',
+          }
+        }
+        return { key: node.getKey(), offset: 0, type: 'element' }
+      }
+    }
+  }
+
+  return null
+}
+
+/** Prevents the cursor from ever resting on or after an NL-marker node.
+ *  - Intercepts Right arrow at end-of-line to jump to next paragraph.
+ *  - Watches every selection change (mouse click, drag, keyboard) and
+ *    clamps the cursor back when it lands on an NL marker. */
+function NLMarkerNavigationPlugin() {
+  const [editor] = useLexicalComposerContext()
+  useEffect(() => {
+    // 1. Right arrow: when cursor is right before an NL-marker, skip it
+    //    and move to the start of the next paragraph.
+    const unregArrow = editor.registerCommand(
+      KEY_ARROW_RIGHT_COMMAND,
+      (event) => {
+        const selection = $getSelection()
+        if (!$isRangeSelection(selection) || !selection.isCollapsed())
+          return false
+
+        const { anchor } = selection
+        const node = anchor.getNode()
+
+        // Check if the next sibling of the current node is an NL marker
+        let nextNode: LexicalNode | null = null
+        if (anchor.type === 'text') {
+          // Only trigger when cursor is at the end of the text node
+          if (anchor.offset < node.getTextContent().length) return false
+          nextNode = node.getNextSibling()
+        } else {
+          const children = (node as ElementNode).getChildren()
+          nextNode = children[anchor.offset] ?? null
+        }
+
+        if (
+          nextNode &&
+          $isHighlightNode(nextNode) &&
+          nextNode.__ruleIds.startsWith(NL_MARKER_PREFIX)
+        ) {
+          // Skip the NL marker — move to start of next paragraph
+          const paragraph = nextNode.getParent()
+          if (!paragraph) return false
+          const nextParagraph = paragraph.getNextSibling()
+          if (nextParagraph && 'getChildren' in nextParagraph) {
+            const firstChild = (nextParagraph as ElementNode).getFirstChild()
+            if (firstChild) {
+              selection.anchor.set(firstChild.getKey(), 0, 'text')
+              selection.focus.set(firstChild.getKey(), 0, 'text')
+            } else {
+              selection.anchor.set(nextParagraph.getKey(), 0, 'element')
+              selection.focus.set(nextParagraph.getKey(), 0, 'element')
+            }
+          }
+          // No next paragraph — stay put (end of document)
+          event.preventDefault()
+          return true
+        }
+
+        return false
+      },
+      COMMAND_PRIORITY_HIGH,
+    )
+
+    // 2. Selection change: catch mouse clicks/drags that land on NL markers
+    const unregSel = editor.registerCommand(
+      SELECTION_CHANGE_COMMAND,
+      () => {
+        const selection = $getSelection()
+        if (!$isRangeSelection(selection)) return false
+
+        const anchorFix = $clampPointAwayFromNlMarker(selection.anchor)
+        const focusFix = $clampPointAwayFromNlMarker(selection.focus)
+
+        if (anchorFix) {
+          selection.anchor.set(anchorFix.key, anchorFix.offset, anchorFix.type)
+        }
+        if (focusFix) {
+          selection.focus.set(focusFix.key, focusFix.offset, focusFix.type)
+        }
+
+        return false
+      },
+      COMMAND_PRIORITY_HIGH,
+    )
+
+    return () => {
+      unregArrow()
+      unregSel()
+    }
+  }, [editor])
+  return null
+}
+
 // ─── Popover Components ───────────────────────────────────────────────────────
 
 interface PopoverState {
@@ -1223,6 +1369,7 @@ export function CATEditor({
           <OnChangePlugin onChange={handleChange} />
           <HighlightsPlugin rules={rules} annotationMapRef={annotationMapRef} />
           <EditorRefPlugin editorRef={editorRef} />
+          <NLMarkerNavigationPlugin />
         </div>
       </LexicalComposer>
 
