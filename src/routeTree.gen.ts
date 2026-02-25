@@ -15,6 +15,7 @@ import { Route as DemoLayoutSelectRouteImport } from './routes/demo/layout-selec
 import { Route as DemoDetectQuotesRouteImport } from './routes/demo/detect-quotes'
 import { Route as DemoDbChatApiRouteImport } from './routes/demo/db-chat-api'
 import { Route as DemoDbChatRouteImport } from './routes/demo/db-chat'
+import { Route as DemoCatEditorRouteImport } from './routes/demo/cat-editor'
 import { Route as DemoStartServerFuncsRouteImport } from './routes/demo/start.server-funcs'
 import { Route as DemoStartChainsRouteImport } from './routes/demo/start.chains'
 import { Route as DemoStartApiRequestRouteImport } from './routes/demo/start.api-request'
@@ -56,6 +57,11 @@ const DemoDbChatApiRoute = DemoDbChatApiRouteImport.update({
 const DemoDbChatRoute = DemoDbChatRouteImport.update({
   id: '/demo/db-chat',
   path: '/demo/db-chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoCatEditorRoute = DemoCatEditorRouteImport.update({
+  id: '/demo/cat-editor',
+  path: '/demo/cat-editor',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DemoStartServerFuncsRoute = DemoStartServerFuncsRouteImport.update({
@@ -121,6 +127,7 @@ const DemoStartSsrDataOnlyRoute = DemoStartSsrDataOnlyRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/demo/cat-editor': typeof DemoCatEditorRoute
   '/demo/db-chat': typeof DemoDbChatRoute
   '/demo/db-chat-api': typeof DemoDbChatApiRoute
   '/demo/detect-quotes': typeof DemoDetectQuotesRoute
@@ -141,6 +148,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/demo/cat-editor': typeof DemoCatEditorRoute
   '/demo/db-chat': typeof DemoDbChatRoute
   '/demo/db-chat-api': typeof DemoDbChatApiRoute
   '/demo/detect-quotes': typeof DemoDetectQuotesRoute
@@ -162,6 +170,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/demo/cat-editor': typeof DemoCatEditorRoute
   '/demo/db-chat': typeof DemoDbChatRoute
   '/demo/db-chat-api': typeof DemoDbChatApiRoute
   '/demo/detect-quotes': typeof DemoDetectQuotesRoute
@@ -184,6 +193,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/demo/cat-editor'
     | '/demo/db-chat'
     | '/demo/db-chat-api'
     | '/demo/detect-quotes'
@@ -204,6 +214,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/demo/cat-editor'
     | '/demo/db-chat'
     | '/demo/db-chat-api'
     | '/demo/detect-quotes'
@@ -224,6 +235,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/demo/cat-editor'
     | '/demo/db-chat'
     | '/demo/db-chat-api'
     | '/demo/detect-quotes'
@@ -245,6 +257,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DemoCatEditorRoute: typeof DemoCatEditorRoute
   DemoDbChatRoute: typeof DemoDbChatRoute
   DemoDbChatApiRoute: typeof DemoDbChatApiRoute
   DemoDetectQuotesRoute: typeof DemoDetectQuotesRoute
@@ -306,6 +319,13 @@ declare module '@tanstack/react-router' {
       path: '/demo/db-chat'
       fullPath: '/demo/db-chat'
       preLoaderRoute: typeof DemoDbChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/demo/cat-editor': {
+      id: '/demo/cat-editor'
+      path: '/demo/cat-editor'
+      fullPath: '/demo/cat-editor'
+      preLoaderRoute: typeof DemoCatEditorRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/demo/start/server-funcs': {
@@ -397,6 +417,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DemoCatEditorRoute: DemoCatEditorRoute,
   DemoDbChatRoute: DemoDbChatRoute,
   DemoDbChatApiRoute: DemoDbChatApiRoute,
   DemoDetectQuotesRoute: DemoDetectQuotesRoute,

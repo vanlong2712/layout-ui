@@ -136,3 +136,251 @@ code {
     @apply bg-background text-foreground;
   }
 }
+
+/* ─── CAT Editor ───────────────────────────────────────────────────────────── */
+
+.cat-editor-container {
+  position: relative;
+}
+
+.cat-editor-inner {
+  position: relative;
+}
+
+.cat-editor-root {
+  outline: none;
+}
+
+.cat-editor-editable {
+  min-height: 200px;
+  padding: 1rem 1.25rem;
+  font-size: 0.9375rem;
+  line-height: 1.75;
+  color: var(--foreground);
+  outline: none;
+  caret-color: var(--foreground);
+}
+
+.cat-editor-editable:focus {
+  outline: none;
+}
+
+.cat-editor-paragraph {
+  margin: 0;
+}
+
+.cat-editor-placeholder {
+  position: absolute;
+  top: 1rem;
+  left: 1.25rem;
+  color: var(--muted-foreground);
+  pointer-events: none;
+  user-select: none;
+  font-size: 0.9375rem;
+  opacity: 0.6;
+}
+
+/* Highlight base */
+.cat-highlight {
+  cursor: pointer;
+  border-radius: 2px;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+  position: relative;
+}
+
+/* Spellcheck: red wavy underline + subtle red background */
+.cat-highlight-spellcheck {
+  background-color: oklch(0.7 0.2 25 / 0.12);
+  border-bottom: 2px wavy oklch(0.6 0.25 25);
+}
+.cat-highlight-spellcheck:hover {
+  background-color: oklch(0.7 0.2 25 / 0.25);
+}
+
+/* LexiQA: purple/violet solid underline + subtle violet background */
+.cat-highlight-lexiqa {
+  background-color: oklch(0.7 0.15 280 / 0.12);
+  border-bottom: 2px solid oklch(0.6 0.2 280);
+}
+.cat-highlight-lexiqa:hover {
+  background-color: oklch(0.7 0.15 280 / 0.25);
+}
+
+/* TB Target: teal dashed underline + subtle teal background */
+.cat-highlight-tb-target {
+  background-color: oklch(0.7 0.12 175 / 0.12);
+  border-bottom: 2px dashed oklch(0.55 0.15 175);
+}
+.cat-highlight-tb-target:hover {
+  background-color: oklch(0.7 0.12 175 / 0.25);
+}
+
+/* Special char: amber/orange dotted underline + subtle amber background */
+.cat-highlight-special-char {
+  background-color: oklch(0.75 0.14 70 / 0.14);
+  border-bottom: 2px dotted oklch(0.6 0.18 70);
+}
+.cat-highlight-special-char:hover {
+  background-color: oklch(0.75 0.14 70 / 0.28);
+}
+
+/* NL-marker nodes (↩) are decorative — prevent cursor placement */
+.cat-highlight-nl-marker {
+  cursor: default;
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+/* Nested highlights (multiple rules overlap) — diagonal stripe overlay */
+.cat-highlight-nested {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 3px,
+    oklch(0.5 0 0 / 0.06) 3px,
+    oklch(0.5 0 0 / 0.06) 4px
+  );
+  border-bottom-style: double;
+  border-bottom-width: 3px;
+}
+
+/* Dark mode adjustments */
+.dark .cat-highlight-spellcheck {
+  background-color: oklch(0.45 0.18 25 / 0.2);
+  border-bottom-color: oklch(0.55 0.22 25);
+}
+.dark .cat-highlight-spellcheck:hover {
+  background-color: oklch(0.45 0.18 25 / 0.35);
+}
+.dark .cat-highlight-lexiqa {
+  background-color: oklch(0.45 0.15 280 / 0.2);
+  border-bottom-color: oklch(0.55 0.18 280);
+}
+.dark .cat-highlight-lexiqa:hover {
+  background-color: oklch(0.45 0.15 280 / 0.35);
+}
+.dark .cat-highlight-tb-target {
+  background-color: oklch(0.4 0.1 175 / 0.2);
+  border-bottom-color: oklch(0.5 0.12 175);
+}
+.dark .cat-highlight-tb-target:hover {
+  background-color: oklch(0.4 0.1 175 / 0.35);
+}
+.dark .cat-highlight-special-char {
+  background-color: oklch(0.45 0.14 70 / 0.2);
+  border-bottom-color: oklch(0.55 0.16 70);
+}
+.dark .cat-highlight-special-char:hover {
+  background-color: oklch(0.45 0.14 70 / 0.35);
+}
+.dark .cat-highlight-nested {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 3px,
+    oklch(0.7 0 0 / 0.08) 3px,
+    oklch(0.7 0 0 / 0.08) 4px
+  );
+}
+
+/* Popover */
+.cat-popover {
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow:
+    0 4px 16px oklch(0 0 0 / 0.1),
+    0 1px 4px oklch(0 0 0 / 0.06);
+  animation: cat-popover-in 0.15s ease-out;
+  max-width: 380px;
+}
+
+.dark .cat-popover {
+  box-shadow:
+    0 4px 24px oklch(0 0 0 / 0.4),
+    0 1px 4px oklch(0 0 0 / 0.2);
+}
+
+@keyframes cat-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Badges */
+.cat-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 1.5;
+}
+
+.cat-badge-spell {
+  background: oklch(0.7 0.2 25 / 0.15);
+  color: oklch(0.5 0.2 25);
+}
+.dark .cat-badge-spell {
+  background: oklch(0.45 0.18 25 / 0.25);
+  color: oklch(0.7 0.18 25);
+}
+
+.cat-badge-lexiqa {
+  background: oklch(0.7 0.15 280 / 0.15);
+  color: oklch(0.5 0.2 280);
+}
+.dark .cat-badge-lexiqa {
+  background: oklch(0.45 0.15 280 / 0.25);
+  color: oklch(0.7 0.16 280);
+}
+
+.cat-badge-tb-target {
+  background: oklch(0.7 0.12 175 / 0.15);
+  color: oklch(0.45 0.15 175);
+}
+.dark .cat-badge-tb-target {
+  background: oklch(0.4 0.1 175 / 0.25);
+  color: oklch(0.65 0.12 175);
+}
+
+.cat-badge-special-char {
+  background: oklch(0.75 0.14 70 / 0.15);
+  color: oklch(0.45 0.18 70);
+}
+.dark .cat-badge-special-char {
+  background: oklch(0.4 0.12 70 / 0.25);
+  color: oklch(0.7 0.14 70);
+}
+
+/* Suggestion buttons */
+.cat-suggestion-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.8125rem;
+  border-radius: var(--radius);
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-weight: 500;
+}
+
+.cat-suggestion-btn:hover {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: var(--primary);
+}

@@ -1,5 +1,5 @@
 // Shared layout demo definitions for use in navbar and routes
-import { Quote, SquareFunction } from 'lucide-react'
+import { FileText, Quote, SquareFunction } from 'lucide-react'
 
 export const layoutDemos = [
   {
@@ -39,6 +39,15 @@ export const layoutDemos = [
     to: '/demo/detect-quotes',
     icon: (
       <Quote className="w-8 h-8 text-cyan-400" aria-label="Detect Quotes" />
+    ),
+  },
+  {
+    name: 'CAT Editor',
+    description:
+      'A Lexical-powered Computer-Assisted Translation editor with rule-based highlighting for spellcheck errors and LexiQA quality assurance terms.',
+    to: '/demo/cat-editor',
+    icon: (
+      <FileText className="w-8 h-8 text-cyan-400" aria-label="CAT Editor" />
     ),
   },
   {
