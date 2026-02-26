@@ -144,8 +144,18 @@ export function HighlightsPlugin({
               ),
             ].join(',')
             const ids = seg.annotations.map((a) => a.id).join(',')
+
+            // If segment contains a tag annotation, pass its displayText
+            const tagAnn = seg.annotations.find((a) => a.type === 'tag')
+            const displayText =
+              tagAnn?.type === 'tag' ? tagAnn.data.displayText : undefined
             paragraph.append(
-              $createHighlightNode(fullText.slice(sStart, sEnd), types, ids),
+              $createHighlightNode(
+                fullText.slice(sStart, sEnd),
+                types,
+                ids,
+                displayText,
+              ),
             )
 
             pos = sEnd

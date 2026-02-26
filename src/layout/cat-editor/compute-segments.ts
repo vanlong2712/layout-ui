@@ -5,6 +5,116 @@ import type {
   RawRange,
 } from './types'
 
+// ─── Tag detection helpers ────────────────────────────────────────────────────
+
+/** Matches opening, closing, and self-closing HTML tags. */
+const TAG_RE = /<(\/?)([a-zA-Z][a-zA-Z0-9]*)\b[^>]*?(\/?)>/g
+
+interface DetectedTag {
+  start: number
+  end: number
+  tagName: string
+  isClosing: boolean
+  isSelfClosing: boolean
+  originalText: string
+}
+
+/** Find all HTML tags, pair them using a stack, and assign sequential numbers.
+ *  `detectInner` (default true) means innermost closing tags are matched first
+ *  via the stack (LIFO). Unpaired tags are silently skipped. */
+function detectAndPairTags(
+  text: string,
+  _detectInner = true,
+): Array<{
+  start: number
+  end: number
+  tagName: string
+  tagNumber: number
+  isClosing: boolean
+  isSelfClosing: boolean
+  originalText: string
+  displayText: string
+}> {
+  // 1. Collect all tags
+  const allTags: Array<DetectedTag> = []
+  TAG_RE.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = TAG_RE.exec(text)) !== null) {
+    const isClosing = m[1] === '/'
+    const isSelfClosing = m[3] === '/' || (!isClosing && m[0].endsWith('/>'))
+    allTags.push({
+      start: m.index,
+      end: m.index + m[0].length,
+      tagName: m[2].toLowerCase(),
+      isClosing,
+      isSelfClosing,
+      originalText: m[0],
+    })
+  }
+
+  // 2. Pair using a stack; assign sequential numbers
+  let nextNum = 1
+  const stack: Array<{ name: string; num: number; idx: number }> = []
+  const result: Array<{
+    start: number
+    end: number
+    tagName: string
+    tagNumber: number
+    isClosing: boolean
+    isSelfClosing: boolean
+    originalText: string
+    displayText: string
+  }> = []
+
+  for (let i = 0; i < allTags.length; i++) {
+    const tag = allTags[i]
+
+    if (tag.isSelfClosing) {
+      const num = nextNum++
+      result.push({
+        ...tag,
+        tagNumber: num,
+        displayText: `<${num}/>`,
+      })
+    } else if (!tag.isClosing) {
+      // Opening tag — push with assigned number
+      const num = nextNum++
+      stack.push({ name: tag.tagName, num, idx: i })
+    } else {
+      // Closing tag — find matching opening on the stack (innermost first)
+      let matchIdx = -1
+      for (let j = stack.length - 1; j >= 0; j--) {
+        if (stack[j].name === tag.tagName) {
+          matchIdx = j
+          break
+        }
+      }
+      if (matchIdx >= 0) {
+        const openEntry = stack[matchIdx]
+        stack.splice(matchIdx, 1)
+        const openTag = allTags[openEntry.idx]
+
+        // Add both opening and closing tags to the result
+        result.push({
+          ...openTag,
+          tagNumber: openEntry.num,
+          displayText: `<${openEntry.num}>`,
+        })
+        result.push({
+          ...tag,
+          tagNumber: openEntry.num,
+          displayText: `</${openEntry.num}>`,
+        })
+      }
+      // Unpaired closing tags are silently skipped
+    }
+  }
+
+  // Sort by start position
+  result.sort((a, b) => a.start - b.start)
+  return result
+}
+
 // ─── Highlight computation (sweep-line with nesting) ──────────────────────────
 
 export function computeHighlightSegments(
@@ -80,6 +190,26 @@ export function computeHighlightSegments(
           idx += entry.term.length
         }
       }
+    } else if (rule.type === 'tag') {
+      const pairs = detectAndPairTags(text, rule.detectInner ?? true)
+      for (const p of pairs) {
+        rawRanges.push({
+          start: p.start,
+          end: p.end,
+          annotation: {
+            type: 'tag',
+            id: `tag-${p.start}-${p.end}`,
+            data: {
+              tagNumber: p.tagNumber,
+              tagName: p.tagName,
+              isClosing: p.isClosing,
+              isSelfClosing: p.isSelfClosing,
+              originalText: p.originalText,
+              displayText: p.displayText,
+            },
+          },
+        })
+      }
     } else {
       // special-char
       const allEntries: Array<ISpecialCharEntry> = [...rule.entries]
@@ -119,22 +249,38 @@ export function computeHighlightSegments(
 
   if (rawRanges.length === 0) return []
 
-  // 2. Sweep-line: collect all unique boundary points
+  // 2. When tags are collapsed they must be atomic — suppress ALL non-tag
+  //    ranges that overlap with a tag so the sweep-line never splits a tag
+  //    into sub-segments.  When tags are expanded (or absent), keep every
+  //    range so search/glossary can highlight inside tags normally.
+  const tagRules = rules.filter((r) => r.type === 'tag')
+  const tagsCollapsed = tagRules.some((r) => r.collapsed)
+  const tagRanges = rawRanges.filter((r) => r.annotation.type === 'tag')
+
+  let filteredRanges = rawRanges
+  if (tagRanges.length > 0 && tagsCollapsed) {
+    filteredRanges = rawRanges.filter((r) => {
+      if (r.annotation.type === 'tag') return true
+      return !tagRanges.some((t) => r.start < t.end && r.end > t.start)
+    })
+  }
+
+  // 3. Sweep-line: collect all unique boundary points
   const points = new Set<number>()
-  for (const r of rawRanges) {
+  for (const r of filteredRanges) {
     points.add(r.start)
     points.add(r.end)
   }
   const sortedPoints = [...points].sort((a, b) => a - b)
 
-  // 3. For each pair of consecutive points, find all covering ranges
+  // 4. For each pair of consecutive points, find all covering ranges
   //    This naturally handles nesting: overlapping ranges produce segments
   //    that carry ALL applicable annotations.
   const segments: Array<HighlightSegment> = []
   for (let i = 0; i < sortedPoints.length - 1; i++) {
     const segStart = sortedPoints[i]
     const segEnd = sortedPoints[i + 1]
-    const annotations = rawRanges
+    const annotations = filteredRanges
       .filter((r) => r.start <= segStart && r.end >= segEnd)
       .map((r) => r.annotation)
     if (annotations.length > 0) {

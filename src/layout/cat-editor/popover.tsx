@@ -128,6 +128,50 @@ function SpecialCharPopoverContent({
   )
 }
 
+function TagPopoverContent({
+  data,
+}: {
+  data: {
+    tagNumber: number
+    tagName: string
+    isClosing: boolean
+    isSelfClosing: boolean
+    originalText: string
+    displayText: string
+  }
+}) {
+  return (
+    <div className="p-3 max-w-xs space-y-2">
+      <span className="cat-badge cat-badge-tag">Tag #{data.tagNumber}</span>
+      <p className="text-sm leading-relaxed text-foreground">
+        {data.isClosing
+          ? 'Closing'
+          : data.isSelfClosing
+            ? 'Self-closing'
+            : 'Opening'}{' '}
+        tag:{' '}
+        <strong className="font-semibold text-foreground">
+          &lt;{data.isClosing ? '/' : ''}
+          {data.tagName}
+          {data.isSelfClosing ? ' /' : ''}&gt;
+        </strong>
+      </p>
+      <p className="text-xs text-muted-foreground">
+        Collapsed:{' '}
+        <code className="rounded bg-muted px-1 py-0.5 font-mono">
+          {data.displayText}
+        </code>
+      </p>
+      <p className="text-xs text-muted-foreground break-all">
+        Original:{' '}
+        <code className="rounded bg-muted px-1 py-0.5 font-mono">
+          {data.originalText}
+        </code>
+      </p>
+    </div>
+  )
+}
+
 // ─── Main Popover Wrapper ────────────────────────────────────────────────────
 
 export function HighlightPopover({
@@ -208,6 +252,8 @@ export function HighlightPopover({
               />
             ) : ann.type === 'glossary' ? (
               <GlossaryPopoverContent data={ann.data} />
+            ) : ann.type === 'tag' ? (
+              <TagPopoverContent data={ann.data} />
             ) : (
               <SpecialCharPopoverContent data={ann.data} />
             )}

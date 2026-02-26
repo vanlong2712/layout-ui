@@ -14,6 +14,7 @@ import type {
 interface SerializedHighlightNode extends SerializedTextNode {
   highlightTypes: string
   ruleIds: string
+  displayText: string
 }
 
 // ─── HighlightNode ────────────────────────────────────────────────────────────
@@ -21,6 +22,7 @@ interface SerializedHighlightNode extends SerializedTextNode {
 export class HighlightNode extends TextNode {
   __highlightTypes: string
   __ruleIds: string
+  __displayText: string
 
   static getType(): string {
     return 'highlight'
@@ -31,6 +33,7 @@ export class HighlightNode extends TextNode {
       node.__text,
       node.__highlightTypes,
       node.__ruleIds,
+      node.__displayText,
       node.__key,
     )
   }
@@ -39,11 +42,13 @@ export class HighlightNode extends TextNode {
     text: string,
     highlightTypes: string,
     ruleIds: string,
+    displayText?: string,
     key?: NodeKey,
   ) {
     super(text, key)
     this.__highlightTypes = highlightTypes
     this.__ruleIds = ruleIds
+    this.__displayText = displayText ?? ''
   }
 
   createDOM(config: EditorConfig): HTMLElement {
@@ -66,6 +71,11 @@ export class HighlightNode extends TextNode {
     if (this.__ruleIds.startsWith(NL_MARKER_PREFIX)) {
       dom.style.userSelect = 'none'
       dom.classList.add('cat-highlight-nl-marker')
+    }
+
+    // Tag nodes: store display text for CSS-based collapsed rendering
+    if (this.__displayText) {
+      dom.dataset.display = this.__displayText
     }
 
     // Special-char nodes in token mode: cursor can only sit before/after,
@@ -114,6 +124,15 @@ export class HighlightNode extends TextNode {
       dom.dataset.ruleIds = this.__ruleIds
     }
 
+    // Keep display text in sync
+    if (prevNode.__displayText !== this.__displayText) {
+      if (this.__displayText) {
+        dom.dataset.display = this.__displayText
+      } else {
+        delete dom.dataset.display
+      }
+    }
+
     // Re-apply invisible char replacement after any DOM updates
     if (this.__highlightTypes.split(',').includes('special-char')) {
       if (this.__text === ' ') {
@@ -131,7 +150,12 @@ export class HighlightNode extends TextNode {
   }
 
   static importJSON(json: SerializedHighlightNode): HighlightNode {
-    const node = new HighlightNode(json.text, json.highlightTypes, json.ruleIds)
+    const node = new HighlightNode(
+      json.text,
+      json.highlightTypes,
+      json.ruleIds,
+      json.displayText,
+    )
     node.setFormat(json.format)
     node.setDetail(json.detail)
     node.setMode(json.mode)
@@ -145,6 +169,7 @@ export class HighlightNode extends TextNode {
       type: 'highlight',
       highlightTypes: this.__highlightTypes,
       ruleIds: this.__ruleIds,
+      displayText: this.__displayText,
     }
   }
 
@@ -174,11 +199,13 @@ export function $createHighlightNode(
   text: string,
   highlightTypes: string,
   ruleIds: string,
+  displayText?: string,
 ): HighlightNode {
-  const node = new HighlightNode(text, highlightTypes, ruleIds)
-  // Special-char and NL-marker nodes are atomic — cannot be split or typed into
+  const node = new HighlightNode(text, highlightTypes, ruleIds, displayText)
+  // Special-char, tag, and NL-marker nodes are atomic — cannot be split or typed into
   if (
     highlightTypes.split(',').includes('special-char') ||
+    highlightTypes.split(',').includes('tag') ||
     ruleIds.startsWith(NL_MARKER_PREFIX)
   ) {
     node.setMode('token')

@@ -246,6 +246,52 @@ code {
   );
 }
 
+/* Tag: cyan/sky highlight */
+.cat-highlight-tag {
+  background-color: var(--cat-tag-bg, oklch(0.78 0.1 210 / 0.12));
+  border-bottom: 2px solid var(--cat-tag-underline, oklch(0.55 0.13 210));
+  color: var(--cat-tag-text, inherit);
+}
+.cat-highlight-tag:hover {
+  background-color: var(--cat-tag-bg-hover, oklch(0.78 0.1 210 / 0.25));
+}
+
+/* Collapsed tag mode: activated by .cat-tags-collapsed on the container.
+   Hides the original tag text (font-size: 0) and shows the short
+   display text (<1>, </1>, etc.) via ::after pseudo-element.
+   When a tag is split by other highlights (e.g. search), all sub-segments
+   get the tag class. The first carries data-display="<1>"; the rest
+   carry data-display="" and must be fully hidden. */
+.cat-tags-collapsed .cat-highlight-tag {
+  font-size: 0 !important;
+  line-height: 0 !important;
+  letter-spacing: 0;
+  border-bottom: none !important;
+  background: none !important;
+  background-image: none !important;
+  vertical-align: baseline;
+  padding: 0 !important;
+}
+.cat-tags-collapsed .cat-highlight-tag::after {
+  content: attr(data-display);
+  font-size: 0.8125rem;
+  line-height: 1.75;
+  color: var(--cat-tag-collapsed-text, oklch(0.4 0.15 210));
+  background-color: var(--cat-tag-collapsed-bg, oklch(0.78 0.1 210 / 0.18));
+  border-radius: 3px;
+  padding: 0.0625rem 0.25rem;
+  font-weight: 600;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  cursor: pointer;
+  vertical-align: baseline;
+}
+.cat-tags-collapsed .cat-highlight-tag:hover::after {
+  background-color: var(
+    --cat-tag-collapsed-bg-hover,
+    oklch(0.78 0.1 210 / 0.35)
+  );
+}
+
 /* Space chars: keep the real space in the DOM for Lexical tracking,
    but visually replace it with · via a pseudo-element.
    The span is sized by the actual space glyph; we hide the space colour
@@ -335,6 +381,23 @@ code {
   background-color: var(
     --cat-special-char-bg-hover,
     oklch(0.45 0.14 70 / 0.35)
+  );
+}
+.dark .cat-highlight-tag {
+  background-color: var(--cat-tag-bg, oklch(0.4 0.1 210 / 0.2));
+  border-bottom-color: var(--cat-tag-underline, oklch(0.5 0.12 210));
+}
+.dark .cat-highlight-tag:hover {
+  background-color: var(--cat-tag-bg-hover, oklch(0.4 0.1 210 / 0.35));
+}
+.dark .cat-tags-collapsed .cat-highlight-tag::after {
+  color: var(--cat-tag-collapsed-text, oklch(0.75 0.1 210));
+  background-color: var(--cat-tag-collapsed-bg, oklch(0.35 0.08 210 / 0.35));
+}
+.dark .cat-tags-collapsed .cat-highlight-tag:hover::after {
+  background-color: var(
+    --cat-tag-collapsed-bg-hover,
+    oklch(0.35 0.08 210 / 0.5)
   );
 }
 .dark .cat-highlight-nested {
@@ -433,6 +496,15 @@ code {
 .dark .cat-badge-special-char {
   background: oklch(0.4 0.12 70 / 0.25);
   color: oklch(0.7 0.14 70);
+}
+
+.cat-badge-tag {
+  background: oklch(0.78 0.1 210 / 0.15);
+  color: oklch(0.4 0.13 210);
+}
+.dark .cat-badge-tag {
+  background: oklch(0.35 0.08 210 / 0.3);
+  color: oklch(0.7 0.1 210);
 }
 
 /* Suggestion buttons */

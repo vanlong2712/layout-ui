@@ -49,7 +49,24 @@ export interface ISpecialCharRule {
   entries: Array<ISpecialCharEntry>
 }
 
-export type MooRule = ISpellCheckRule | IGlossaryRule | ISpecialCharRule
+// ─── Tag collapsing ───────────────────────────────────────────────────────────
+// Detects paired HTML tags and allows collapsing them to <1>, </1>, etc.
+
+export interface ITagRule {
+  type: 'tag'
+  /** When true (default), innermost tag pairs are matched first. */
+  detectInner?: boolean
+  /** When true, tags become atomic (other highlights inside them are
+   *  suppressed) and the CSS collapsed rendering kicks in.
+   *  When false/undefined, tags can be split by search/glossary highlights. */
+  collapsed?: boolean
+}
+
+export type MooRule =
+  | ISpellCheckRule
+  | IGlossaryRule
+  | ISpecialCharRule
+  | ITagRule
 
 // ─── Rule highlight annotations ───────────────────────────────────────────────
 
@@ -71,10 +88,24 @@ export interface SpecialCharAnnotation {
   data: { name: string; char: string; codePoint: string }
 }
 
+export interface TagAnnotation {
+  type: 'tag'
+  id: string
+  data: {
+    tagNumber: number
+    tagName: string
+    isClosing: boolean
+    isSelfClosing: boolean
+    originalText: string
+    displayText: string // e.g. '<1>', '</1>', '<2/>'
+  }
+}
+
 export type RuleAnnotation =
   | SpellCheckAnnotation
   | GlossaryAnnotation
   | SpecialCharAnnotation
+  | TagAnnotation
 
 // Raw range from rule matching (before nesting resolution)
 export interface RawRange {

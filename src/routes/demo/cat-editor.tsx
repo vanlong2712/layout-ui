@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   BookOpen,
   CheckCircle2,
+  Code,
   Database,
   Eye,
   Plus,
@@ -21,6 +22,7 @@ import type {
   ISpecialCharRule,
   ISpellCheckRule,
   ISpellCheckValidation,
+  ITagRule,
   MooRule,
   RuleAnnotation,
 } from '@/layout/cat-editor'
@@ -38,7 +40,7 @@ export const Route = createFileRoute('/demo/cat-editor')({
 // ─── Sample data ──────────────────────────────────────────────────────────────
 
 const SAMPLE_TEXT =
-  'The quick brown fox jumps over the layz dog. This sentance contains severl speling errors and some technical terms like API endpoint and HTTP request.\nTom & Jerry\u00A0say\u2009hello\u2003world\u200Bhidden\u2060join\u200Ahair.\tTabbed here.'
+  'The quick brown fox jumps over the layz dog. This sentance contains severl speling errors and some technical terms like API endpoint and HTTP request.\nTom & Jerry\u00A0say\u2009hello\u2003world\u200Bhidden\u2060join\u200Ahair.\tTabbed here.\n<a href="https://example.com">Click <b>here</b> for more</a> info <br/> end.'
 
 const SAMPLE_SPELLCHECK: Array<ISpellCheckValidation> = [
   {
@@ -154,7 +156,8 @@ function CATEditorDemo() {
   const [lexiqaEnabled, setLexiqaEnabled] = useState(true)
   const [tbTargetEnabled, setTbTargetEnabled] = useState(true)
   const [specialCharEnabled, setSpecialCharEnabled] = useState(true)
-  const [searchEnabled, setSearchEnabled] = useState(false)
+  const [tagsEnabled, setTagsEnabled] = useState(true)
+  const [tagsCollapsed, setTagsCollapsed] = useState(false)
   const [searchKeywords, setSearchKeywords] = useState('')
   const [resetKey, setResetKey] = useState(0)
   const [appliedSuggestions, setAppliedSuggestions] = useState<
@@ -193,7 +196,14 @@ function CATEditorDemo() {
         entries: SAMPLE_SPECIAL_CHARS,
       } satisfies ISpecialCharRule)
     }
-    if (searchEnabled && searchKeywords.trim()) {
+    if (tagsEnabled) {
+      active.push({
+        type: 'tag',
+        detectInner: true,
+        collapsed: tagsCollapsed,
+      } satisfies ITagRule)
+    }
+    if (searchKeywords.trim()) {
       const terms = searchKeywords
         .split(',')
         .map((s) => s.trim())
@@ -212,7 +222,8 @@ function CATEditorDemo() {
     lexiqaEnabled,
     tbTargetEnabled,
     specialCharEnabled,
-    searchEnabled,
+    tagsEnabled,
+    tagsCollapsed,
     searchKeywords,
   ])
 
@@ -237,7 +248,8 @@ function CATEditorDemo() {
     setLexiqaEnabled(true)
     setTbTargetEnabled(true)
     setSpecialCharEnabled(true)
-    setSearchEnabled(false)
+    setTagsEnabled(true)
+    setTagsCollapsed(false)
     setSearchKeywords('')
     setResetKey((k) => k + 1)
   }, [])
@@ -320,28 +332,45 @@ function CATEditorDemo() {
 
           <div className="flex items-center gap-3">
             <Switch
-              id="search-toggle"
-              checked={searchEnabled}
-              onCheckedChange={setSearchEnabled}
+              id="tags-toggle"
+              checked={tagsEnabled}
+              onCheckedChange={setTagsEnabled}
             />
             <Label
-              htmlFor="search-toggle"
+              htmlFor="tags-toggle"
               className="flex items-center gap-1.5 cursor-pointer"
             >
-              <Search className="h-4 w-4 text-blue-500" />
-              Search
+              <Code className="h-4 w-4 text-sky-500" />
+              Tags
             </Label>
           </div>
 
+          {tagsEnabled && (
+            <div className="flex items-center gap-3">
+              <Switch
+                id="tags-collapsed-toggle"
+                checked={tagsCollapsed}
+                onCheckedChange={setTagsCollapsed}
+              />
+              <Label
+                htmlFor="tags-collapsed-toggle"
+                className="flex items-center gap-1.5 cursor-pointer text-xs"
+              >
+                Collapse
+              </Label>
+            </div>
+          )}
+
           <div className="ml-auto flex items-center gap-2">
-            {searchEnabled && (
+            <div className="flex items-center gap-1.5">
+              <Search className="h-4 w-4 text-blue-500" />
               <Input
                 value={searchKeywords}
                 onChange={(e) => setSearchKeywords(e.target.value)}
-                placeholder="Keywords (comma-separated)…"
+                placeholder="Search keywords (comma-separated)…"
                 className="h-8 text-sm w-56"
               />
-            )}
+            </div>
             <Button variant="outline" size="sm" onClick={handleReset}>
               <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
               Reset
@@ -370,6 +399,10 @@ function CATEditorDemo() {
           <div className="flex items-center gap-2">
             <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-special-char" />
             <span className="text-muted-foreground">Special character</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-tag" />
+            <span className="text-muted-foreground">HTML tag</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-nested cat-highlight-glossary cat-highlight-glossary-lexiqa" />
@@ -401,6 +434,7 @@ function CATEditorDemo() {
             rules={rules}
             onSuggestionApply={handleSuggestionApply}
             placeholder="Type or paste your text here…"
+            className={tagsCollapsed ? 'cat-tags-collapsed' : ''}
           />
         </div>
 
@@ -530,7 +564,8 @@ function CATEditorDemo() {
                 !lexiqaEnabled &&
                 !tbTargetEnabled &&
                 !specialCharEnabled &&
-                !searchEnabled && (
+                !tagsEnabled &&
+                !searchKeywords.trim() && (
                   <p className="text-muted-foreground">
                     No rules active. Toggle the controls above to enable
                     highlighting.
@@ -566,7 +601,19 @@ function CATEditorDemo() {
                   </div>
                 </div>
               )}
-              {searchEnabled && searchKeywords.trim() && (
+              {tagsEnabled && (
+                <div className="flex items-start gap-2">
+                  <Code className="h-4 w-4 text-sky-500 mt-0.5 shrink-0" />
+                  <div>
+                    <span className="font-medium text-foreground">Tags</span>
+                    <span className="text-muted-foreground">
+                      {' '}
+                      — detect inner, {tagsCollapsed ? 'collapsed' : 'expanded'}
+                    </span>
+                  </div>
+                </div>
+              )}
+              {searchKeywords.trim() && (
                 <div className="flex items-start gap-2">
                   <Search className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
                   <div>

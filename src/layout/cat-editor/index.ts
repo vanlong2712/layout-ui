@@ -16,6 +16,7 @@ export type {
   ISpellCheckRule,
   ISpellCheckValidation,
   ISuggestion,
+  ITagRule,
   MooRule,
   PopoverContentRenderer,
   PopoverContentRendererProps,
@@ -24,4 +25,5 @@ export type {
   RuleAnnotation,
   SpellCheckAnnotation,
   SpecialCharAnnotation,
+  TagAnnotation,
 } from './types'
