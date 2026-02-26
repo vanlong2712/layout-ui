@@ -122,6 +122,7 @@ interface SpecialCharAnnotation {
  * immediately recognise the character without memorising code-points.
  */
 export const SPECIAL_CHAR_DISPLAY_MAP: Record<string, string> = {
+  Space: '·',
   Ampersand: '&',
   Tab: '⇥',
   'Non-Breaking Space': '⍽',
@@ -256,9 +257,18 @@ export class HighlightNode extends TextNode {
     // Special-char nodes in token mode: cursor can only sit before/after,
     // so it's safe to replace textContent with the visible display symbol.
     if (this.__highlightTypes.split(',').includes('special-char')) {
-      const replaced = replaceInvisibleChars(this.__text)
-      if (replaced !== this.__text) {
-        dom.textContent = replaced
+      // Regular spaces use a CSS-only approach (::after pseudo-element)
+      // to avoid modifying textContent, which can conflict with Lexical's
+      // internal DOM text tracking and cause some nodes to lose their
+      // HighlightNode identity.
+      if (this.__text === ' ') {
+        dom.classList.add('cat-highlight-space-char')
+        dom.style.position = 'relative'
+      } else {
+        const replaced = replaceInvisibleChars(this.__text)
+        if (replaced !== this.__text) {
+          dom.textContent = replaced
+        }
       }
     }
 
@@ -286,9 +296,14 @@ export class HighlightNode extends TextNode {
 
     // Re-apply invisible char replacement after any DOM updates
     if (this.__highlightTypes.split(',').includes('special-char')) {
-      const replaced = replaceInvisibleChars(this.__text)
-      if (replaced !== this.__text) {
-        dom.textContent = replaced
+      if (this.__text === ' ') {
+        dom.classList.add('cat-highlight-space-char')
+        dom.style.position = 'relative'
+      } else {
+        const replaced = replaceInvisibleChars(this.__text)
+        if (replaced !== this.__text) {
+          dom.textContent = replaced
+        }
       }
     }
 
@@ -369,13 +384,43 @@ function computeHighlightSegments(
   for (const rule of rules) {
     if (rule.type === 'spellcheck') {
       for (const v of rule.validations) {
-        if (v.start >= 0 && v.end <= text.length && v.start < v.end) {
+        if (v.start < 0 || v.start >= v.end || !v.content) continue
+
+        // Primary: use the provided offsets if the text still matches.
+        // Fallback: if the text has been edited (typing, paste, etc.)
+        // and the offsets are stale, search for the content string
+        // near the original position. This keeps highlights correct
+        // even when the user types and shifts the text around.
+        let matchStart = -1
+        let matchEnd = -1
+
+        if (
+          v.end <= text.length &&
+          text.slice(v.start, v.end) === v.content
+        ) {
+          matchStart = v.start
+          matchEnd = v.end
+        } else {
+          // Search within a window around the original offset
+          const searchRadius = Math.max(64, v.content.length * 4)
+          const searchFrom = Math.max(0, v.start - searchRadius)
+          const searchTo = Math.min(text.length, v.end + searchRadius)
+          const regionLower = text.slice(searchFrom, searchTo).toLowerCase()
+          const contentLower = v.content.toLowerCase()
+          const idx = regionLower.indexOf(contentLower)
+          if (idx !== -1) {
+            matchStart = searchFrom + idx
+            matchEnd = matchStart + v.content.length
+          }
+        }
+
+        if (matchStart >= 0) {
           rawRanges.push({
-            start: v.start,
-            end: v.end,
+            start: matchStart,
+            end: matchEnd,
             annotation: {
               type: 'spellcheck',
-              id: `sc-${v.start}-${v.end}`,
+              id: `sc-${matchStart}-${matchEnd}`,
               data: v,
             },
           })
@@ -421,7 +466,12 @@ function computeHighlightSegments(
       }
     } else {
       // special-char
-      for (const entry of rule.entries) {
+      // Automatically include normal space (U+0020) so it displays as ·
+      const allEntries: Array<ISpecialCharEntry> = [
+        ...rule.entries,
+        { name: 'Space', pattern: / / },
+      ]
+      for (const entry of allEntries) {
         // Make a global copy of the pattern so we can iterate all matches
         const flags = entry.pattern.flags.includes('g')
           ? entry.pattern.flags
@@ -1175,8 +1225,15 @@ export interface CATEditorProps {
   rules?: Array<MooRule>
   /** Called when editor content changes */
   onChange?: (text: string) => void
-  /** Called when a suggestion is applied */
-  onSuggestionApply?: (ruleId: string, suggestion: string) => void
+  /** Called when a suggestion is applied.
+   *  Provides the ruleId, the replacement text, plus the original text
+   *  span (start / end / content) so consumers can shift spellcheck
+   *  offsets that come after the replaced range. */
+  onSuggestionApply?: (
+    ruleId: string,
+    suggestion: string,
+    range: { start: number; end: number; content: string },
+  ) => void
   /** Placeholder text */
   placeholder?: string
   /** Additional class name for the editor container */
@@ -1320,6 +1377,10 @@ export function CATEditor({
       const editor = editorRef.current
       if (!editor) return
 
+      let replacedRange:
+        | { start: number; end: number; content: string }
+        | undefined
+
       editor.update(() => {
         const root = $getRoot()
         const allNodes = root.getAllTextNodes()
@@ -1328,6 +1389,14 @@ export function CATEditor({
             $isHighlightNode(node) &&
             node.__ruleIds.split(',').includes(ruleId)
           ) {
+            // Compute the global char offset of this node before replacing
+            const globalOffset = $pointToGlobalOffset(node.getKey(), 0)
+            const originalContent = node.getTextContent()
+            replacedRange = {
+              start: globalOffset,
+              end: globalOffset + originalContent.length,
+              content: originalContent,
+            }
             const textNode = $createTextNode(suggestion)
             node.replace(textNode)
             break
@@ -1336,7 +1405,9 @@ export function CATEditor({
       })
 
       setPopoverState((prev) => ({ ...prev, visible: false }))
-      onSuggestionApply?.(ruleId, suggestion)
+      if (replacedRange !== undefined) {
+        onSuggestionApply?.(ruleId, suggestion, replacedRange)
+      }
     },
     [onSuggestionApply],
   )

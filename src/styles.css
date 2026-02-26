@@ -226,6 +226,27 @@ code {
   background-color: oklch(0.75 0.14 70 / 0.28);
 }
 
+/* Space chars: keep the real space in the DOM for Lexical tracking,
+   but visually replace it with · via a pseudo-element.
+   The span is sized by the actual space glyph; we hide the space colour
+   and overlay a centred · using a zero-width ::after trick. */
+.cat-highlight-space-char {
+  color: transparent !important;
+  caret-color: var(--foreground, #000);
+}
+.cat-highlight-space-char::before {
+  content: '·';
+  color: oklch(0.55 0.1 70);
+  position: absolute;
+  width: 100%;
+  text-align: center;
+  pointer-events: none;
+  left: 0;
+}
+.dark .cat-highlight-space-char::before {
+  color: oklch(0.6 0.12 70);
+}
+
 /* NL-marker nodes (↩) — override all inherited highlight styles and
    lock font rendering so the glyph is identical everywhere. */
 .cat-highlight-nl-marker {
