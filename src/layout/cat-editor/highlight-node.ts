@@ -200,13 +200,17 @@ export function $createHighlightNode(
   highlightTypes: string,
   ruleIds: string,
   displayText?: string,
+  /** Force token mode (atomic, non-editable). Special-char and NL-marker
+   *  nodes are always token; tag nodes should only be token when collapsed. */
+  forceToken?: boolean,
 ): HighlightNode {
   const node = new HighlightNode(text, highlightTypes, ruleIds, displayText)
-  // Special-char, tag, and NL-marker nodes are atomic — cannot be split or typed into
+  // Special-char and NL-marker nodes are always atomic.
+  // Tag nodes are only atomic when explicitly requested (collapsed mode).
   if (
     highlightTypes.split(',').includes('special-char') ||
-    highlightTypes.split(',').includes('tag') ||
-    ruleIds.startsWith(NL_MARKER_PREFIX)
+    ruleIds.startsWith(NL_MARKER_PREFIX) ||
+    forceToken
   ) {
     node.setMode('token')
   }

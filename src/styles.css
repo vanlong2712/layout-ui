@@ -226,11 +226,11 @@ code {
   border-bottom-style: dashed;
 }
 
-/* Glossary – search: blue solid underline */
+/* Glossary – search: bold yellow highlight */
 .cat-highlight-glossary-search {
-  --cat-glossary-bg: oklch(0.7 0.15 250 / 0.12);
-  --cat-glossary-underline: oklch(0.6 0.2 250);
-  --cat-glossary-bg-hover: oklch(0.7 0.15 250 / 0.25);
+  --cat-glossary-bg: oklch(0.9 0.16 95 / 0.45);
+  --cat-glossary-underline: oklch(0.65 0.18 85);
+  --cat-glossary-bg-hover: oklch(0.9 0.16 95 / 0.65);
 }
 
 /* Special char: amber/orange dotted underline + subtle amber background */
@@ -254,6 +254,15 @@ code {
 }
 .cat-highlight-tag:hover {
   background-color: var(--cat-tag-bg-hover, oklch(0.78 0.1 210 / 0.25));
+}
+
+/* When search overlaps a tag, search bg takes priority */
+.cat-highlight-tag.cat-highlight-glossary-search {
+  background-color: var(--cat-glossary-bg, oklch(0.9 0.16 95 / 0.45));
+  border-bottom-color: var(--cat-glossary-underline, oklch(0.65 0.18 85));
+}
+.cat-highlight-tag.cat-highlight-glossary-search:hover {
+  background-color: var(--cat-glossary-bg-hover, oklch(0.9 0.16 95 / 0.65));
 }
 
 /* Collapsed tag mode: activated by .cat-tags-collapsed on the container.
@@ -369,9 +378,9 @@ code {
   --cat-glossary-bg-hover: oklch(0.4 0.1 175 / 0.35);
 }
 .dark .cat-highlight-glossary-search {
-  --cat-glossary-bg: oklch(0.45 0.15 250 / 0.2);
-  --cat-glossary-underline: oklch(0.55 0.18 250);
-  --cat-glossary-bg-hover: oklch(0.45 0.15 250 / 0.35);
+  --cat-glossary-bg: oklch(0.55 0.14 85 / 0.4);
+  --cat-glossary-underline: oklch(0.7 0.16 85);
+  --cat-glossary-bg-hover: oklch(0.55 0.14 85 / 0.6);
 }
 .dark .cat-highlight-special-char {
   background-color: var(--cat-special-char-bg, oklch(0.45 0.14 70 / 0.2));
@@ -389,6 +398,13 @@ code {
 }
 .dark .cat-highlight-tag:hover {
   background-color: var(--cat-tag-bg-hover, oklch(0.4 0.1 210 / 0.35));
+}
+.dark .cat-highlight-tag.cat-highlight-glossary-search {
+  background-color: var(--cat-glossary-bg, oklch(0.55 0.14 85 / 0.4));
+  border-bottom-color: var(--cat-glossary-underline, oklch(0.7 0.16 85));
+}
+.dark .cat-highlight-tag.cat-highlight-glossary-search:hover {
+  background-color: var(--cat-glossary-bg-hover, oklch(0.55 0.14 85 / 0.6));
 }
 .dark .cat-tags-collapsed .cat-highlight-tag::after {
   color: var(--cat-tag-collapsed-text, oklch(0.75 0.1 210));
@@ -481,12 +497,12 @@ code {
 }
 
 .cat-badge-glossary-search {
-  background: oklch(0.7 0.15 250 / 0.15);
-  color: oklch(0.45 0.2 250);
+  background: oklch(0.9 0.16 95 / 0.35);
+  color: oklch(0.4 0.15 85);
 }
 .dark .cat-badge-glossary-search {
-  background: oklch(0.45 0.15 250 / 0.25);
-  color: oklch(0.7 0.16 250);
+  background: oklch(0.55 0.14 85 / 0.35);
+  color: oklch(0.8 0.14 85);
 }
 
 .cat-badge-special-char {

@@ -145,16 +145,22 @@ export function HighlightsPlugin({
             ].join(',')
             const ids = seg.annotations.map((a) => a.id).join(',')
 
-            // If segment contains a tag annotation, pass its displayText
+            // If segment contains a tag annotation, pass its displayText.
+            // Tags are token-mode (atomic) only when collapsed.
             const tagAnn = seg.annotations.find((a) => a.type === 'tag')
             const displayText =
               tagAnn?.type === 'tag' ? tagAnn.data.displayText : undefined
+            const tagsCollapsed = rules
+              .filter((r) => r.type === 'tag')
+              .some((r) => r.collapsed)
+            const isTagToken = !!tagAnn && tagsCollapsed
             paragraph.append(
               $createHighlightNode(
                 fullText.slice(sStart, sEnd),
                 types,
                 ids,
                 displayText,
+                isTagToken,
               ),
             )
 

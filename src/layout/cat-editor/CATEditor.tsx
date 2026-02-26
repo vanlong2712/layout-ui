@@ -11,6 +11,7 @@ import {
   $createParagraphNode,
   $createRangeSelection,
   $createTextNode,
+  $getNodeByKey,
   $getRoot,
   $setSelection,
 } from 'lexical'
@@ -117,6 +118,29 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
               const anchorPt = $globalOffsetToPoint(saved.anchor)
               const focusPt = $globalOffsetToPoint(saved.focus)
               if (anchorPt && focusPt) {
+                // Token-mode nodes (tags, special-chars) are atomic — calling
+                // sel.insertText on them replaces the entire node. Instead,
+                // insert a new text node before or after the token.
+                const anchorNode = $getNodeByKey(anchorPt.key)
+                if (
+                  anchorNode &&
+                  $isHighlightNode(anchorNode) &&
+                  anchorNode.getMode() === 'token' &&
+                  saved.anchor === saved.focus
+                ) {
+                  const newText = $createTextNode(text)
+                  if (
+                    anchorPt.offset === 0 ||
+                    anchorPt.offset < anchorNode.getTextContentSize()
+                  ) {
+                    anchorNode.insertBefore(newText)
+                  } else {
+                    anchorNode.insertAfter(newText)
+                  }
+                  newText.selectEnd()
+                  return
+                }
+
                 const sel = $createRangeSelection()
                 sel.anchor.set(anchorPt.key, anchorPt.offset, anchorPt.type)
                 sel.focus.set(focusPt.key, focusPt.offset, focusPt.type)
