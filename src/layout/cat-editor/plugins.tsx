@@ -437,8 +437,13 @@ function $findNextEditable(
       if (first && !$isNonEditableNode(first)) {
         return { key: first.getKey(), offset: 0, type: 'text' }
       }
+      // First child is CE=false — land at paragraph start (before the tag).
       if (first) {
-        return $findNextEditable(first)
+        return {
+          key: nextParagraph.getKey(),
+          offset: 0,
+          type: 'element',
+        }
       }
     }
     return null
