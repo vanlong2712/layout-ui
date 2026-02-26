@@ -20,19 +20,21 @@ export interface ISpellCheckRule {
   validations: Array<ISpellCheckValidation>
 }
 
-export interface ILexiQARule {
-  type: 'lexiqa'
-  terms: Array<string>
-}
+// ─── Glossary (generic term-matching) ─────────────────────────────────────────
+// Covers LexiQA, TB Target, keyword search, and any future term-match rule.
 
-export interface ITBTargetEntry {
+export interface IGlossaryEntry {
   term: string
   description?: string
 }
 
-export interface ITBTargetRule {
-  type: 'tb-target'
-  entries: Array<ITBTargetEntry>
+/** Generic term-highlighting rule.
+ *  `label` controls CSS class (`cat-highlight-glossary-{label}`) and badge text.
+ *  Examples: label='lexiqa', label='tb-target', label='search' */
+export interface IGlossaryRule {
+  type: 'glossary'
+  label: string
+  entries: Array<IGlossaryEntry>
 }
 
 export interface ISpecialCharEntry {
@@ -47,15 +49,9 @@ export interface ISpecialCharRule {
   entries: Array<ISpecialCharEntry>
 }
 
-export type MooRule =
-  | ISpellCheckRule
-  | ILexiQARule
-  | ITBTargetRule
-  | ISpecialCharRule
+export type MooRule = ISpellCheckRule | IGlossaryRule | ISpecialCharRule
 
 // ─── Rule highlight annotations ───────────────────────────────────────────────
-
-// Discriminated annotation union — allows TypeScript narrowing in popovers
 
 export interface SpellCheckAnnotation {
   type: 'spellcheck'
@@ -63,16 +59,10 @@ export interface SpellCheckAnnotation {
   data: ISpellCheckValidation
 }
 
-export interface LexiQAAnnotation {
-  type: 'lexiqa'
+export interface GlossaryAnnotation {
+  type: 'glossary'
   id: string
-  data: { term: string }
-}
-
-export interface TBTargetAnnotation {
-  type: 'tb-target'
-  id: string
-  data: ITBTargetEntry
+  data: { label: string; term: string; description?: string }
 }
 
 export interface SpecialCharAnnotation {
@@ -83,8 +73,7 @@ export interface SpecialCharAnnotation {
 
 export type RuleAnnotation =
   | SpellCheckAnnotation
-  | LexiQAAnnotation
-  | TBTargetAnnotation
+  | GlossaryAnnotation
   | SpecialCharAnnotation
 
 // Raw range from rule matching (before nesting resolution)
@@ -108,4 +97,32 @@ export interface PopoverState {
   x: number
   y: number
   ruleIds: Array<string>
+}
+
+// ─── Custom popover renderer ──────────────────────────────────────────────────
+
+/** Props passed to the custom popover content renderer.
+ *  Use this to fully replace the built-in popover UI for any annotation. */
+export interface PopoverContentRendererProps {
+  annotation: RuleAnnotation
+  /** Call with a suggestion string to apply it (only relevant for spellcheck) */
+  onSuggestionClick: (suggestion: string) => void
+}
+
+/** Render function for custom popover content.
+ *  Return `undefined` / `null` to fall back to the default built-in renderer. */
+export type PopoverContentRenderer = (
+  props: PopoverContentRendererProps,
+) => React.ReactNode
+
+// ─── Imperative handle ────────────────────────────────────────────────────────
+
+/** Imperative API exposed via `ref` on `<CATEditor>`. */
+export interface CATEditorRef {
+  /** Insert text at the current (or last saved) cursor position. */
+  insertText: (text: string) => void
+  /** Focus the editor. */
+  focus: () => void
+  /** Get the full plain-text content. */
+  getText: () => string
 }

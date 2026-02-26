@@ -1,31 +1,6 @@
 /**
- * Visual display symbols for special / invisible characters.
- * Used in both the popover and inline badges so users can
- * immediately recognise the character without memorising code-points.
- */
-export const SPECIAL_CHAR_DISPLAY_MAP: Record<string, string> = {
-  Space: '·',
-  Ampersand: '&',
-  Tab: '⇥',
-  'Non-Breaking Space': '⍽',
-  'En Space': '␣',
-  'Em Space': '␣',
-  'Thin Space': '·',
-  'Ideographic Space': '□',
-  'Hair Space': '·',
-  'Zero-Width Space': '∅',
-  'Zero-Width Non-Joiner': '⊘',
-  'Zero-Width Joiner': '⊕',
-  'Word Joiner': '⁀',
-  'BOM / Zero-Width No-Break Space': '◊',
-  'Carriage Return': '↵',
-  'Form Feed': '␌',
-  'Null Character': '␀',
-  'Line Break': '↩',
-}
-
-/**
- * Reverse lookup: code-point → visible display symbol.
+ * Code-point → visible display symbol.
+ * Users can customise this map by importing and mutating it before rendering.
  * Used by HighlightNode to replace invisible characters with
  * visible placeholders in the editor DOM.
  */

@@ -190,40 +190,60 @@ code {
   position: relative;
 }
 
+/* ── Variant CSS custom properties (override from outside) ─────────────────
+   Usage:
+     .my-editor { --cat-spellcheck-bg: oklch(0.8 0.1 25 / 0.2); }
+   or per-rule:
+     .cat-highlight-spellcheck { --cat-spellcheck-underline: red; }
+────────────────────────────────────────────────────────────────────────── */
+
 /* Spellcheck: red wavy underline + subtle red background */
 .cat-highlight-spellcheck {
-  background-color: oklch(0.7 0.2 25 / 0.12);
-  border-bottom: 2px wavy oklch(0.6 0.25 25);
+  background-color: var(--cat-spellcheck-bg, oklch(0.7 0.2 25 / 0.12));
+  border-bottom: 2px wavy var(--cat-spellcheck-underline, oklch(0.6 0.25 25));
 }
 .cat-highlight-spellcheck:hover {
-  background-color: oklch(0.7 0.2 25 / 0.25);
+  background-color: var(--cat-spellcheck-bg-hover, oklch(0.7 0.2 25 / 0.25));
 }
 
-/* LexiQA: purple/violet solid underline + subtle violet background */
-.cat-highlight-lexiqa {
-  background-color: oklch(0.7 0.15 280 / 0.12);
-  border-bottom: 2px solid oklch(0.6 0.2 280);
+/* Glossary (generic term-match): base class reads CSS custom-properties.
+   Per-label variants set the properties; unknown labels get purple defaults. */
+.cat-highlight-glossary {
+  background-color: var(--cat-glossary-bg, oklch(0.7 0.15 280 / 0.12));
+  border-bottom: 2px solid var(--cat-glossary-underline, oklch(0.6 0.2 280));
 }
-.cat-highlight-lexiqa:hover {
-  background-color: oklch(0.7 0.15 280 / 0.25);
+.cat-highlight-glossary:hover {
+  background-color: var(--cat-glossary-bg-hover, oklch(0.7 0.15 280 / 0.25));
 }
 
-/* TB Target: teal dashed underline + subtle teal background */
-.cat-highlight-tb-target {
-  background-color: oklch(0.7 0.12 175 / 0.12);
-  border-bottom: 2px dashed oklch(0.55 0.15 175);
+/* Glossary – lexiqa: purple/violet (uses base defaults, no overrides needed) */
+
+/* Glossary – tb-target: teal dashed underline */
+.cat-highlight-glossary-tb-target {
+  --cat-glossary-bg: oklch(0.7 0.12 175 / 0.12);
+  --cat-glossary-underline: oklch(0.55 0.15 175);
+  --cat-glossary-bg-hover: oklch(0.7 0.12 175 / 0.25);
+  border-bottom-style: dashed;
 }
-.cat-highlight-tb-target:hover {
-  background-color: oklch(0.7 0.12 175 / 0.25);
+
+/* Glossary – search: blue solid underline */
+.cat-highlight-glossary-search {
+  --cat-glossary-bg: oklch(0.7 0.15 250 / 0.12);
+  --cat-glossary-underline: oklch(0.6 0.2 250);
+  --cat-glossary-bg-hover: oklch(0.7 0.15 250 / 0.25);
 }
 
 /* Special char: amber/orange dotted underline + subtle amber background */
 .cat-highlight-special-char {
-  background-color: oklch(0.75 0.14 70 / 0.14);
-  border-bottom: 2px dotted oklch(0.6 0.18 70);
+  background-color: var(--cat-special-char-bg, oklch(0.75 0.14 70 / 0.14));
+  border-bottom: 2px dotted
+    var(--cat-special-char-underline, oklch(0.6 0.18 70));
 }
 .cat-highlight-special-char:hover {
-  background-color: oklch(0.75 0.14 70 / 0.28);
+  background-color: var(
+    --cat-special-char-bg-hover,
+    oklch(0.75 0.14 70 / 0.28)
+  );
 }
 
 /* Space chars: keep the real space in the DOM for Lexical tracking,
@@ -284,32 +304,38 @@ code {
 
 /* Dark mode adjustments */
 .dark .cat-highlight-spellcheck {
-  background-color: oklch(0.45 0.18 25 / 0.2);
-  border-bottom-color: oklch(0.55 0.22 25);
+  background-color: var(--cat-spellcheck-bg, oklch(0.45 0.18 25 / 0.2));
+  border-bottom-color: var(--cat-spellcheck-underline, oklch(0.55 0.22 25));
 }
 .dark .cat-highlight-spellcheck:hover {
-  background-color: oklch(0.45 0.18 25 / 0.35);
+  background-color: var(--cat-spellcheck-bg-hover, oklch(0.45 0.18 25 / 0.35));
 }
-.dark .cat-highlight-lexiqa {
-  background-color: oklch(0.45 0.15 280 / 0.2);
-  border-bottom-color: oklch(0.55 0.18 280);
+.dark .cat-highlight-glossary {
+  background-color: var(--cat-glossary-bg, oklch(0.45 0.15 280 / 0.2));
+  border-bottom-color: var(--cat-glossary-underline, oklch(0.55 0.18 280));
 }
-.dark .cat-highlight-lexiqa:hover {
-  background-color: oklch(0.45 0.15 280 / 0.35);
+.dark .cat-highlight-glossary:hover {
+  background-color: var(--cat-glossary-bg-hover, oklch(0.45 0.15 280 / 0.35));
 }
-.dark .cat-highlight-tb-target {
-  background-color: oklch(0.4 0.1 175 / 0.2);
-  border-bottom-color: oklch(0.5 0.12 175);
+.dark .cat-highlight-glossary-tb-target {
+  --cat-glossary-bg: oklch(0.4 0.1 175 / 0.2);
+  --cat-glossary-underline: oklch(0.5 0.12 175);
+  --cat-glossary-bg-hover: oklch(0.4 0.1 175 / 0.35);
 }
-.dark .cat-highlight-tb-target:hover {
-  background-color: oklch(0.4 0.1 175 / 0.35);
+.dark .cat-highlight-glossary-search {
+  --cat-glossary-bg: oklch(0.45 0.15 250 / 0.2);
+  --cat-glossary-underline: oklch(0.55 0.18 250);
+  --cat-glossary-bg-hover: oklch(0.45 0.15 250 / 0.35);
 }
 .dark .cat-highlight-special-char {
-  background-color: oklch(0.45 0.14 70 / 0.2);
-  border-bottom-color: oklch(0.55 0.16 70);
+  background-color: var(--cat-special-char-bg, oklch(0.45 0.14 70 / 0.2));
+  border-bottom-color: var(--cat-special-char-underline, oklch(0.55 0.16 70));
 }
 .dark .cat-highlight-special-char:hover {
-  background-color: oklch(0.45 0.14 70 / 0.35);
+  background-color: var(
+    --cat-special-char-bg-hover,
+    oklch(0.45 0.14 70 / 0.35)
+  );
 }
 .dark .cat-highlight-nested {
   background-image: repeating-linear-gradient(
@@ -373,22 +399,31 @@ code {
   color: oklch(0.7 0.18 25);
 }
 
-.cat-badge-lexiqa {
+.cat-badge-glossary {
   background: oklch(0.7 0.15 280 / 0.15);
   color: oklch(0.5 0.2 280);
 }
-.dark .cat-badge-lexiqa {
+.dark .cat-badge-glossary {
   background: oklch(0.45 0.15 280 / 0.25);
   color: oklch(0.7 0.16 280);
 }
 
-.cat-badge-tb-target {
+.cat-badge-glossary-tb-target {
   background: oklch(0.7 0.12 175 / 0.15);
   color: oklch(0.45 0.15 175);
 }
-.dark .cat-badge-tb-target {
+.dark .cat-badge-glossary-tb-target {
   background: oklch(0.4 0.1 175 / 0.25);
   color: oklch(0.65 0.12 175);
+}
+
+.cat-badge-glossary-search {
+  background: oklch(0.7 0.15 250 / 0.15);
+  color: oklch(0.45 0.2 250);
+}
+.dark .cat-badge-glossary-search {
+  background: oklch(0.45 0.15 250 / 0.25);
+  color: oklch(0.7 0.16 250);
 }
 
 .cat-badge-special-char {

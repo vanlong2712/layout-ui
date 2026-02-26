@@ -3,24 +3,25 @@
 export { CATEditor, default } from './CATEditor'
 export type { CATEditorProps } from './CATEditor'
 
-export { SPECIAL_CHAR_DISPLAY_MAP } from './constants'
+export { CODEPOINT_DISPLAY_MAP } from './constants'
 
 export type {
-  ISuggestion,
-  ISpellCheckValidation,
-  ISpellCheckRule,
-  ILexiQARule,
-  ITBTargetEntry,
-  ITBTargetRule,
+  CATEditorRef,
+  GlossaryAnnotation,
+  HighlightSegment,
+  IGlossaryEntry,
+  IGlossaryRule,
   ISpecialCharEntry,
   ISpecialCharRule,
+  ISpellCheckRule,
+  ISpellCheckValidation,
+  ISuggestion,
   MooRule,
-  SpellCheckAnnotation,
-  LexiQAAnnotation,
-  TBTargetAnnotation,
-  SpecialCharAnnotation,
-  RuleAnnotation,
-  RawRange,
-  HighlightSegment,
+  PopoverContentRenderer,
+  PopoverContentRendererProps,
   PopoverState,
+  RawRange,
+  RuleAnnotation,
+  SpellCheckAnnotation,
+  SpecialCharAnnotation,
 } from './types'

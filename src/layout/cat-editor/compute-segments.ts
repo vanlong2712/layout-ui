@@ -56,27 +56,9 @@ export function computeHighlightSegments(
           })
         }
       }
-    } else if (rule.type === 'lexiqa') {
-      for (const term of rule.terms) {
-        if (!term) continue
-        const lowerText = text.toLowerCase()
-        const lowerTerm = term.toLowerCase()
-        let idx = 0
-        while ((idx = lowerText.indexOf(lowerTerm, idx)) !== -1) {
-          rawRanges.push({
-            start: idx,
-            end: idx + term.length,
-            annotation: {
-              type: 'lexiqa',
-              id: `lq-${idx}-${idx + term.length}`,
-              data: { term },
-            },
-          })
-          idx += term.length
-        }
-      }
-    } else if (rule.type === 'tb-target') {
-      for (const entry of rule.entries) {
+    } else if (rule.type === 'glossary') {
+      const { label, entries } = rule
+      for (const entry of entries) {
         if (!entry.term) continue
         const lowerText = text.toLowerCase()
         const lowerTerm = entry.term.toLowerCase()
@@ -86,9 +68,13 @@ export function computeHighlightSegments(
             start: idx,
             end: idx + entry.term.length,
             annotation: {
-              type: 'tb-target',
-              id: `tb-${idx}-${idx + entry.term.length}`,
-              data: entry,
+              type: 'glossary',
+              id: `gl-${label}-${idx}-${idx + entry.term.length}`,
+              data: {
+                label,
+                term: entry.term,
+                description: entry.description,
+              },
             },
           })
           idx += entry.term.length

@@ -1,11 +1,11 @@
 import * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
 
-import { SPECIAL_CHAR_DISPLAY_MAP } from './constants'
+import { CODEPOINT_DISPLAY_MAP } from './constants'
 
 import type {
   ISpellCheckValidation,
-  ITBTargetEntry,
+  PopoverContentRenderer,
   PopoverState,
   RuleAnnotation,
 } from './types'
@@ -66,38 +66,30 @@ function SpellCheckPopoverContent({
   )
 }
 
-function LexiQAPopoverContent({ data }: { data: { term: string } }) {
-  return (
-    <div className="p-3 max-w-xs space-y-2">
-      <span className="cat-badge cat-badge-lexiqa">LexiQA</span>
-      <p className="text-sm leading-relaxed text-foreground">
-        Term flagged:{' '}
-        <strong className="font-semibold text-foreground">{data.term}</strong>
-      </p>
-      <p className="text-xs text-muted-foreground leading-relaxed">
-        This term has been flagged by LexiQA quality assurance. Please review
-        for consistency and accuracy.
-      </p>
-    </div>
-  )
-}
+function GlossaryPopoverContent({
+  data,
+}: {
+  data: { label: string; term: string; description?: string }
+}) {
+  const displayLabel = data.label
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
 
-function TBTargetPopoverContent({ data }: { data: ITBTargetEntry }) {
   return (
     <div className="p-3 max-w-xs space-y-2">
-      <span className="cat-badge cat-badge-tb-target">TB Target</span>
+      <span
+        className={`cat-badge cat-badge-glossary cat-badge-glossary-${data.label}`}
+      >
+        {displayLabel}
+      </span>
       <p className="text-sm leading-relaxed text-foreground">
-        Terminology:{' '}
+        Term:{' '}
         <strong className="font-semibold text-foreground">{data.term}</strong>
       </p>
-      {data.description ? (
+      {data.description && (
         <p className="text-xs text-muted-foreground leading-relaxed">
           {data.description}
-        </p>
-      ) : (
-        <p className="text-xs text-muted-foreground leading-relaxed">
-          This term is tracked by the Term Base. Verify correct usage and
-          consistency with approved terminology.
         </p>
       )}
     </div>
@@ -109,9 +101,9 @@ function SpecialCharPopoverContent({
 }: {
   data: { name: string; char: string; codePoint: string }
 }) {
+  const cp = data.char.codePointAt(0) ?? 0
   const displaySymbol =
-    SPECIAL_CHAR_DISPLAY_MAP[data.name] ??
-    (data.char.trim() === '' ? '·' : data.char)
+    CODEPOINT_DISPLAY_MAP[cp] ?? (data.char.trim() === '' ? '·' : data.char)
 
   return (
     <div className="p-3 max-w-xs space-y-3">
@@ -144,12 +136,14 @@ export function HighlightPopover({
   onSuggestionClick,
   onDismiss,
   onPopoverEnter,
+  renderPopoverContent,
 }: {
   state: PopoverState
   annotationMap: Map<string, RuleAnnotation>
   onSuggestionClick: (suggestion: string, ruleId: string) => void
   onDismiss: () => void
   onPopoverEnter: () => void
+  renderPopoverContent?: PopoverContentRenderer
 }) {
   const popoverRef = useRef<HTMLDivElement>(null)
 
@@ -170,7 +164,6 @@ export function HighlightPopover({
     }
     if (x < 16) x = 16
     if (y + rect.height > window.innerHeight - 16) {
-      // Show above instead
       y = state.y - rect.height - 6
     }
     setAdjustedPos({ x, y })
@@ -197,23 +190,30 @@ export function HighlightPopover({
       onMouseEnter={() => onPopoverEnter()}
       onMouseLeave={() => onDismiss()}
     >
-      {annotations.map((ann, i) => (
-        <React.Fragment key={ann.id}>
-          {i > 0 && <hr className="border-border my-0" />}
-          {ann.type === 'spellcheck' ? (
-            <SpellCheckPopoverContent
-              data={ann.data}
-              onSuggestionClick={(s) => onSuggestionClick(s, ann.id)}
-            />
-          ) : ann.type === 'lexiqa' ? (
-            <LexiQAPopoverContent data={ann.data} />
-          ) : ann.type === 'tb-target' ? (
-            <TBTargetPopoverContent data={ann.data} />
-          ) : (
-            <SpecialCharPopoverContent data={ann.data} />
-          )}
-        </React.Fragment>
-      ))}
+      {annotations.map((ann, i) => {
+        const custom = renderPopoverContent?.({
+          annotation: ann,
+          onSuggestionClick: (s) => onSuggestionClick(s, ann.id),
+        })
+
+        return (
+          <React.Fragment key={ann.id}>
+            {i > 0 && <hr className="border-border my-0" />}
+            {custom != null ? (
+              custom
+            ) : ann.type === 'spellcheck' ? (
+              <SpellCheckPopoverContent
+                data={ann.data}
+                onSuggestionClick={(s) => onSuggestionClick(s, ann.id)}
+              />
+            ) : ann.type === 'glossary' ? (
+              <GlossaryPopoverContent data={ann.data} />
+            ) : (
+              <SpecialCharPopoverContent data={ann.data} />
+            )}
+          </React.Fragment>
+        )
+      })}
     </div>
   )
 }

@@ -134,9 +134,15 @@ export function HighlightsPlugin({
             }
 
             // Highlighted text — carries all annotation types & IDs
-            const types = [...new Set(seg.annotations.map((a) => a.type))].join(
-              ',',
-            )
+            // Glossary annotations include their label in the CSS type
+            // so each label gets a unique highlight class.
+            const types = [
+              ...new Set(
+                seg.annotations.map((a) =>
+                  a.type === 'glossary' ? `glossary-${a.data.label}` : a.type,
+                ),
+              ),
+            ].join(',')
             const ids = seg.annotations.map((a) => a.id).join(',')
             paragraph.append(
               $createHighlightNode(fullText.slice(sStart, sEnd), types, ids),
@@ -161,7 +167,13 @@ export function HighlightsPlugin({
             )
             if (nlSegments.length > 0) {
               const nlAnns = nlSegments.flatMap((s) => s.annotations)
-              const types = [...new Set(nlAnns.map((a) => a.type))].join(',')
+              const types = [
+                ...new Set(
+                  nlAnns.map((a) =>
+                    a.type === 'glossary' ? `glossary-${a.data.label}` : a.type,
+                  ),
+                ),
+              ].join(',')
               const ids = nlAnns.map((a) => a.id).join(',')
               const symbol = CODEPOINT_DISPLAY_MAP[0x000a]
               // Ensure there's a text node before the NL marker so the
@@ -227,15 +239,37 @@ export function HighlightsPlugin({
 
 // ─── Editor Ref Plugin ────────────────────────────────────────────────────────
 
+/** Tracks the editor instance and persists the last known selection so that
+ *  `insertText` works even after the editor loses focus. */
 export function EditorRefPlugin({
   editorRef,
+  savedSelectionRef,
 }: {
   editorRef: React.MutableRefObject<LexicalEditor | null>
+  savedSelectionRef: React.MutableRefObject<{
+    anchor: number
+    focus: number
+  } | null>
 }) {
   const [editor] = useLexicalComposerContext()
   useEffect(() => {
     editorRef.current = editor
   }, [editor, editorRef])
+
+  // Persist selection on every selection change so we can restore it later
+  useEffect(() => {
+    return editor.registerUpdateListener(({ editorState }) => {
+      editorState.read(() => {
+        const sel = $getSelection()
+        if ($isRangeSelection(sel)) {
+          savedSelectionRef.current = {
+            anchor: $pointToGlobalOffset(sel.anchor.key, sel.anchor.offset),
+            focus: $pointToGlobalOffset(sel.focus.key, sel.focus.offset),
+          }
+        }
+      })
+    })
+  }, [editor, savedSelectionRef])
   return null
 }
 

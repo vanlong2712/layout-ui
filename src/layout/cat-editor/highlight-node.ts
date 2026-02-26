@@ -51,6 +51,9 @@ export class HighlightNode extends TextNode {
     dom.classList.add('cat-highlight')
     for (const t of this.__highlightTypes.split(',')) {
       dom.classList.add(`cat-highlight-${t}`)
+      if (t.startsWith('glossary-')) {
+        dom.classList.add('cat-highlight-glossary')
+      }
     }
     if (this.__highlightTypes.includes(',')) {
       dom.classList.add('cat-highlight-nested')
@@ -91,10 +94,16 @@ export class HighlightNode extends TextNode {
     if (prevNode.__highlightTypes !== this.__highlightTypes) {
       for (const t of prevNode.__highlightTypes.split(',')) {
         dom.classList.remove(`cat-highlight-${t}`)
+        if (t.startsWith('glossary-')) {
+          dom.classList.remove('cat-highlight-glossary')
+        }
       }
       dom.classList.remove('cat-highlight-nested')
       for (const t of this.__highlightTypes.split(',')) {
         dom.classList.add(`cat-highlight-${t}`)
+        if (t.startsWith('glossary-')) {
+          dom.classList.add('cat-highlight-glossary')
+        }
       }
       if (this.__highlightTypes.includes(',')) {
         dom.classList.add('cat-highlight-nested')
