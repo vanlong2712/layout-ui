@@ -96,6 +96,45 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
     const containerRef = useRef<HTMLDivElement>(null)
     const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+    // ── Flash highlight state ──────────────────────────────────────────────
+    const flashIdRef = useRef<string | null>(null)
+    const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const flashEditUnregRef = useRef<(() => void) | null>(null)
+
+    /** Apply the `cat-highlight-flash` class to all DOM elements whose
+     *  `data-rule-ids` contain the given annotation ID. */
+    const applyFlashClass = useCallback((annotationId: string) => {
+      const container = containerRef.current
+      if (!container) return
+      // Remove previous flash classes
+      container
+        .querySelectorAll('.cat-highlight-flash')
+        .forEach((el) => el.classList.remove('cat-highlight-flash'))
+      // Add to matching elements
+      container.querySelectorAll('.cat-highlight').forEach((el) => {
+        const ids = el.getAttribute('data-rule-ids')
+        if (ids && ids.split(',').includes(annotationId)) {
+          el.classList.add('cat-highlight-flash')
+        }
+      })
+    }, [])
+
+    /** Remove all flash highlight classes and clean up timers/listeners. */
+    const clearFlashInner = useCallback(() => {
+      flashIdRef.current = null
+      if (flashTimerRef.current) {
+        clearTimeout(flashTimerRef.current)
+        flashTimerRef.current = null
+      }
+      if (flashEditUnregRef.current) {
+        flashEditUnregRef.current()
+        flashEditUnregRef.current = null
+      }
+      containerRef.current
+        ?.querySelectorAll('.cat-highlight-flash')
+        .forEach((el) => el.classList.remove('cat-highlight-flash'))
+    }, [])
+
     const [popoverState, setPopoverState] = useState<PopoverState>({
       visible: false,
       x: 0,
@@ -173,8 +212,45 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
           })
           return text
         },
+        flashHighlight: (annotationId: string, durationMs = 5000) => {
+          // Clear any existing flash first
+          clearFlashInner()
+
+          flashIdRef.current = annotationId
+          // Apply class to current DOM
+          applyFlashClass(annotationId)
+
+          // Auto-remove after timeout
+          flashTimerRef.current = setTimeout(() => {
+            clearFlashInner()
+          }, durationMs)
+
+          // Remove on first user edit (not our own highlight rebuilds).
+          // The `applyHighlights` plugin tags its updates with 'cat-highlights'.
+          const editor = editorRef.current
+          if (editor) {
+            flashEditUnregRef.current = editor.registerUpdateListener(
+              ({ tags }) => {
+                if (tags.has('cat-highlights')) {
+                  // Highlight rebuild — re-apply flash class to new DOM elements
+                  if (flashIdRef.current) {
+                    requestAnimationFrame(() =>
+                      applyFlashClass(flashIdRef.current!),
+                    )
+                  }
+                  return
+                }
+                // User edit — clear flash
+                clearFlashInner()
+              },
+            )
+          }
+        },
+        clearFlash: () => {
+          clearFlashInner()
+        },
       }),
-      [],
+      [applyFlashClass, clearFlashInner],
     )
 
     const initialConfig = useMemo(
@@ -243,13 +319,17 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
         const ruleIdsAttr = target.getAttribute('data-rule-ids')
         if (!ruleIdsAttr) return
 
-        const ruleIds = ruleIdsAttr
-          .split(',')
-          .map((id) =>
-            id.startsWith(NL_MARKER_PREFIX)
-              ? id.slice(NL_MARKER_PREFIX.length)
-              : id,
-          )
+        const ruleIds = [
+          ...new Set(
+            ruleIdsAttr
+              .split(',')
+              .map((id) =>
+                id.startsWith(NL_MARKER_PREFIX)
+                  ? id.slice(NL_MARKER_PREFIX.length)
+                  : id,
+              ),
+          ),
+        ]
 
         isOverHighlightRef.current = true
         cancelHide()

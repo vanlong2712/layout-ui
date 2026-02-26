@@ -85,8 +85,11 @@ export class HighlightNode extends TextNode {
     // in the DOM so the browser cannot place a caret inside the
     // multi-char display text.  The visual tag label (e.g. <1>) is
     // rendered by CSS ::before via data-display.
+    // contentEditable=false prevents the browser from inserting typed
+    // text into this element (DOM text ≠ model text length).
     if (this.__highlightTypes.split(',').includes('tag-collapsed')) {
       dom.textContent = '\u200B'
+      dom.contentEditable = 'false'
     }
 
     // Special-char nodes in token mode: cursor can only sit before/after,
@@ -107,16 +110,19 @@ export class HighlightNode extends TextNode {
       }
     }
 
-    // Quote nodes: use a CSS-based approach to visually replace the quote
-    // character.  The original 1-char text stays in the DOM (so Lexical's
-    // token mode handles cursor placement correctly), while CSS hides it
-    // and shows the replacement via a ::before pseudo-element reading
-    // data-display.  This avoids contentEditable=false which kills carets.
+    // Quote nodes: replace textContent with a zero-width space (like
+    // collapsed tags) so the original character takes no visual width.
+    // CSS ::before via data-display renders the replacement character.
+    // Since quotes are single characters, DOM length (1 = ZWS) matches
+    // model length (1 = original char), avoiding any offset mismatch.
+    // contentEditable=false prevents the browser from inserting text inside.
     if (
       this.__highlightTypes.split(',').includes('quote') &&
       this.__displayText
     ) {
       dom.classList.add('cat-highlight-quote-char')
+      dom.textContent = '\u200B'
+      dom.contentEditable = 'false'
     }
 
     return dom
@@ -165,6 +171,10 @@ export class HighlightNode extends TextNode {
     // Collapsed tag nodes: keep DOM in sync
     if (this.__highlightTypes.split(',').includes('tag-collapsed')) {
       dom.textContent = '\u200B'
+      dom.contentEditable = 'false'
+    } else if (dom.contentEditable === 'false') {
+      // Clear if node transitioned away from collapsed
+      dom.removeAttribute('contenteditable')
     }
 
     // Re-apply invisible char replacement after any DOM updates
@@ -180,14 +190,19 @@ export class HighlightNode extends TextNode {
       }
     }
 
-    // Re-apply quote visual class after DOM updates
+    // Re-apply quote visual class + ZWS after DOM updates
     if (
       this.__highlightTypes.split(',').includes('quote') &&
       this.__displayText
     ) {
       dom.classList.add('cat-highlight-quote-char')
+      dom.textContent = '\u200B'
+      dom.contentEditable = 'false'
     } else if (prevNode.__highlightTypes.split(',').includes('quote')) {
       dom.classList.remove('cat-highlight-quote-char')
+      if (dom.contentEditable === 'false') {
+        dom.removeAttribute('contenteditable')
+      }
     }
 
     return updated
@@ -226,11 +241,16 @@ export class HighlightNode extends TextNode {
 
   canInsertTextBefore(): boolean {
     if (this.__ruleIds.startsWith(NL_MARKER_PREFIX)) return false
+    // Token mode nodes (collapsed tags, quotes, special-chars) must
+    // reject text insertion so typing creates a sibling TextNode
+    // instead of merging into (and corrupting) the highlight node.
+    if (this.getMode() === 'token') return false
     return true
   }
 
   canInsertTextAfter(): boolean {
     if (this.__ruleIds.startsWith(NL_MARKER_PREFIX)) return false
+    if (this.getMode() === 'token') return false
     return true
   }
 

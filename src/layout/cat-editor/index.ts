@@ -1,5 +1,7 @@
 // ─── Public API ──────────────────────────────────────────────────────────────
 
+import './style.css'
+
 export { CATEditor, default } from './CATEditor'
 export type { CATEditorProps } from './CATEditor'
 

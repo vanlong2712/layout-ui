@@ -9,6 +9,7 @@ import {
   Database,
   Eye,
   Minus,
+  MousePointerClick,
   Plus,
   Quote,
   RotateCcw,
@@ -238,6 +239,9 @@ function CATEditorDemo() {
   const [tagsCollapsed, setTagsCollapsed] = useState(false)
   const [tagsDetectInner, setTagsDetectInner] = useState(true)
   const [tagPattern, setTagPattern] = useState(DEFAULT_TAG_PATTERN)
+  const [tagCollapseScope, setTagCollapseScope] = useState<'all' | 'html-only'>(
+    'all',
+  )
 
   // Quote options
   const [singleQuoteOpen, setSingleQuoteOpen] = useState('{')
@@ -248,6 +252,29 @@ function CATEditorDemo() {
   const [quoteEscapeContractions, setQuoteEscapeContractions] = useState(true)
   const [quoteAllowNesting, setQuoteAllowNesting] = useState(false)
   const [quoteDetectInner, setQuoteDetectInner] = useState(true)
+
+  // Track which spellcheck annotation is currently flash-highlighted
+  const [flashedSpellcheckId, setFlashedSpellcheckId] = useState<string | null>(
+    null,
+  )
+  const flashDemoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  /** Flash a spellcheck annotation and clear the pill after timeout. */
+  const handleFlashSpellcheck = useCallback(
+    (annId: string, durationMs = 5000) => {
+      // Clear previous demo timer
+      if (flashDemoTimerRef.current) {
+        clearTimeout(flashDemoTimerRef.current)
+      }
+      setFlashedSpellcheckId(annId)
+      editorRef.current?.flashHighlight(annId, durationMs)
+      // Sync demo state with flash timeout
+      flashDemoTimerRef.current = setTimeout(() => {
+        setFlashedSpellcheckId(null)
+      }, durationMs)
+    },
+    [],
+  )
 
   const demoMeta = layoutDemos.find((d) => d.to === '/demo/cat-editor')
 
@@ -304,6 +331,7 @@ function CATEditorDemo() {
         type: 'tag',
         detectInner: tagsDetectInner,
         collapsed: tagsCollapsed,
+        collapseScope: tagCollapseScope,
         pattern: tagPattern || undefined,
       } satisfies ITagRule)
     }
@@ -349,6 +377,7 @@ function CATEditorDemo() {
     tagsCollapsed,
     tagsDetectInner,
     tagPattern,
+    tagCollapseScope,
     quotesEnabled,
     singleQuoteOpen,
     singleQuoteClose,
@@ -392,6 +421,7 @@ function CATEditorDemo() {
     setTagsCollapsed(false)
     setTagsDetectInner(true)
     setTagPattern(DEFAULT_TAG_PATTERN)
+    setTagCollapseScope('all')
     setSingleQuoteOpen('{')
     setSingleQuoteClose('}')
     setDoubleQuoteOpen('{{')
@@ -401,6 +431,11 @@ function CATEditorDemo() {
     setQuoteAllowNesting(false)
     setQuoteDetectInner(true)
     setSearchKeywords('')
+    setFlashedSpellcheckId(null)
+    if (flashDemoTimerRef.current) {
+      clearTimeout(flashDemoTimerRef.current)
+    }
+    editorRef.current?.clearFlash()
     setResetKey((k) => k + 1)
   }, [])
 
@@ -609,6 +644,41 @@ function CATEditorDemo() {
               <Plus className="mr-1 h-3.5 w-3.5" />
               Add validation
             </Button>
+
+            {/* ── Spellcheck error list (click to flash-highlight) ── */}
+            {spellcheckEnabled && spellcheckData.length > 0 && (
+              <div className="mt-4 border-t border-border pt-3">
+                <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+                  <MousePointerClick className="h-3.5 w-3.5" />
+                  Click to highlight in editor
+                </h4>
+                <div className="flex flex-wrap gap-1.5">
+                  {spellcheckData.map((v) => {
+                    const annId = `sc-${v.start}-${v.end}`
+                    const isActive = flashedSpellcheckId === annId
+                    return (
+                      <button
+                        key={annId}
+                        type="button"
+                        className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium transition-colors ${
+                          isActive
+                            ? 'bg-pink-100 border-pink-300 text-pink-700 dark:bg-pink-900/40 dark:border-pink-700 dark:text-pink-300'
+                            : 'border-border bg-background text-foreground hover:bg-muted'
+                        }`}
+                        onClick={() => {
+                          handleFlashSpellcheck(annId, 5000)
+                        }}
+                      >
+                        <span className="font-mono">{v.content || '…'}</span>
+                        <span className="text-muted-foreground text-[10px]">
+                          [{v.start}–{v.end}]
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </Section>
 
           {/* LexiQA */}
@@ -719,14 +789,38 @@ function CATEditorDemo() {
                     checked={tagsCollapsed}
                     onCheckedChange={setTagsCollapsed}
                   />
-                  <Label className="text-xs cursor-pointer">Collapse</Label>
+                  <Label
+                    className="text-xs cursor-pointer"
+                    title="Collapse tags into short labels like <1>, </1>"
+                  >
+                    Collapse
+                  </Label>
                 </div>
+                {tagsCollapsed && (
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={tagCollapseScope === 'html-only'}
+                      onCheckedChange={(v) =>
+                        setTagCollapseScope(v ? 'html-only' : 'all')
+                      }
+                    />
+                    <Label
+                      className="text-xs cursor-pointer"
+                      title="When on, only HTML tags are collapsed; placeholders like {{var}} stay expanded"
+                    >
+                      HTML only
+                    </Label>
+                  </div>
+                )}
                 <div className="flex items-center gap-2">
                   <Switch
                     checked={tagsDetectInner}
                     onCheckedChange={setTagsDetectInner}
                   />
-                  <Label className="text-xs cursor-pointer">
+                  <Label
+                    className="text-xs cursor-pointer"
+                    title="Match innermost tag pairs first (LIFO stack pairing)"
+                  >
                     Detect inner
                   </Label>
                 </div>
@@ -743,7 +837,8 @@ function CATEditorDemo() {
                 />
                 <p className="text-[10px] text-muted-foreground/60">
                   Leave empty to use built-in HTML tag pairing. With a custom
-                  pattern, every match is numbered sequentially.
+                  pattern, HTML matches are still paired; non-HTML matches are
+                  numbered sequentially.
                 </p>
               </div>
             </div>
@@ -794,7 +889,12 @@ function CATEditorDemo() {
                     checked={quotesInTags}
                     onCheckedChange={setQuotesInTags}
                   />
-                  <Label className="text-xs cursor-pointer">
+                  <Label
+                    className="text-xs cursor-pointer"
+                    title={
+                      'Also detect quotes inside HTML tags (e.g. attribute values like href="\u2026")'
+                    }
+                  >
                     Detect in tags
                   </Label>
                 </div>
@@ -803,7 +903,10 @@ function CATEditorDemo() {
                     checked={quoteEscapeContractions}
                     onCheckedChange={setQuoteEscapeContractions}
                   />
-                  <Label className="text-xs cursor-pointer">
+                  <Label
+                    className="text-xs cursor-pointer"
+                    title="Skip apostrophes in contractions like don't, it's, they're"
+                  >
                     Escape contractions
                   </Label>
                 </div>
@@ -812,7 +915,10 @@ function CATEditorDemo() {
                     checked={quoteAllowNesting}
                     onCheckedChange={setQuoteAllowNesting}
                   />
-                  <Label className="text-xs cursor-pointer">
+                  <Label
+                    className="text-xs cursor-pointer"
+                    title="Allow overlapping quote types (e.g. double quotes containing single quotes that extend beyond)"
+                  >
                     Allow nesting
                   </Label>
                 </div>
@@ -821,7 +927,10 @@ function CATEditorDemo() {
                     checked={quoteDetectInner}
                     onCheckedChange={setQuoteDetectInner}
                   />
-                  <Label className="text-xs cursor-pointer">
+                  <Label
+                    className="text-xs cursor-pointer"
+                    title="Detect quotes of the other type that open and close inside an already-open quote"
+                  >
                     Detect inner quotes
                   </Label>
                 </div>
@@ -889,6 +998,16 @@ function CATEditorDemo() {
             initialText={SAMPLE_TEXT}
             rules={rules}
             onSuggestionApply={handleSuggestionApply}
+            onChange={() => {
+              // Clear flash state when user edits text
+              if (flashedSpellcheckId) {
+                setFlashedSpellcheckId(null)
+                if (flashDemoTimerRef.current) {
+                  clearTimeout(flashDemoTimerRef.current)
+                  flashDemoTimerRef.current = null
+                }
+              }
+            }}
             placeholder="Type or paste your text here…"
             className={tagsCollapsed ? 'cat-tags-collapsed' : ''}
           />

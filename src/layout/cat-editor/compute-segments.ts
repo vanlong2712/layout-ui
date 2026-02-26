@@ -119,8 +119,7 @@ function detectAndPairTags(
 }
 
 /** Regex to classify a match as an HTML tag (opening, closing, self-closing). */
-const HTML_TAG_CLASSIFY =
-  /^<(\/?)([a-zA-Z][a-zA-Z0-9]*)\b[^>]*?(\/?)>$/
+const HTML_TAG_CLASSIFY = /^<(\/?)([a-zA-Z][a-zA-Z0-9]*)\b[^>]*?(\/?)>$/
 
 /** Detect tags using a custom pattern.  Matches that look like HTML tags
  *  are paired using a stack (same logic as `detectAndPairTags`).  All other
@@ -358,6 +357,10 @@ export function computeHighlightSegments(
         ? detectCustomTags(text, rule.pattern)
         : detectAndPairTags(text, rule.detectInner ?? true)
       for (const p of pairs) {
+        // isHtml: a match is HTML when it came from detectAndPairTags (always
+        // HTML), or from detectCustomTags where tagName !== originalText
+        // (i.e. the classifier extracted an HTML tag name).
+        const isHtml = !rule.pattern || p.tagName !== p.originalText
         rawRanges.push({
           start: p.start,
           end: p.end,
@@ -371,6 +374,7 @@ export function computeHighlightSegments(
               isSelfClosing: p.isSelfClosing,
               originalText: p.originalText,
               displayText: p.displayText,
+              isHtml,
             },
           },
         })
@@ -380,9 +384,12 @@ export function computeHighlightSegments(
       // opening/closing quote character with the configured replacement.
       const quoteMap = detectQuotes(text, rule.detectOptions)
       const seen = new Set<number>()
-      for (const [pos, qr] of quoteMap) {
-        if (seen.has(pos)) continue
-        seen.add(pos)
+      for (const [, qr] of quoteMap) {
+        // The Map is keyed by BOTH start and end positions (both
+        // pointing to the same QuoteRange).  Deduplicate by qr.start
+        // so each quote pair is processed exactly once.
+        if (seen.has(qr.start)) continue
+        seen.add(qr.start)
 
         const mapping =
           qr.quoteType === 'single' ? rule.singleQuote : rule.doubleQuote

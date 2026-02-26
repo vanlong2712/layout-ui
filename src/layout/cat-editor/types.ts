@@ -64,6 +64,11 @@ export interface ITagRule {
    *  suppressed) and the CSS collapsed rendering kicks in.
    *  When false/undefined, tags can be split by search/glossary highlights. */
   collapsed?: boolean
+  /** Which tags should be collapsed when `collapsed` is true.
+   *  - `'all'` (default): collapse every matched tag/placeholder.
+   *  - `'html-only'`: only collapse HTML-like tags (`<tag>`, `</tag>`, `<br/>`);
+   *    non-HTML placeholders (e.g. `{{var}}`, `$amount`) stay expanded. */
+  collapseScope?: 'all' | 'html-only'
   /** Custom regex pattern (source string) for matching tags / placeholders.
    *  When provided, every match is treated as a standalone tag token
    *  numbered sequentially (`<1>`, `<2>`, …).
@@ -130,6 +135,8 @@ export interface TagAnnotation {
     isSelfClosing: boolean
     originalText: string
     displayText: string // e.g. '<1>', '</1>', '<2/>'
+    /** `true` when the tag was classified as HTML (`<tag>`, `</tag>`, `<br/>`). */
+    isHtml: boolean
   }
 }
 
@@ -200,4 +207,11 @@ export interface CATEditorRef {
   focus: () => void
   /** Get the full plain-text content. */
   getText: () => string
+  /** Temporarily highlight editor elements matching `annotationId` with a
+   *  pink "flash" overlay.  The highlight is automatically removed after
+   *  `durationMs` (default 5 000 ms), when the user edits the text, or
+   *  when `clearFlash` / another `flashHighlight` call is made. */
+  flashHighlight: (annotationId: string, durationMs?: number) => void
+  /** Remove any active flash highlight immediately. */
+  clearFlash: () => void
 }

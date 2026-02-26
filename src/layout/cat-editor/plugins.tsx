@@ -9,6 +9,7 @@ import {
   $isRangeSelection,
   $setSelection,
   COMMAND_PRIORITY_HIGH,
+  KEY_ARROW_LEFT_COMMAND,
   KEY_ARROW_RIGHT_COMMAND,
   SELECTION_CHANGE_COMMAND,
 } from 'lexical'
@@ -29,7 +30,12 @@ import type {
   LexicalNode,
   PointType,
 } from 'lexical'
-import type { ISpecialCharRule, MooRule, RuleAnnotation } from './types'
+import type {
+  ISpecialCharRule,
+  ITagRule,
+  MooRule,
+  RuleAnnotation,
+} from './types'
 
 // ─── Highlights Plugin ────────────────────────────────────────────────────────
 
@@ -155,9 +161,15 @@ export function HighlightsPlugin({
 
             // Detect collapsed-tag state early so it can influence types.
             const tagAnn = seg.annotations.find((a) => a.type === 'tag')
-            const tagsCollapsed = rules
-              .filter((r) => r.type === 'tag')
-              .some((r) => r.collapsed)
+            const tagRule = rules.find((r): r is ITagRule => r.type === 'tag')
+            const tagsCollapsed = !!tagRule?.collapsed
+            // Decide if *this specific* tag should be collapsed.
+            // When collapseScope is 'html-only', only HTML tags collapse.
+            const collapseScope = tagRule?.collapseScope ?? 'all'
+            const thisTagCollapsed =
+              tagsCollapsed &&
+              !!tagAnn &&
+              (collapseScope === 'all' || tagAnn.data.isHtml)
 
             // Highlighted text — carries all annotation types & IDs
             // Glossary annotations include their label in the CSS type
@@ -175,7 +187,7 @@ export function HighlightsPlugin({
             // Mark collapsed tags explicitly so highlight-node.ts can
             // distinguish from non-collapsed tags that carry displayText
             // from a quote annotation.
-            if (tagAnn && tagsCollapsed) {
+            if (thisTagCollapsed) {
               typesArr.push('tag-collapsed')
             }
             const types = typesArr.join(',')
@@ -184,10 +196,10 @@ export function HighlightsPlugin({
             // override the quote replacement char for segments that carry
             // both tag and quote annotations.
             const tagDisplayText =
-              tagAnn?.type === 'tag' && tagsCollapsed
+              tagAnn?.type === 'tag' && thisTagCollapsed
                 ? tagAnn.data.displayText
                 : undefined
-            const isTagToken = !!tagAnn && tagsCollapsed
+            const isTagToken = thisTagCollapsed
 
             // Quote annotations: pass the replacement char as displayText
             // and force token mode, similar to special-char nodes.
@@ -291,13 +303,20 @@ export function HighlightsPlugin({
   // Skip our own 'cat-highlights' updates to avoid infinite loops.
   // The 'historic' tag keeps recomputation out of the undo stack.
   useEffect(() => {
-    const unregister = editor.registerUpdateListener(({ tags }) => {
-      if (tags.has('cat-highlights')) return
-      if (rafRef.current) cancelAnimationFrame(rafRef.current)
-      rafRef.current = requestAnimationFrame(() => {
-        applyHighlights()
-      })
-    })
+    const unregister = editor.registerUpdateListener(
+      ({ tags, dirtyElements, dirtyLeaves }) => {
+        if (tags.has('cat-highlights')) return
+        // Skip selection-only changes — only rebuild when actual
+        // content changed.  Without this guard every arrow-key press
+        // triggers a full tree rebuild on the next frame, which can
+        // fight with cursor movement.
+        if (dirtyElements.size === 0 && dirtyLeaves.size === 0) return
+        if (rafRef.current) cancelAnimationFrame(rafRef.current)
+        rafRef.current = requestAnimationFrame(() => {
+          applyHighlights()
+        })
+      },
+    )
     return () => {
       unregister()
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
@@ -345,24 +364,51 @@ export function EditorRefPlugin({
 
 // ─── NL Marker Navigation Guard ─────────────────────────────────────────────
 
-/** Helper: given a selection point, check if it sits on or right-after
- *  an NL-marker node and return a corrected position, or null if fine. */
-function $clampPointAwayFromNlMarker(point: PointType): {
+/** Check whether a node is non-editable in the DOM.
+ *  Only nodes with contentEditable="false" qualify: NL markers,
+ *  collapsed tags, and quote-char nodes.  Special-char nodes are
+ *  token-mode but still navigable — they are NOT non-editable. */
+function $isNonEditableNode(node: LexicalNode): boolean {
+  if (!$isHighlightNode(node)) return false
+  if (node.__ruleIds.startsWith(NL_MARKER_PREFIX)) return true
+  const types = node.__highlightTypes.split(',')
+  if (types.includes('tag-collapsed')) return true
+  if (types.includes('quote') && node.__displayText) return true
+  return false
+}
+
+/** Given a selection point, if it sits on a non-editable node, move
+ *  it to the nearest editable landing spot (previous or next sibling). */
+function $clampPointAwayFromNonEditable(point: PointType): {
   key: string
   offset: number
   type: 'text' | 'element'
 } | null {
   const node = point.getNode()
 
-  // Point directly on an NL-marker HighlightNode
-  if ($isHighlightNode(node) && node.__ruleIds.startsWith(NL_MARKER_PREFIX)) {
+  // Point directly on a non-editable HighlightNode
+  if ($isNonEditableNode(node)) {
+    // offset > 0 hints the cursor was placed toward the right/end of
+    // the node (e.g. clicking after a collapsed tag) — prefer next.
+    if (point.offset > 0) {
+      const next = node.getNextSibling()
+      if (next && !$isNonEditableNode(next)) {
+        return { key: next.getKey(), offset: 0, type: 'text' }
+      }
+    }
+    // offset = 0 or no next → prefer previous sibling
     const prev = node.getPreviousSibling()
-    if (prev) {
+    if (prev && !$isNonEditableNode(prev)) {
       return {
         key: prev.getKey(),
         offset: prev.getTextContent().length,
         type: 'text',
       }
+    }
+    // Fallback: try the other direction
+    const next = node.getNextSibling()
+    if (next && !$isNonEditableNode(next)) {
+      return { key: next.getKey(), offset: 0, type: 'text' }
     }
     const parent = node.getParent()
     if (parent) {
@@ -370,21 +416,25 @@ function $clampPointAwayFromNlMarker(point: PointType): {
     }
   }
 
-  // Point on an element (paragraph) at a child-index at/past NL marker
+  // Point on an element (paragraph) at a child-index at/past a non-editable node
   if (point.type === 'element' && 'getChildren' in node) {
     const children = node.getChildren()
     for (const idx of [point.offset - 1, point.offset]) {
       const child = children[idx] as LexicalNode | undefined
-      if (
-        child &&
-        $isHighlightNode(child) &&
-        child.__ruleIds.startsWith(NL_MARKER_PREFIX)
-      ) {
+      if (child && $isNonEditableNode(child)) {
         const prev = child.getPreviousSibling()
-        if (prev) {
+        if (prev && !$isNonEditableNode(prev)) {
           return {
             key: prev.getKey(),
             offset: prev.getTextContent().length,
+            type: 'text',
+          }
+        }
+        const next = child.getNextSibling()
+        if (next && !$isNonEditableNode(next)) {
+          return {
+            key: next.getKey(),
+            offset: 0,
             type: 'text',
           }
         }
@@ -396,16 +446,76 @@ function $clampPointAwayFromNlMarker(point: PointType): {
   return null
 }
 
-/** Prevents the cursor from ever resting on or after an NL-marker node.
- *  - Intercepts Right arrow at end-of-line to jump to next paragraph.
+/** Find the first editable node scanning right from `startNode` (exclusive). */
+function $findNextEditable(
+  startNode: LexicalNode,
+): { key: string; offset: number; type: 'text' | 'element' } | null {
+  let cur: LexicalNode | null = startNode.getNextSibling()
+  while (cur) {
+    if (!$isNonEditableNode(cur)) {
+      return { key: cur.getKey(), offset: 0, type: 'text' }
+    }
+    cur = cur.getNextSibling()
+  }
+  // Cross paragraph boundary
+  const paragraph = startNode.getParent()
+  const nextParagraph = paragraph?.getNextSibling()
+  if (nextParagraph && 'getChildren' in nextParagraph) {
+    const first = (nextParagraph as ElementNode).getFirstChild()
+    if (first && !$isNonEditableNode(first)) {
+      return { key: first.getKey(), offset: 0, type: 'text' }
+    }
+    if (first) {
+      return $findNextEditable(first)
+    }
+  }
+  return null
+}
+
+/** Find the last editable node scanning left from `startNode` (exclusive). */
+function $findPrevEditable(
+  startNode: LexicalNode,
+): { key: string; offset: number; type: 'text' | 'element' } | null {
+  let cur: LexicalNode | null = startNode.getPreviousSibling()
+  while (cur) {
+    if (!$isNonEditableNode(cur)) {
+      return {
+        key: cur.getKey(),
+        offset: cur.getTextContent().length,
+        type: 'text',
+      }
+    }
+    cur = cur.getPreviousSibling()
+  }
+  // Cross paragraph boundary (backwards)
+  const paragraph = startNode.getParent()
+  const prevParagraph = paragraph?.getPreviousSibling()
+  if (prevParagraph && 'getChildren' in prevParagraph) {
+    const last = (prevParagraph as ElementNode).getLastChild()
+    if (last && !$isNonEditableNode(last)) {
+      return {
+        key: last.getKey(),
+        offset: last.getTextContent().length,
+        type: 'text',
+      }
+    }
+    if (last) {
+      return $findPrevEditable(last)
+    }
+  }
+  return null
+}
+
+/** Prevents the cursor from ever resting on a non-editable node.
+ *  - Intercepts Left/Right arrows to skip over non-editable nodes.
  *  - Watches every selection change (mouse click, drag, keyboard) and
- *    clamps the cursor back when it lands on an NL marker. */
+ *    clamps the cursor back to the nearest editable node. */
 export function NLMarkerNavigationPlugin() {
   const [editor] = useLexicalComposerContext()
   useEffect(() => {
-    // 1. Right arrow: when cursor is right before an NL-marker, skip it
-    //    and move to the start of the next paragraph.
-    const unregArrow = editor.registerCommand(
+    // ── Right arrow: skip over non-editable nodes (NL markers, collapsed
+    //    tags, quote-chars, special-chars). ──
+    const unregRight = editor.registerCommand(
       KEY_ARROW_RIGHT_COMMAND,
       (event) => {
         const selection = $getSelection()
@@ -415,10 +525,9 @@ export function NLMarkerNavigationPlugin() {
         const { anchor } = selection
         const node = anchor.getNode()
 
-        // Check if the next sibling of the current node is an NL marker
+        // Check if the next sibling is non-editable
         let nextNode: LexicalNode | null = null
         if (anchor.type === 'text') {
-          // Only trigger when cursor is at the end of the text node
           if (anchor.offset < node.getTextContent().length) return false
           nextNode = node.getNextSibling()
         } else {
@@ -426,28 +535,28 @@ export function NLMarkerNavigationPlugin() {
           nextNode = children[anchor.offset] ?? null
         }
 
-        if (
-          nextNode &&
-          $isHighlightNode(nextNode) &&
-          nextNode.__ruleIds.startsWith(NL_MARKER_PREFIX)
-        ) {
-          // Skip the NL marker — move to start of next paragraph
-          const paragraph = nextNode.getParent()
-          if (!paragraph) return false
-          const nextParagraph = paragraph.getNextSibling()
-          if (nextParagraph && 'getChildren' in nextParagraph) {
-            const firstChild = (nextParagraph as ElementNode).getFirstChild()
-            if (firstChild) {
-              selection.anchor.set(firstChild.getKey(), 0, 'text')
-              selection.focus.set(firstChild.getKey(), 0, 'text')
-            } else {
-              selection.anchor.set(nextParagraph.getKey(), 0, 'element')
-              selection.focus.set(nextParagraph.getKey(), 0, 'element')
-            }
+        if (nextNode && $isNonEditableNode(nextNode)) {
+          const target = $findNextEditable(nextNode)
+          if (target) {
+            selection.anchor.set(target.key, target.offset, target.type)
+            selection.focus.set(target.key, target.offset, target.type)
+            event.preventDefault()
+            return true
           }
-          // No next paragraph — stay put (end of document)
-          event.preventDefault()
-          return true
+          // No editable target — let browser handle (end of content)
+          return false
+        }
+
+        // Also handle: cursor is ON a non-editable node (e.g. after click)
+        if ($isNonEditableNode(node)) {
+          const target = $findNextEditable(node)
+          if (target) {
+            selection.anchor.set(target.key, target.offset, target.type)
+            selection.focus.set(target.key, target.offset, target.type)
+            event.preventDefault()
+            return true
+          }
+          return false
         }
 
         return false
@@ -455,15 +564,64 @@ export function NLMarkerNavigationPlugin() {
       COMMAND_PRIORITY_HIGH,
     )
 
-    // 2. Selection change: catch mouse clicks/drags that land on NL markers
+    // ── Left arrow: skip over non-editable nodes. ──
+    const unregLeft = editor.registerCommand(
+      KEY_ARROW_LEFT_COMMAND,
+      (event) => {
+        const selection = $getSelection()
+        if (!$isRangeSelection(selection) || !selection.isCollapsed())
+          return false
+
+        const { anchor } = selection
+        const node = anchor.getNode()
+
+        // Check if the previous sibling is non-editable
+        let prevNode: LexicalNode | null = null
+        if (anchor.type === 'text') {
+          if (anchor.offset > 0) return false
+          prevNode = node.getPreviousSibling()
+        } else {
+          const children = (node as ElementNode).getChildren()
+          prevNode = children[anchor.offset - 1] ?? null
+        }
+
+        if (prevNode && $isNonEditableNode(prevNode)) {
+          const target = $findPrevEditable(prevNode)
+          if (target) {
+            selection.anchor.set(target.key, target.offset, target.type)
+            selection.focus.set(target.key, target.offset, target.type)
+            event.preventDefault()
+            return true
+          }
+          return false
+        }
+
+        // Also handle: cursor is ON a non-editable node (e.g. after click)
+        if ($isNonEditableNode(node)) {
+          const target = $findPrevEditable(node)
+          if (target) {
+            selection.anchor.set(target.key, target.offset, target.type)
+            selection.focus.set(target.key, target.offset, target.type)
+            event.preventDefault()
+            return true
+          }
+          return false
+        }
+
+        return false
+      },
+      COMMAND_PRIORITY_HIGH,
+    )
+
+    // ── Selection change: catch mouse clicks/drags that land on non-editable nodes ──
     const unregSel = editor.registerCommand(
       SELECTION_CHANGE_COMMAND,
       () => {
         const selection = $getSelection()
         if (!$isRangeSelection(selection)) return false
 
-        const anchorFix = $clampPointAwayFromNlMarker(selection.anchor)
-        const focusFix = $clampPointAwayFromNlMarker(selection.focus)
+        const anchorFix = $clampPointAwayFromNonEditable(selection.anchor)
+        const focusFix = $clampPointAwayFromNonEditable(selection.focus)
 
         if (anchorFix) {
           selection.anchor.set(anchorFix.key, anchorFix.offset, anchorFix.type)
@@ -478,7 +636,8 @@ export function NLMarkerNavigationPlugin() {
     )
 
     return () => {
-      unregArrow()
+      unregRight()
+      unregLeft()
       unregSel()
     }
   }, [editor])
