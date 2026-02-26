@@ -1,5 +1,7 @@
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+import type { DetectQuotesOptions } from '@/utils/detect-quotes'
+
 export interface ISuggestion {
   value: string
 }
@@ -47,10 +49,6 @@ export interface ISpecialCharEntry {
 export interface ISpecialCharRule {
   type: 'special-char'
   entries: Array<ISpecialCharEntry>
-  /** Optional custom code-point → display symbol map.
-   *  Merged on top of the built-in `CODEPOINT_DISPLAY_MAP` from constants.ts.
-   *  Pass an entry with an empty string value to hide a built-in symbol. */
-  codepointDisplayMap?: Record<number, string>
 }
 
 // ─── Tag collapsing ───────────────────────────────────────────────────────────
@@ -95,7 +93,7 @@ export interface IQuoteRule {
   detectInTags?: boolean
   /** Options forwarded to the `detectQuotes()` utility.
    *  Allows customising contraction escaping, nesting behaviour, etc. */
-  detectOptions?: import('@/utils/detect-quotes').DetectQuotesOptions
+  detectOptions?: DetectQuotesOptions
 }
 
 export type MooRule =

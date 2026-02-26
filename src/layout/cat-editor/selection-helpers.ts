@@ -109,7 +109,10 @@ export function $globalOffsetToPoint(
     const p = paragraphs[pi]
     if (!('getChildren' in p)) continue
 
-    for (const child of (p as ElementNode).getChildren()) {
+    const allChildren = (p as ElementNode).getChildren()
+
+    for (let ci = 0; ci < allChildren.length; ci++) {
+      const child = allChildren[ci]
       if (
         $isHighlightNode(child) &&
         child.__ruleIds.startsWith(NL_MARKER_PREFIX)
@@ -117,25 +120,23 @@ export function $globalOffsetToPoint(
         continue
       const len = child.getTextContent().length
 
-      // Non-editable token nodes (collapsed tags, quote-chars) have
-      // contentEditable="false" — the cursor must never land on them.
-      // Always consume their length and continue so the next editable
-      // node handles `remaining ≤ 0` naturally.
+      // CE=false token: cursor cannot land on it.
+      // If remaining ≤ 0, the target is BEFORE this node —
+      // return an element-type position at this child's index.
       if ($isHighlightNode(child) && $isCEFalseToken(child)) {
+        if (remaining <= 0) {
+          return { key: p.getKey(), offset: ci, type: 'element' }
+        }
         remaining -= len
         continue
       }
 
       // Editable token nodes (special-chars): cursor can sit at 0 or len.
-      // Use `>` (not `>=`) so that remaining == len returns { offset: len }
-      // instead of consuming the token and falling through — which would
-      // jump to the next paragraph when no more real children follow.
       if ($isHighlightNode(child) && child.getMode() === 'token') {
         if (remaining > len) {
           remaining -= len
           continue
         }
-        // remaining ∈ (-∞, len] — map to the nearest valid token edge.
         return {
           key: child.getKey(),
           offset:
@@ -161,38 +162,31 @@ export function $globalOffsetToPoint(
       remaining -= len
     }
 
-    // After consuming all children, if remaining ≤ 0 the target falls
-    // within (or at the end of) this paragraph.  Return the end of the
-    // last editable child so we never fall through to the next paragraph.
-    // This guards against CE=false tokens at the paragraph tail that
-    // consume remaining to 0 but never return a cursor position.
+    // After all children: remaining ≤ 0 means the target falls within
+    // this paragraph.  Return element position after the last real child
+    // (just before NL markers, if any).
     if (remaining <= 0) {
-      const children = (p as ElementNode).getChildren()
-      for (let ci = children.length - 1; ci >= 0; ci--) {
-        const child = children[ci]
-        if (
-          $isHighlightNode(child) &&
-          child.__ruleIds.startsWith(NL_MARKER_PREFIX)
-        )
-          continue
-        if ($isHighlightNode(child) && $isCEFalseToken(child)) continue
-        return {
-          key: child.getKey(),
-          offset: child.getTextContent().length,
-          type: 'text',
+      let afterIdx = allChildren.length
+      for (let ci = allChildren.length - 1; ci >= 0; ci--) {
+        const c = allChildren[ci]
+        if ($isHighlightNode(c) && c.__ruleIds.startsWith(NL_MARKER_PREFIX)) {
+          afterIdx = ci
+        } else {
+          break
         }
       }
-      return { key: p.getKey(), offset: 0, type: 'element' }
+      return { key: p.getKey(), offset: afterIdx, type: 'element' }
     }
   }
 
-  // Fallback: end of last text node (skip NL markers and CE=false tokens)
+  // Fallback: end of last paragraph
   for (let pi = paragraphs.length - 1; pi >= 0; pi--) {
     const p = paragraphs[pi]
     if ('getChildren' in p) {
-      const children = (p as ElementNode).getChildren()
-      for (let ci = children.length - 1; ci >= 0; ci--) {
-        const child = children[ci]
+      const allChildren = (p as ElementNode).getChildren()
+      // Try to find last editable child
+      for (let ci = allChildren.length - 1; ci >= 0; ci--) {
+        const child = allChildren[ci]
         if (
           $isHighlightNode(child) &&
           child.__ruleIds.startsWith(NL_MARKER_PREFIX)
@@ -205,6 +199,17 @@ export function $globalOffsetToPoint(
           type: 'text',
         }
       }
+      // All CE=false: element position after last real child
+      let afterIdx = allChildren.length
+      for (let ci = allChildren.length - 1; ci >= 0; ci--) {
+        const c = allChildren[ci]
+        if ($isHighlightNode(c) && c.__ruleIds.startsWith(NL_MARKER_PREFIX)) {
+          afterIdx = ci
+        } else {
+          break
+        }
+      }
+      return { key: p.getKey(), offset: afterIdx, type: 'element' }
     }
   }
 

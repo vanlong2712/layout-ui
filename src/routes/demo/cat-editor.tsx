@@ -323,7 +323,6 @@ function CATEditorDemo() {
       active.push({
         type: 'special-char',
         entries: specialCharEntries,
-        codepointDisplayMap,
       } satisfies ISpecialCharRule)
     }
     if (tagsEnabled) {
@@ -372,7 +371,6 @@ function CATEditorDemo() {
     tbEntries,
     specialCharEnabled,
     specialCharEntries,
-    codepointDisplayMap,
     tagsEnabled,
     tagsCollapsed,
     tagsDetectInner,
@@ -997,6 +995,7 @@ function CATEditorDemo() {
             key={resetKey}
             initialText={SAMPLE_TEXT}
             rules={rules}
+            codepointDisplayMap={codepointDisplayMap}
             onSuggestionApply={handleSuggestionApply}
             onChange={() => {
               // Clear flash state when user edits text

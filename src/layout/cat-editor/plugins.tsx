@@ -30,33 +30,27 @@ import type {
   LexicalNode,
   PointType,
 } from 'lexical'
-import type {
-  ISpecialCharRule,
-  ITagRule,
-  MooRule,
-  RuleAnnotation,
-} from './types'
+import type { ITagRule, MooRule, RuleAnnotation } from './types'
 
 // ─── Highlights Plugin ────────────────────────────────────────────────────────
 
 interface HighlightsPluginProps {
   rules: Array<MooRule>
   annotationMapRef: React.MutableRefObject<Map<string, RuleAnnotation>>
+  codepointDisplayMap?: Record<number, string>
 }
 
 export function HighlightsPlugin({
   rules,
   annotationMapRef,
+  codepointDisplayMap,
 }: HighlightsPluginProps) {
   const [editor] = useLexicalComposerContext()
   const rafRef = useRef<number | null>(null)
 
   const applyHighlights = useCallback(() => {
-    // Sync code-point display overrides from special-char rule (if any)
-    const specialCharRule = rules.find(
-      (r): r is ISpecialCharRule => r.type === 'special-char',
-    )
-    setCodepointOverrides(specialCharRule?.codepointDisplayMap)
+    // Sync code-point display overrides from the editor-level prop
+    setCodepointOverrides(codepointDisplayMap)
 
     // Check focus BEFORE editor.update() — if the editor doesn't own
     // focus we must not restore (or leave) a selection, otherwise
@@ -378,67 +372,44 @@ function $isNonEditableNode(node: LexicalNode): boolean {
 }
 
 /** Given a selection point, if it sits on a non-editable node, move
- *  it to the nearest editable landing spot (previous or next sibling). */
+ *  it to the nearest editable landing spot.
+ *  Element-type positions (between children) are always valid — the
+ *  browser can render a caret at element boundaries even next to
+ *  contentEditable=false nodes — so we only clamp text-type points.
+ *
+ *  IMPORTANT: Lexical internally resolves element positions to text
+ *  positions on the nearest text node.  So `{ paragraph, 0, element }`
+ *  can become `{ firstChild, 0, text }` — which, if that child is
+ *  CE=false, would trigger clamping.  To avoid "bounce-back" we detect
+ *  this case and return the corresponding element position instead of
+ *  jumping away. */
 function $clampPointAwayFromNonEditable(point: PointType): {
   key: string
   offset: number
   type: 'text' | 'element'
 } | null {
+  // Element-type positions are always valid.
+  if (point.type === 'element') return null
+
   const node = point.getNode()
+  if (!$isNonEditableNode(node)) return null
 
-  // Point directly on a non-editable HighlightNode
-  if ($isNonEditableNode(node)) {
-    // offset > 0 hints the cursor was placed toward the right/end of
-    // the node (e.g. clicking after a collapsed tag) — prefer next.
-    if (point.offset > 0) {
-      const next = node.getNextSibling()
-      if (next && !$isNonEditableNode(next)) {
-        return { key: next.getKey(), offset: 0, type: 'text' }
-      }
-    }
-    // offset = 0 or no next → prefer previous sibling
-    const prev = node.getPreviousSibling()
-    if (prev && !$isNonEditableNode(prev)) {
+  // The cursor landed on a CE=false node as a text-type point.  This can
+  // happen when Lexical resolves an element-type position (set by us or by
+  // click) to the nearest text node.  Convert it back to a valid element
+  // gap position:
+  //   offset === 0 → before this child (element offset = childIndex)
+  //   offset > 0  → after this child  (element offset = childIndex + 1)
+  const parent = node.getParent()
+  if (parent && 'getChildren' in parent) {
+    const siblings = parent.getChildren()
+    const idx = siblings.findIndex((s) => s.getKey() === node.getKey())
+    if (idx >= 0) {
+      const elemOffset = point.offset > 0 ? idx + 1 : idx
       return {
-        key: prev.getKey(),
-        offset: prev.getTextContent().length,
-        type: 'text',
-      }
-    }
-    // Fallback: try the other direction
-    const next = node.getNextSibling()
-    if (next && !$isNonEditableNode(next)) {
-      return { key: next.getKey(), offset: 0, type: 'text' }
-    }
-    const parent = node.getParent()
-    if (parent) {
-      return { key: parent.getKey(), offset: 0, type: 'element' }
-    }
-  }
-
-  // Point on an element (paragraph) at a child-index at/past a non-editable node
-  if (point.type === 'element' && 'getChildren' in node) {
-    const children = node.getChildren()
-    for (const idx of [point.offset - 1, point.offset]) {
-      const child = children[idx] as LexicalNode | undefined
-      if (child && $isNonEditableNode(child)) {
-        const prev = child.getPreviousSibling()
-        if (prev && !$isNonEditableNode(prev)) {
-          return {
-            key: prev.getKey(),
-            offset: prev.getTextContent().length,
-            type: 'text',
-          }
-        }
-        const next = child.getNextSibling()
-        if (next && !$isNonEditableNode(next)) {
-          return {
-            key: next.getKey(),
-            offset: 0,
-            type: 'text',
-          }
-        }
-        return { key: node.getKey(), offset: 0, type: 'element' }
+        key: parent.getKey(),
+        offset: elemOffset,
+        type: 'element',
       }
     }
   }
@@ -446,63 +417,82 @@ function $clampPointAwayFromNonEditable(point: PointType): {
   return null
 }
 
-/** Find the first editable node scanning right from `startNode` (exclusive). */
+/** Find the landing position one step to the right of `startNode`.
+ *  - If startNode is an NL marker, cross to the next paragraph.
+ *  - If the immediate next sibling is editable, land on it.
+ *  - Otherwise return an element-type gap position just after startNode
+ *    (so arrow keys stop at each gap between adjacent CE=false nodes). */
 function $findNextEditable(
   startNode: LexicalNode,
 ): { key: string; offset: number; type: 'text' | 'element' } | null {
-  let cur: LexicalNode | null = startNode.getNextSibling()
-  while (cur) {
-    if (!$isNonEditableNode(cur)) {
-      return { key: cur.getKey(), offset: 0, type: 'text' }
+  // NL marker → cross to the next paragraph.
+  if (
+    $isHighlightNode(startNode) &&
+    startNode.__ruleIds.startsWith(NL_MARKER_PREFIX)
+  ) {
+    const paragraph = startNode.getParent()
+    const nextParagraph = paragraph?.getNextSibling()
+    if (nextParagraph && 'getChildren' in nextParagraph) {
+      const first = (nextParagraph as ElementNode).getFirstChild()
+      if (first && !$isNonEditableNode(first)) {
+        return { key: first.getKey(), offset: 0, type: 'text' }
+      }
+      if (first) {
+        return $findNextEditable(first)
+      }
     }
-    cur = cur.getNextSibling()
+    return null
   }
-  // Cross paragraph boundary
+
+  // Immediate next sibling is editable — land on it.
+  const next = startNode.getNextSibling()
+  if (next && !$isNonEditableNode(next)) {
+    return { key: next.getKey(), offset: 0, type: 'text' }
+  }
+
+  // Next sibling is CE=false or absent — return element position just
+  // after startNode.  This creates a gap the user can type into.
   const paragraph = startNode.getParent()
-  const nextParagraph = paragraph?.getNextSibling()
-  if (nextParagraph && 'getChildren' in nextParagraph) {
-    const first = (nextParagraph as ElementNode).getFirstChild()
-    if (first && !$isNonEditableNode(first)) {
-      return { key: first.getKey(), offset: 0, type: 'text' }
-    }
-    if (first) {
-      return $findNextEditable(first)
+  if (paragraph && 'getChildren' in paragraph) {
+    const children = paragraph.getChildren()
+    const idx = children.findIndex((s) => s.getKey() === startNode.getKey())
+    if (idx >= 0) {
+      return { key: paragraph.getKey(), offset: idx + 1, type: 'element' }
     }
   }
+
   return null
 }
 
-/** Find the last editable node scanning left from `startNode` (exclusive). */
+/** Find the landing position one step to the left of `startNode`.
+ *  - If the immediate previous sibling is editable, land on it.
+ *  - Otherwise return an element-type gap position just before startNode
+ *    (so arrow keys stop at each gap between adjacent CE=false nodes). */
 function $findPrevEditable(
   startNode: LexicalNode,
 ): { key: string; offset: number; type: 'text' | 'element' } | null {
-  let cur: LexicalNode | null = startNode.getPreviousSibling()
-  while (cur) {
-    if (!$isNonEditableNode(cur)) {
-      return {
-        key: cur.getKey(),
-        offset: cur.getTextContent().length,
-        type: 'text',
-      }
+  const prev = startNode.getPreviousSibling()
+
+  // Previous sibling is editable — land at its end.
+  if (prev && !$isNonEditableNode(prev)) {
+    return {
+      key: prev.getKey(),
+      offset: prev.getTextContent().length,
+      type: 'text',
     }
-    cur = cur.getPreviousSibling()
   }
-  // Cross paragraph boundary (backwards)
+
+  // Previous sibling is CE=false or absent — return element position
+  // just before startNode.
   const paragraph = startNode.getParent()
-  const prevParagraph = paragraph?.getPreviousSibling()
-  if (prevParagraph && 'getChildren' in prevParagraph) {
-    const last = (prevParagraph as ElementNode).getLastChild()
-    if (last && !$isNonEditableNode(last)) {
-      return {
-        key: last.getKey(),
-        offset: last.getTextContent().length,
-        type: 'text',
-      }
-    }
-    if (last) {
-      return $findPrevEditable(last)
+  if (paragraph && 'getChildren' in paragraph) {
+    const children = paragraph.getChildren()
+    const idx = children.findIndex((s) => s.getKey() === startNode.getKey())
+    if (idx >= 0) {
+      return { key: paragraph.getKey(), offset: idx, type: 'element' }
     }
   }
+
   return null
 }
 

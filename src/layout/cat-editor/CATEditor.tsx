@@ -62,6 +62,10 @@ export interface CATEditorProps {
     range: { start: number; end: number; content: string },
     ruleType: RuleAnnotation['type'],
   ) => void
+  /** Custom code-point → display symbol map.  Merged on top of the
+   *  built-in `CODEPOINT_DISPLAY_MAP`.  Pass `{ 0x00a0: '⍽' }` to
+   *  override the symbol shown for non-breaking spaces, etc. */
+  codepointDisplayMap?: Record<number, string>
   /** Custom renderer for popover content per annotation.
    *  Return `null`/`undefined` to use the built-in default. */
   renderPopoverContent?: PopoverContentRenderer
@@ -80,6 +84,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
       rules = [],
       onChange,
       onSuggestionApply,
+      codepointDisplayMap,
       renderPopoverContent,
       placeholder = 'Start typing or paste text here…',
       className,
@@ -437,6 +442,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
             <HighlightsPlugin
               rules={rules}
               annotationMapRef={annotationMapRef}
+              codepointDisplayMap={codepointDisplayMap}
             />
             <EditorRefPlugin
               editorRef={editorRef}
