@@ -118,6 +118,7 @@ const SAMPLE_SPECIAL_CHARS: Array<ISpecialCharEntry> = [
   // eslint-disable-next-line no-control-regex
   { name: 'Null Character', pattern: new RegExp('\\u0000') },
   { name: 'Line Break', pattern: /\n/ },
+  { name: 'Space', pattern: / / },
 ]
 
 // ─── Demo component ──────────────────────────────────────────────────────────
