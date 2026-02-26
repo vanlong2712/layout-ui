@@ -272,33 +272,43 @@ code {
    get the tag class. The first carries data-display="<1>"; the rest
    carry data-display="" and must be fully hidden. */
 .cat-tags-collapsed .cat-highlight-tag {
-  font-size: 0 !important;
-  line-height: 0 !important;
-  letter-spacing: 0;
   border-bottom: none !important;
   background: none !important;
   background-image: none !important;
   vertical-align: baseline;
   padding: 0 !important;
 }
-.cat-tags-collapsed .cat-highlight-tag::after {
+/* Collapsed tag: single nbsp in DOM, hidden via transparent color.
+   Display text shown via ::before reading data-display. */
+/* Collapsed tag: zero-width space in DOM (invisible, no width).
+   The visual pill is rendered inline by ::before reading data-display. */
+.cat-highlight-tag-collapsed {
+  color: transparent !important;
+  caret-color: var(--foreground, #000);
+}
+.cat-highlight-tag-collapsed::before {
   content: attr(data-display);
-  font-size: 0.8125rem;
-  line-height: 1.75;
   color: var(--cat-tag-collapsed-text, oklch(0.4 0.15 210));
   background-color: var(--cat-tag-collapsed-bg, oklch(0.78 0.1 210 / 0.18));
   border-radius: 3px;
   padding: 0.0625rem 0.25rem;
   font-weight: 600;
   font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.8125rem;
+  line-height: 1.75;
   cursor: pointer;
   vertical-align: baseline;
+  pointer-events: none;
+  white-space: nowrap;
 }
-.cat-tags-collapsed .cat-highlight-tag:hover::after {
+.cat-highlight-tag-collapsed:hover::before {
   background-color: var(
     --cat-tag-collapsed-bg-hover,
     oklch(0.78 0.1 210 / 0.35)
   );
+}
+.cat-tags-collapsed .cat-highlight-tag:hover {
+  background: none !important;
 }
 
 /* Space chars: keep the real space in the DOM for Lexical tracking,
@@ -320,6 +330,26 @@ code {
 }
 .dark .cat-highlight-space-char::before {
   color: oklch(0.6 0.12 70);
+}
+
+/* Quote-char nodes — hide the original quote character and show the
+   replacement string (e.g. {{ or }}) via a ::before pseudo-element
+   reading data-display.  Keeps the 1-char DOM text for Lexical's
+   cursor / token-mode, so the caret can sit on either side. */
+.cat-highlight-quote-char {
+  color: transparent !important;
+  caret-color: var(--foreground, #000);
+  font-size: 0 !important;
+}
+.cat-highlight-quote-char::before {
+  content: attr(data-display);
+  color: oklch(0.6 0.15 50);
+  font-size: 0.9375rem;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.dark .cat-highlight-quote-char::before {
+  color: oklch(0.7 0.15 50);
 }
 
 /* NL-marker nodes (↩) — override all inherited highlight styles and
@@ -406,11 +436,11 @@ code {
 .dark .cat-highlight-tag.cat-highlight-glossary-search:hover {
   background-color: var(--cat-glossary-bg-hover, oklch(0.55 0.14 85 / 0.6));
 }
-.dark .cat-tags-collapsed .cat-highlight-tag::after {
+.dark .cat-highlight-tag-collapsed::before {
   color: var(--cat-tag-collapsed-text, oklch(0.75 0.1 210));
   background-color: var(--cat-tag-collapsed-bg, oklch(0.35 0.08 210 / 0.35));
 }
-.dark .cat-tags-collapsed .cat-highlight-tag:hover::after {
+.dark .cat-highlight-tag-collapsed:hover::before {
   background-color: var(
     --cat-tag-collapsed-bg-hover,
     oklch(0.35 0.08 210 / 0.5)

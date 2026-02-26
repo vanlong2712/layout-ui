@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
 
-import { CODEPOINT_DISPLAY_MAP } from './constants'
+import { getEffectiveCodepointMap } from './constants'
 
 import type {
   ISpellCheckValidation,
@@ -102,8 +102,9 @@ function SpecialCharPopoverContent({
   data: { name: string; char: string; codePoint: string }
 }) {
   const cp = data.char.codePointAt(0) ?? 0
+  const effectiveMap = getEffectiveCodepointMap()
   const displaySymbol =
-    CODEPOINT_DISPLAY_MAP[cp] ?? (data.char.trim() === '' ? '·' : data.char)
+    effectiveMap[cp] ?? (data.char.trim() === '' ? '·' : data.char)
 
   return (
     <div className="p-3 max-w-xs space-y-3">
@@ -140,20 +141,26 @@ function TagPopoverContent({
     displayText: string
   }
 }) {
+  // Non-HTML placeholders: tagName === originalText (the full match)
+  const isPlaceholder =
+    !data.isClosing && !data.isSelfClosing && data.tagName === data.originalText
+
   return (
     <div className="p-3 max-w-xs space-y-2">
-      <span className="cat-badge cat-badge-tag">Tag #{data.tagNumber}</span>
+      <span className="cat-badge cat-badge-tag">
+        {isPlaceholder ? 'Placeholder' : 'Tag'} #{data.tagNumber}
+      </span>
       <p className="text-sm leading-relaxed text-foreground">
-        {data.isClosing
-          ? 'Closing'
-          : data.isSelfClosing
-            ? 'Self-closing'
-            : 'Opening'}{' '}
-        tag:{' '}
+        {isPlaceholder
+          ? 'Placeholder'
+          : data.isClosing
+            ? 'Closing tag'
+            : data.isSelfClosing
+              ? 'Self-closing tag'
+              : 'Opening tag'}
+        :{' '}
         <strong className="font-semibold text-foreground">
-          &lt;{data.isClosing ? '/' : ''}
-          {data.tagName}
-          {data.isSelfClosing ? ' /' : ''}&gt;
+          {data.originalText}
         </strong>
       </p>
       <p className="text-xs text-muted-foreground">
@@ -168,6 +175,39 @@ function TagPopoverContent({
           {data.originalText}
         </code>
       </p>
+    </div>
+  )
+}
+
+function QuotePopoverContent({
+  data,
+}: {
+  data: {
+    quoteType: 'single' | 'double'
+    position: 'opening' | 'closing'
+    originalChar: string
+    replacementChar: string
+  }
+}) {
+  return (
+    <div className="p-3 max-w-xs space-y-2">
+      <span
+        className={`cat-badge cat-badge-quote cat-badge-quote-${data.quoteType}`}
+      >
+        {data.quoteType === 'single' ? 'Single Quote' : 'Double Quote'}
+      </span>
+      <p className="text-sm leading-relaxed text-foreground">
+        {data.position === 'opening' ? 'Opening' : 'Closing'} quote
+      </p>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <code className="rounded bg-muted px-1.5 py-0.5 font-mono">
+          {data.originalChar}
+        </code>
+        <span>→</span>
+        <code className="rounded bg-muted px-1.5 py-0.5 font-mono">
+          {data.replacementChar}
+        </code>
+      </div>
     </div>
   )
 }
@@ -254,6 +294,8 @@ export function HighlightPopover({
               <GlossaryPopoverContent data={ann.data} />
             ) : ann.type === 'tag' ? (
               <TagPopoverContent data={ann.data} />
+            ) : ann.type === 'quote' ? (
+              <QuotePopoverContent data={ann.data} />
             ) : (
               <SpecialCharPopoverContent data={ann.data} />
             )}

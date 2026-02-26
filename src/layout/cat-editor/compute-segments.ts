@@ -1,9 +1,12 @@
 import type {
   HighlightSegment,
+  IQuoteRule,
   ISpecialCharEntry,
   MooRule,
   RawRange,
 } from './types'
+
+import { detectQuotes } from '@/utils/detect-quotes'
 
 // ─── Tag detection helpers ────────────────────────────────────────────────────
 
@@ -115,6 +118,166 @@ function detectAndPairTags(
   return result
 }
 
+/** Regex to classify a match as an HTML tag (opening, closing, self-closing). */
+const HTML_TAG_CLASSIFY =
+  /^<(\/?)([a-zA-Z][a-zA-Z0-9]*)\b[^>]*?(\/?)>$/
+
+/** Detect tags using a custom pattern.  Matches that look like HTML tags
+ *  are paired using a stack (same logic as `detectAndPairTags`).  All other
+ *  matches are treated as standalone placeholders.  Everything is numbered
+ *  with a shared counter so collapsed display texts are unique. */
+function detectCustomTags(
+  text: string,
+  patternSource: string,
+): Array<{
+  start: number
+  end: number
+  tagName: string
+  tagNumber: number
+  isClosing: boolean
+  isSelfClosing: boolean
+  originalText: string
+  displayText: string
+}> {
+  let re: RegExp
+  try {
+    re = new RegExp(patternSource, 'g')
+  } catch {
+    return []
+  }
+
+  // 1. Collect all matches and classify HTML-like ones
+  interface RawMatch {
+    start: number
+    end: number
+    text: string
+    htmlName: string | null // non-null when the match is an HTML tag
+    isClosing: boolean
+    isSelfClosing: boolean
+  }
+  const matches: Array<RawMatch> = []
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    if (m[0].length === 0) {
+      re.lastIndex++
+      continue
+    }
+    const htmlMatch = HTML_TAG_CLASSIFY.exec(m[0])
+    if (htmlMatch) {
+      matches.push({
+        start: m.index,
+        end: m.index + m[0].length,
+        text: m[0],
+        htmlName: htmlMatch[2].toLowerCase(),
+        isClosing: htmlMatch[1] === '/',
+        isSelfClosing:
+          htmlMatch[3] === '/' || (!htmlMatch[1] && m[0].endsWith('/>')),
+      })
+    } else {
+      matches.push({
+        start: m.index,
+        end: m.index + m[0].length,
+        text: m[0],
+        htmlName: null,
+        isClosing: false,
+        isSelfClosing: false,
+      })
+    }
+  }
+
+  // 2. Pair HTML tags using a stack, assign numbers to everything
+  type ResultItem = {
+    start: number
+    end: number
+    tagName: string
+    tagNumber: number
+    isClosing: boolean
+    isSelfClosing: boolean
+    originalText: string
+    displayText: string
+  }
+  let nextNum = 1
+  const stack: Array<{ name: string; num: number; idx: number }> = []
+  const result: Array<ResultItem> = []
+
+  for (let i = 0; i < matches.length; i++) {
+    const raw = matches[i]
+
+    if (!raw.htmlName) {
+      // Non-HTML placeholder — standalone
+      const num = nextNum++
+      result.push({
+        start: raw.start,
+        end: raw.end,
+        tagName: raw.text,
+        tagNumber: num,
+        isClosing: false,
+        isSelfClosing: false,
+        originalText: raw.text,
+        displayText: `<${num}>`,
+      })
+      continue
+    }
+
+    // HTML tag
+    if (raw.isSelfClosing) {
+      const num = nextNum++
+      result.push({
+        start: raw.start,
+        end: raw.end,
+        tagName: raw.htmlName,
+        tagNumber: num,
+        isClosing: false,
+        isSelfClosing: true,
+        originalText: raw.text,
+        displayText: `<${num}/>`,
+      })
+    } else if (!raw.isClosing) {
+      // Opening — push onto stack
+      const num = nextNum++
+      stack.push({ name: raw.htmlName, num, idx: i })
+    } else {
+      // Closing — find matching opening (innermost first)
+      let matchIdx = -1
+      for (let j = stack.length - 1; j >= 0; j--) {
+        if (stack[j].name === raw.htmlName) {
+          matchIdx = j
+          break
+        }
+      }
+      if (matchIdx >= 0) {
+        const openEntry = stack[matchIdx]
+        stack.splice(matchIdx, 1)
+        const openRaw = matches[openEntry.idx]
+        result.push({
+          start: openRaw.start,
+          end: openRaw.end,
+          tagName: openRaw.htmlName!,
+          tagNumber: openEntry.num,
+          isClosing: false,
+          isSelfClosing: false,
+          originalText: openRaw.text,
+          displayText: `<${openEntry.num}>`,
+        })
+        result.push({
+          start: raw.start,
+          end: raw.end,
+          tagName: raw.htmlName,
+          tagNumber: openEntry.num,
+          isClosing: true,
+          isSelfClosing: false,
+          originalText: raw.text,
+          displayText: `</${openEntry.num}>`,
+        })
+      }
+      // Unpaired closing tags are silently skipped
+    }
+  }
+
+  result.sort((a, b) => a.start - b.start)
+  return result
+}
+
 // ─── Highlight computation (sweep-line with nesting) ──────────────────────────
 
 export function computeHighlightSegments(
@@ -191,7 +354,9 @@ export function computeHighlightSegments(
         }
       }
     } else if (rule.type === 'tag') {
-      const pairs = detectAndPairTags(text, rule.detectInner ?? true)
+      const pairs = rule.pattern
+        ? detectCustomTags(text, rule.pattern)
+        : detectAndPairTags(text, rule.detectInner ?? true)
       for (const p of pairs) {
         rawRanges.push({
           start: p.start,
@@ -209,6 +374,53 @@ export function computeHighlightSegments(
             },
           },
         })
+      }
+    } else if (rule.type === 'quote') {
+      // Quote detection: detect quotes and produce annotations for each
+      // opening/closing quote character with the configured replacement.
+      const quoteMap = detectQuotes(text, rule.detectOptions)
+      const seen = new Set<number>()
+      for (const [pos, qr] of quoteMap) {
+        if (seen.has(pos)) continue
+        seen.add(pos)
+
+        const mapping =
+          qr.quoteType === 'single' ? rule.singleQuote : rule.doubleQuote
+        const originalChar = qr.quoteType === 'single' ? "'" : '"'
+
+        // Opening quote
+        rawRanges.push({
+          start: qr.start,
+          end: qr.start + 1,
+          annotation: {
+            type: 'quote',
+            id: `q-${qr.quoteType}-open-${qr.start}`,
+            data: {
+              quoteType: qr.quoteType,
+              position: 'opening',
+              originalChar,
+              replacementChar: mapping.opening,
+            },
+          },
+        })
+
+        // Closing quote (only if the pair is closed)
+        if (qr.closed && qr.end !== null) {
+          rawRanges.push({
+            start: qr.end,
+            end: qr.end + 1,
+            annotation: {
+              type: 'quote',
+              id: `q-${qr.quoteType}-close-${qr.end}`,
+              data: {
+                quoteType: qr.quoteType,
+                position: 'closing',
+                originalChar,
+                replacementChar: mapping.closing,
+              },
+            },
+          })
+        }
       }
     } else {
       // special-char
@@ -253,15 +465,31 @@ export function computeHighlightSegments(
   //    ranges that overlap with a tag so the sweep-line never splits a tag
   //    into sub-segments.  When tags are expanded (or absent), keep every
   //    range so search/glossary can highlight inside tags normally.
+  //
+  //    Quote annotations that overlap with tag ranges are suppressed by
+  //    default because quote characters inside HTML attributes (e.g.
+  //    href="…") are tag syntax, not text-level quotes. The quote rule's
+  //    `detectInTags` flag lets users opt-in to showing them.
   const tagRules = rules.filter((r) => r.type === 'tag')
   const tagsCollapsed = tagRules.some((r) => r.collapsed)
   const tagRanges = rawRanges.filter((r) => r.annotation.type === 'tag')
+  const quoteDetectInTags = rules
+    .filter((r): r is IQuoteRule => r.type === 'quote')
+    .some((r) => r.detectInTags)
 
   let filteredRanges = rawRanges
-  if (tagRanges.length > 0 && tagsCollapsed) {
+  if (tagRanges.length > 0) {
     filteredRanges = rawRanges.filter((r) => {
       if (r.annotation.type === 'tag') return true
-      return !tagRanges.some((t) => r.start < t.end && r.end > t.start)
+      // Suppress quotes inside tags unless detectInTags is enabled
+      if (r.annotation.type === 'quote' && !quoteDetectInTags) {
+        return !tagRanges.some((t) => r.start >= t.start && r.end <= t.end)
+      }
+      // Suppress everything else only when tags are collapsed
+      if (tagsCollapsed) {
+        return !tagRanges.some((t) => r.start < t.end && r.end > t.start)
+      }
+      return true
     })
   }
 

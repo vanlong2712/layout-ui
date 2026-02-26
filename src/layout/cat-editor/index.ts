@@ -3,7 +3,7 @@
 export { CATEditor, default } from './CATEditor'
 export type { CATEditorProps } from './CATEditor'
 
-export { CODEPOINT_DISPLAY_MAP } from './constants'
+export { CODEPOINT_DISPLAY_MAP, getEffectiveCodepointMap } from './constants'
 
 export type {
   CATEditorRef,
@@ -11,6 +11,8 @@ export type {
   HighlightSegment,
   IGlossaryEntry,
   IGlossaryRule,
+  IQuoteRule,
+  IQuoteRuleMapping,
   ISpecialCharEntry,
   ISpecialCharRule,
   ISpellCheckRule,
@@ -21,6 +23,7 @@ export type {
   PopoverContentRenderer,
   PopoverContentRendererProps,
   PopoverState,
+  QuoteAnnotation,
   RawRange,
   RuleAnnotation,
   SpellCheckAnnotation,

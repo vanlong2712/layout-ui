@@ -15,7 +15,11 @@ import {
 import { useCallback, useEffect, useRef } from 'react'
 
 import { computeHighlightSegments } from './compute-segments'
-import { CODEPOINT_DISPLAY_MAP, NL_MARKER_PREFIX } from './constants'
+import {
+  CODEPOINT_DISPLAY_MAP,
+  NL_MARKER_PREFIX,
+  setCodepointOverrides,
+} from './constants'
 import { $createHighlightNode, $isHighlightNode } from './highlight-node'
 import { $globalOffsetToPoint, $pointToGlobalOffset } from './selection-helpers'
 
@@ -25,7 +29,7 @@ import type {
   LexicalNode,
   PointType,
 } from 'lexical'
-import type { MooRule, RuleAnnotation } from './types'
+import type { ISpecialCharRule, MooRule, RuleAnnotation } from './types'
 
 // ─── Highlights Plugin ────────────────────────────────────────────────────────
 
@@ -42,6 +46,22 @@ export function HighlightsPlugin({
   const rafRef = useRef<number | null>(null)
 
   const applyHighlights = useCallback(() => {
+    // Sync code-point display overrides from special-char rule (if any)
+    const specialCharRule = rules.find(
+      (r): r is ISpecialCharRule => r.type === 'special-char',
+    )
+    setCodepointOverrides(specialCharRule?.codepointDisplayMap)
+
+    // Check focus BEFORE editor.update() — if the editor doesn't own
+    // focus we must not restore (or leave) a selection, otherwise
+    // Lexical's DOM reconciliation will move the browser caret back
+    // into the editor, stealing focus from external inputs like the
+    // search field.
+    const editorElement = editor.getRootElement()
+    const editorHasFocus =
+      editorElement != null &&
+      editorElement.contains(editorElement.ownerDocument.activeElement)
+
     editor.update(
       () => {
         // Tag so our own listener skips this update
@@ -133,34 +153,58 @@ export function HighlightsPlugin({
               paragraph.append($createTextNode(fullText.slice(pos, sStart)))
             }
 
-            // Highlighted text — carries all annotation types & IDs
-            // Glossary annotations include their label in the CSS type
-            // so each label gets a unique highlight class.
-            const types = [
-              ...new Set(
-                seg.annotations.map((a) =>
-                  a.type === 'glossary' ? `glossary-${a.data.label}` : a.type,
-                ),
-              ),
-            ].join(',')
-            const ids = seg.annotations.map((a) => a.id).join(',')
-
-            // If segment contains a tag annotation, pass its displayText.
-            // Tags are token-mode (atomic) only when collapsed.
+            // Detect collapsed-tag state early so it can influence types.
             const tagAnn = seg.annotations.find((a) => a.type === 'tag')
-            const displayText =
-              tagAnn?.type === 'tag' ? tagAnn.data.displayText : undefined
             const tagsCollapsed = rules
               .filter((r) => r.type === 'tag')
               .some((r) => r.collapsed)
+
+            // Highlighted text — carries all annotation types & IDs
+            // Glossary annotations include their label in the CSS type
+            // so each label gets a unique highlight class.
+            const typesArr = [
+              ...new Set(
+                seg.annotations.map((a) => {
+                  if (a.type === 'glossary') return `glossary-${a.data.label}`
+                  if (a.type === 'spellcheck')
+                    return `spellcheck-${a.data.categoryId}`
+                  return a.type
+                }),
+              ),
+            ]
+            // Mark collapsed tags explicitly so highlight-node.ts can
+            // distinguish from non-collapsed tags that carry displayText
+            // from a quote annotation.
+            if (tagAnn && tagsCollapsed) {
+              typesArr.push('tag-collapsed')
+            }
+            const types = typesArr.join(',')
+            const ids = seg.annotations.map((a) => a.id).join(',')
+            // Only use tag displayText when collapsed — otherwise it would
+            // override the quote replacement char for segments that carry
+            // both tag and quote annotations.
+            const tagDisplayText =
+              tagAnn?.type === 'tag' && tagsCollapsed
+                ? tagAnn.data.displayText
+                : undefined
             const isTagToken = !!tagAnn && tagsCollapsed
+
+            // Quote annotations: pass the replacement char as displayText
+            // and force token mode, similar to special-char nodes.
+            const quoteAnn = seg.annotations.find((a) => a.type === 'quote')
+            const quoteDisplayText =
+              quoteAnn?.type === 'quote'
+                ? quoteAnn.data.replacementChar
+                : undefined
+            const isQuoteToken = !!quoteAnn
+
             paragraph.append(
               $createHighlightNode(
                 fullText.slice(sStart, sEnd),
                 types,
                 ids,
-                displayText,
-                isTagToken,
+                tagDisplayText ?? quoteDisplayText,
+                isTagToken || isQuoteToken,
               ),
             )
 
@@ -185,9 +229,12 @@ export function HighlightsPlugin({
               const nlAnns = nlSegments.flatMap((s) => s.annotations)
               const types = [
                 ...new Set(
-                  nlAnns.map((a) =>
-                    a.type === 'glossary' ? `glossary-${a.data.label}` : a.type,
-                  ),
+                  nlAnns.map((a) => {
+                    if (a.type === 'glossary') return `glossary-${a.data.label}`
+                    if (a.type === 'spellcheck')
+                      return `spellcheck-${a.data.categoryId}`
+                    return a.type
+                  }),
                 ),
               ].join(',')
               const ids = nlAnns.map((a) => a.id).join(',')
@@ -213,7 +260,12 @@ export function HighlightsPlugin({
         }
 
         // ── Restore selection at the equivalent position ──
-        if (savedAnchor !== null && savedFocus !== null) {
+        // Only restore when the editor is focused, otherwise the
+        // $setSelection call will steal focus from external inputs
+        // (e.g. search field).  Explicitly null-out the selection
+        // so Lexical's DOM reconciliation doesn't try to apply a
+        // stale selection either.
+        if (editorHasFocus && savedAnchor !== null && savedFocus !== null) {
           const anchorPt = $globalOffsetToPoint(savedAnchor)
           const focusPt = $globalOffsetToPoint(savedFocus)
           if (anchorPt && focusPt) {
@@ -222,6 +274,8 @@ export function HighlightsPlugin({
             sel.focus.set(focusPt.key, focusPt.offset, focusPt.type)
             $setSelection(sel)
           }
+        } else {
+          $setSelection(null)
         }
       },
       { tag: 'historic' },

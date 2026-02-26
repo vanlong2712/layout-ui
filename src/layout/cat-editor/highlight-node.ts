@@ -59,6 +59,9 @@ export class HighlightNode extends TextNode {
       if (t.startsWith('glossary-')) {
         dom.classList.add('cat-highlight-glossary')
       }
+      if (t.startsWith('spellcheck-')) {
+        dom.classList.add('cat-highlight-spellcheck')
+      }
     }
     if (this.__highlightTypes.includes(',')) {
       dom.classList.add('cat-highlight-nested')
@@ -76,6 +79,14 @@ export class HighlightNode extends TextNode {
     // Tag nodes: store display text for CSS-based collapsed rendering
     if (this.__displayText) {
       dom.dataset.display = this.__displayText
+    }
+
+    // Collapsed tag nodes (token mode): put a single zero-width space
+    // in the DOM so the browser cannot place a caret inside the
+    // multi-char display text.  The visual tag label (e.g. <1>) is
+    // rendered by CSS ::before via data-display.
+    if (this.__highlightTypes.split(',').includes('tag-collapsed')) {
+      dom.textContent = '\u200B'
     }
 
     // Special-char nodes in token mode: cursor can only sit before/after,
@@ -96,6 +107,18 @@ export class HighlightNode extends TextNode {
       }
     }
 
+    // Quote nodes: use a CSS-based approach to visually replace the quote
+    // character.  The original 1-char text stays in the DOM (so Lexical's
+    // token mode handles cursor placement correctly), while CSS hides it
+    // and shows the replacement via a ::before pseudo-element reading
+    // data-display.  This avoids contentEditable=false which kills carets.
+    if (
+      this.__highlightTypes.split(',').includes('quote') &&
+      this.__displayText
+    ) {
+      dom.classList.add('cat-highlight-quote-char')
+    }
+
     return dom
   }
 
@@ -107,12 +130,18 @@ export class HighlightNode extends TextNode {
         if (t.startsWith('glossary-')) {
           dom.classList.remove('cat-highlight-glossary')
         }
+        if (t.startsWith('spellcheck-')) {
+          dom.classList.remove('cat-highlight-spellcheck')
+        }
       }
       dom.classList.remove('cat-highlight-nested')
       for (const t of this.__highlightTypes.split(',')) {
         dom.classList.add(`cat-highlight-${t}`)
         if (t.startsWith('glossary-')) {
           dom.classList.add('cat-highlight-glossary')
+        }
+        if (t.startsWith('spellcheck-')) {
+          dom.classList.add('cat-highlight-spellcheck')
         }
       }
       if (this.__highlightTypes.includes(',')) {
@@ -133,6 +162,11 @@ export class HighlightNode extends TextNode {
       }
     }
 
+    // Collapsed tag nodes: keep DOM in sync
+    if (this.__highlightTypes.split(',').includes('tag-collapsed')) {
+      dom.textContent = '\u200B'
+    }
+
     // Re-apply invisible char replacement after any DOM updates
     if (this.__highlightTypes.split(',').includes('special-char')) {
       if (this.__text === ' ') {
@@ -144,6 +178,16 @@ export class HighlightNode extends TextNode {
           dom.textContent = replaced
         }
       }
+    }
+
+    // Re-apply quote visual class after DOM updates
+    if (
+      this.__highlightTypes.split(',').includes('quote') &&
+      this.__displayText
+    ) {
+      dom.classList.add('cat-highlight-quote-char')
+    } else if (prevNode.__highlightTypes.split(',').includes('quote')) {
+      dom.classList.remove('cat-highlight-quote-char')
     }
 
     return updated

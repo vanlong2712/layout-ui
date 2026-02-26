@@ -47,6 +47,10 @@ export interface ISpecialCharEntry {
 export interface ISpecialCharRule {
   type: 'special-char'
   entries: Array<ISpecialCharEntry>
+  /** Optional custom code-point → display symbol map.
+   *  Merged on top of the built-in `CODEPOINT_DISPLAY_MAP` from constants.ts.
+   *  Pass an entry with an empty string value to hide a built-in symbol. */
+  codepointDisplayMap?: Record<number, string>
 }
 
 // ─── Tag collapsing ───────────────────────────────────────────────────────────
@@ -60,6 +64,33 @@ export interface ITagRule {
    *  suppressed) and the CSS collapsed rendering kicks in.
    *  When false/undefined, tags can be split by search/glossary highlights. */
   collapsed?: boolean
+  /** Custom regex pattern (source string) for matching tags / placeholders.
+   *  When provided, every match is treated as a standalone tag token
+   *  numbered sequentially (`<1>`, `<2>`, …).
+   *  When omitted, the built-in HTML tag detection with open/close pairing is used.
+   *  @example '<[^>]+>|(\\{\\{[^{}]*\\}\\})|(\\{[^{}]*\\})' */
+  pattern?: string
+}
+
+// ─── Quote detection ──────────────────────────────────────────────────────────
+// Uses detect-quotes utility and replaces matched quotes with configured chars.
+
+export interface IQuoteRuleMapping {
+  opening: string
+  closing: string
+}
+
+export interface IQuoteRule {
+  type: 'quote'
+  singleQuote: IQuoteRuleMapping
+  doubleQuote: IQuoteRuleMapping
+  /** When `true`, quote replacement is also applied inside HTML tags
+   *  (e.g. attribute values like `href="…"`).  When `false` (the default),
+   *  quotes that fall inside a tag range are suppressed. */
+  detectInTags?: boolean
+  /** Options forwarded to the `detectQuotes()` utility.
+   *  Allows customising contraction escaping, nesting behaviour, etc. */
+  detectOptions?: import('@/utils/detect-quotes').DetectQuotesOptions
 }
 
 export type MooRule =
@@ -67,6 +98,7 @@ export type MooRule =
   | IGlossaryRule
   | ISpecialCharRule
   | ITagRule
+  | IQuoteRule
 
 // ─── Rule highlight annotations ───────────────────────────────────────────────
 
@@ -101,11 +133,23 @@ export interface TagAnnotation {
   }
 }
 
+export interface QuoteAnnotation {
+  type: 'quote'
+  id: string
+  data: {
+    quoteType: 'single' | 'double'
+    position: 'opening' | 'closing'
+    originalChar: string
+    replacementChar: string
+  }
+}
+
 export type RuleAnnotation =
   | SpellCheckAnnotation
   | GlossaryAnnotation
   | SpecialCharAnnotation
   | TagAnnotation
+  | QuoteAnnotation
 
 // Raw range from rule matching (before nesting resolution)
 export interface RawRange {
