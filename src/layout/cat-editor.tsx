@@ -394,10 +394,7 @@ function computeHighlightSegments(
         let matchStart = -1
         let matchEnd = -1
 
-        if (
-          v.end <= text.length &&
-          text.slice(v.start, v.end) === v.content
-        ) {
+        if (v.end <= text.length && text.slice(v.start, v.end) === v.content) {
           matchStart = v.start
           matchEnd = v.end
         } else {
