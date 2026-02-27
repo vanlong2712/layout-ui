@@ -1,9 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
 import type { QuoteRange } from '@/utils/detect-quotes'
 
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
@@ -201,32 +202,145 @@ function ResultsTable({ quotes }: { quotes: Map<number, QuoteRange> }) {
   )
 }
 
-// ─── Escape patterns viewer ───────────────────────────────────────────────────
+// ─── Contraction list editor ──────────────────────────────────────────────────
 
-function EscapePatternsInfo() {
+const DEFAULT_CONTRACTIONS = [...BUILTIN_ESCAPE_PATTERNS.english]
+
+function ContractionListEditor({
+  contractions,
+  onChange,
+  disabled,
+}: {
+  contractions: Array<string>
+  onChange: (list: Array<string>) => void
+  disabled?: boolean
+}) {
+  const [inputValue, setInputValue] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  const isDefault = useMemo(() => {
+    if (contractions.length !== DEFAULT_CONTRACTIONS.length) return false
+    return DEFAULT_CONTRACTIONS.every((c) => contractions.includes(c))
+  }, [contractions])
+
+  function handleAdd() {
+    const value = inputValue.trim()
+    if (!value) return
+    if (!value.includes("'")) {
+      setError("Pattern must contain an apostrophe (').")
+      return
+    }
+    if (contractions.includes(value)) {
+      setError('This pattern already exists.')
+      return
+    }
+    setError(null)
+    onChange([...contractions, value])
+    setInputValue('')
+  }
+
+  function handleRemove(pattern: string) {
+    onChange(contractions.filter((c) => c !== pattern))
+  }
+
+  function handleReset() {
+    onChange([...DEFAULT_CONTRACTIONS])
+    setError(null)
+    setInputValue('')
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleAdd()
+    }
+  }
+
   return (
-    <details className="text-sm text-muted-foreground mt-2">
-      <summary className="cursor-pointer hover:text-foreground transition-colors">
-        View built-in escape patterns
-      </summary>
-      <div className="mt-2 p-3 rounded-lg bg-muted font-mono text-xs space-y-1">
-        {Object.entries(BUILTIN_ESCAPE_PATTERNS).map(([lang, patterns]) => (
-          <div key={lang}>
-            <span className="text-cyan-700 dark:text-cyan-400">{lang}</span>:{' '}
-            {patterns.length > 0 ? (
-              patterns.map((p, i) => (
-                <span key={p}>
-                  {i > 0 && ', '}
-                  <code className="text-amber-600 dark:text-amber-300">{`"${p}"`}</code>
-                </span>
-              ))
-            ) : (
-              <span className="text-muted-foreground/60">[]</span>
-            )}
-          </div>
-        ))}
+    <div
+      className={`space-y-3 rounded-lg border border-border p-4 transition-opacity ${
+        disabled ? 'opacity-40 pointer-events-none' : ''
+      }`}
+    >
+      <div className="flex items-center justify-between">
+        <Label className="text-muted-foreground text-xs uppercase tracking-wider">
+          Contraction Patterns
+          <span className="ml-2 normal-case font-normal text-muted-foreground/60">
+            ({contractions.length} pattern{contractions.length !== 1 && 's'})
+          </span>
+        </Label>
+        {!isDefault && (
+          <button
+            type="button"
+            onClick={handleReset}
+            className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
+          >
+            Reset to defaults
+          </button>
+        )}
       </div>
-    </details>
+
+      {/* Tag list */}
+      <div className="flex flex-wrap gap-1.5">
+        {contractions.length === 0 ? (
+          <span className="text-xs text-muted-foreground/60 italic">
+            No patterns — all apostrophes will be treated as quote delimiters.
+          </span>
+        ) : (
+          contractions.map((pattern) => (
+            <span
+              key={pattern}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted text-xs font-mono text-foreground border border-border group"
+            >
+              {pattern}
+              <button
+                type="button"
+                onClick={() => handleRemove(pattern)}
+                className="ml-0.5 text-muted-foreground hover:text-red-500 transition-colors"
+                aria-label={`Remove ${pattern}`}
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  className="w-3 h-3"
+                >
+                  <path d="M5.28 4.22a.75.75 0 0 0-1.06 1.06L6.94 8l-2.72 2.72a.75.75 0 1 0 1.06 1.06L8 9.06l2.72 2.72a.75.75 0 1 0 1.06-1.06L9.06 8l2.72-2.72a.75.75 0 0 0-1.06-1.06L8 6.94 5.28 4.22Z" />
+                </svg>
+              </button>
+            </span>
+          ))
+        )}
+      </div>
+
+      {/* Add input */}
+      <div className="flex gap-2">
+        <div className="flex-1 space-y-1">
+          <Input
+            value={inputValue}
+            onChange={(e) => {
+              setInputValue(e.target.value)
+              setError(null)
+            }}
+            onKeyDown={handleKeyDown}
+            placeholder="e.g. n't, 's, 're …"
+            className="font-mono text-sm h-8"
+          />
+          {error && (
+            <p className="text-xs text-red-500 dark:text-red-400">{error}</p>
+          )}
+        </div>
+        <Button
+          type="button"
+          onClick={handleAdd}
+          size="sm"
+          variant="outline"
+          className="h-8 px-3"
+        >
+          Add
+        </Button>
+      </div>
+    </div>
   )
 }
 
@@ -237,15 +351,27 @@ function DetectQuotesDemo() {
   const [escapeContractions, setEscapeContractions] = useState(true)
   const [allowNesting, setAllowNesting] = useState(false)
   const [detectInnerQuotes, setDetectInnerQuotes] = useState(true)
+  const [customContractions, setCustomContractions] = useState<Array<string>>(
+    () => [...DEFAULT_CONTRACTIONS],
+  )
   const [quotes, setQuotes] = useState<Map<number, QuoteRange>>(new Map())
   const [hasRun, setHasRun] = useState(false)
 
   const charCount = useMemo(() => text.length, [text])
 
+  const handleContractionsChange = useCallback((list: Array<string>) => {
+    setCustomContractions(list)
+    setQuotes(new Map())
+    setHasRun(false)
+  }, [])
+
   function handleDetect() {
+    const customPatterns: Record<string, Array<string>> = {
+      custom: customContractions,
+    }
     const result = detectQuotes(text, {
       escapeContractions,
-      escapePatterns: 'english',
+      escapePatterns: customPatterns,
       allowNesting,
       detectInnerQuotes,
     })
@@ -413,7 +539,11 @@ function DetectQuotesDemo() {
             </div>
           </div>
 
-          <EscapePatternsInfo />
+          <ContractionListEditor
+            contractions={customContractions}
+            onChange={handleContractionsChange}
+            disabled={!escapeContractions}
+          />
         </div>
 
         {/* Results */}
