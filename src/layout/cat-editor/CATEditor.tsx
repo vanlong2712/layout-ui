@@ -13,9 +13,11 @@ import {
   $createTextNode,
   $getNodeByKey,
   $getRoot,
+  $isParagraphNode,
   $setSelection,
   COMMAND_PRIORITY_CRITICAL,
   KEY_DOWN_COMMAND,
+  PASTE_COMMAND,
 } from 'lexical'
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
@@ -35,7 +37,11 @@ import {
   NLMarkerNavigationPlugin,
 } from './plugins'
 import { HighlightPopover } from './popover'
-import { $globalOffsetToPoint, $pointToGlobalOffset } from './selection-helpers'
+import {
+  $getNodeKeysInRange,
+  $globalOffsetToPoint,
+  $pointToGlobalOffset,
+} from './selection-helpers'
 
 import type { LexicalEditor } from 'lexical'
 
@@ -193,6 +199,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
 
     // ── Flash highlight state ──────────────────────────────────────────────
     const flashIdRef = useRef<string | null>(null)
+    const flashRangeRef = useRef<{ start: number; end: number } | null>(null)
     const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const flashEditUnregRef = useRef<(() => void) | null>(null)
 
@@ -214,9 +221,34 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
       })
     }, [])
 
+    /** Apply the `cat-highlight-flash` class to all Lexical DOM elements
+     *  whose global text offset overlaps the given range. */
+    const applyFlashRange = useCallback((start: number, end: number) => {
+      const editor = editorRef.current
+      const container = containerRef.current
+      if (!editor || !container) return
+
+      // Remove previous flash classes
+      container
+        .querySelectorAll('.cat-highlight-flash')
+        .forEach((el) => el.classList.remove('cat-highlight-flash'))
+
+      // Walk Lexical tree to find overlapping node keys
+      editor.getEditorState().read(() => {
+        const keys = $getNodeKeysInRange(start, end)
+        for (const key of keys) {
+          const domEl = editor.getElementByKey(key)
+          if (domEl) {
+            domEl.classList.add('cat-highlight-flash')
+          }
+        }
+      })
+    }, [])
+
     /** Remove all flash highlight classes and clean up timers/listeners. */
     const clearFlashInner = useCallback(() => {
       flashIdRef.current = null
+      flashRangeRef.current = null
       if (flashTimerRef.current) {
         clearTimeout(flashTimerRef.current)
         flashTimerRef.current = null
@@ -333,6 +365,42 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
                       applyFlashClass(flashIdRef.current!),
                     )
                   }
+                  if (flashRangeRef.current) {
+                    const { start, end } = flashRangeRef.current
+                    requestAnimationFrame(() => applyFlashRange(start, end))
+                  }
+                  return
+                }
+                // User edit — clear flash
+                clearFlashInner()
+              },
+            )
+          }
+        },
+        flashRange: (start: number, end: number, durationMs = 5000) => {
+          // Clear any existing flash first
+          clearFlashInner()
+
+          flashRangeRef.current = { start, end }
+          // Apply class to current DOM
+          applyFlashRange(start, end)
+
+          // Auto-remove after timeout
+          flashTimerRef.current = setTimeout(() => {
+            clearFlashInner()
+          }, durationMs)
+
+          // Remove on first user edit (not our own highlight rebuilds).
+          const editor = editorRef.current
+          if (editor) {
+            flashEditUnregRef.current = editor.registerUpdateListener(
+              ({ tags }) => {
+                if (tags.has('cat-highlights')) {
+                  // Highlight rebuild — re-apply flash class to new DOM elements
+                  if (flashRangeRef.current) {
+                    const { start: s, end: e } = flashRangeRef.current
+                    requestAnimationFrame(() => applyFlashRange(s, e))
+                  }
                   return
                 }
                 // User edit — clear flash
@@ -363,6 +431,11 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
             const newText = fullText.split(search).join(replacement)
             root.clear()
             const lines = newText.split('\n')
+            // Drop trailing empty segment so texts ending with \n
+            // don't produce an extra empty paragraph.
+            if (lines.length > 1 && lines[lines.length - 1] === '') {
+              lines.pop()
+            }
             for (const line of lines) {
               const p = $createParagraphNode()
               p.append($createTextNode(line))
@@ -375,8 +448,32 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
         clearFlash: () => {
           clearFlashInner()
         },
+        setText: (text: string) => {
+          const editor = editorRef.current
+          if (!editor) return
+          editor.update(() => {
+            const root = $getRoot()
+            root.clear()
+            if (!text) {
+              // Empty text: create one empty paragraph (standard empty state)
+              root.append($createParagraphNode())
+              return
+            }
+            const lines = text.split('\n')
+            // Drop trailing empty segment so e.g. "hello\n" doesn't
+            // produce an extra empty paragraph.
+            if (lines.length > 1 && lines[lines.length - 1] === '') {
+              lines.pop()
+            }
+            for (const line of lines) {
+              const p = $createParagraphNode()
+              p.append($createTextNode(line))
+              root.append(p)
+            }
+          })
+        },
       }),
-      [applyFlashClass, clearFlashInner],
+      [applyFlashClass, applyFlashRange, clearFlashInner],
     )
 
     // Build the effective codepoint display map: atomic keyword entry
@@ -684,6 +781,9 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
             {onKeyDownProp && <KeyDownPlugin onKeyDown={onKeyDownProp} />}
             {/* Strip Lexical's per-paragraph dir when an explicit dir is set */}
             {dir && dir !== 'auto' && <DirectionPlugin dir={dir} />}
+            {/* Remove trailing empty paragraph that Lexical sometimes
+                creates after paste into a cleared editor */}
+            <PasteCleanupPlugin />
             {/* Mention typeahead plugin — enabled when a mention rule is present */}
             {rules
               .filter((r): r is IMentionRule => r.type === 'mention')
@@ -824,6 +924,52 @@ function DirectionPlugin({ dir }: { dir: 'ltr' | 'rtl' }) {
       })
     }
   }, [editor, dir])
+
+  return null
+}
+
+/** Removes the trailing empty paragraph that Lexical sometimes creates
+ *  when pasting into a cleared editor (Ctrl+A → Backspace → Ctrl+V).
+ *  Uses a flag set in the PASTE_COMMAND handler, then cleans up in the
+ *  next update listener tick after Lexical finishes processing the paste. */
+function PasteCleanupPlugin() {
+  const [editor] = useLexicalComposerContext()
+  const isPastingRef = useRef(false)
+
+  useEffect(() => {
+    const unregCommand = editor.registerCommand(
+      PASTE_COMMAND,
+      () => {
+        isPastingRef.current = true
+        return false // let Lexical handle the paste normally
+      },
+      COMMAND_PRIORITY_CRITICAL,
+    )
+
+    const unregUpdate = editor.registerUpdateListener(() => {
+      if (!isPastingRef.current) return
+      isPastingRef.current = false
+
+      editor.update(
+        () => {
+          const root = $getRoot()
+          const children = root.getChildren()
+          if (children.length > 1) {
+            const last = children[children.length - 1]
+            if ($isParagraphNode(last) && last.getTextContentSize() === 0) {
+              last.remove()
+            }
+          }
+        },
+        { tag: 'history-merge' },
+      )
+    })
+
+    return () => {
+      unregCommand()
+      unregUpdate()
+    }
+  }, [editor])
 
   return null
 }

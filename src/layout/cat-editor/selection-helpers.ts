@@ -4,7 +4,7 @@ import { NL_MARKER_PREFIX } from './constants'
 import { $isHighlightNode } from './highlight-node'
 import { $isMentionNode } from './mention-node'
 
-import type { ElementNode } from 'lexical'
+import type { ElementNode, NodeKey } from 'lexical'
 import type { HighlightNode } from './highlight-node'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -211,4 +211,49 @@ export function $globalOffsetToPoint(
   }
 
   return null
+}
+
+// ─── Range → node-key mapping ─────────────────────────────────────────────────
+
+/** Walk the Lexical tree and return the keys of all nodes whose global
+ *  offset range `[nodeStart, nodeEnd)` overlaps `[start, end)`.
+ *  Must be called inside `editor.getEditorState().read()`. */
+export function $getNodeKeysInRange(
+  start: number,
+  end: number,
+): Array<NodeKey> {
+  const keys: Array<NodeKey> = []
+  const root = $getRoot()
+  const paragraphs = root.getChildren()
+  let globalOffset = 0
+
+  for (let pi = 0; pi < paragraphs.length; pi++) {
+    if (pi > 0) globalOffset += 1 // \n between paragraphs
+    const p = paragraphs[pi]
+    if (!('getChildren' in p)) continue
+
+    for (const child of (p as ElementNode).getChildren()) {
+      if (
+        $isHighlightNode(child) &&
+        child.__ruleIds.startsWith(NL_MARKER_PREFIX)
+      )
+        continue
+
+      const textLen = child.getTextContent().length
+      const nodeStart = globalOffset
+      const nodeEnd = globalOffset + textLen
+
+      // Overlap test: [nodeStart, nodeEnd) ∩ [start, end) ≠ ∅
+      if (nodeStart < end && nodeEnd > start) {
+        keys.push(child.getKey())
+      }
+
+      globalOffset = nodeEnd
+    }
+
+    // Early exit: past the requested range
+    if (globalOffset >= end) break
+  }
+
+  return keys
 }

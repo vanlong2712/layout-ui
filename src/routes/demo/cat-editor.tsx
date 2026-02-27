@@ -2,26 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
-import {
-  AtSign,
-  BookOpen,
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  Code,
-  Database,
-  Eye,
-  Link2,
-  Minus,
-  MousePointerClick,
-  Plus,
-  Quote,
-  RotateCcw,
-  Search,
-  Settings,
-  SpellCheck,
-  Type,
-} from 'lucide-react'
+import { CheckCircle2, Plus } from 'lucide-react'
 
 import type { DetectQuotesOptions } from '@/utils/detect-quotes'
 
@@ -45,14 +26,12 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { layoutDemos } from '@/data/layout-demos'
+import {
+  CATEditorLegend,
+  CATEditorSnippetsAndFlash,
+  CATEditorToolbar,
+} from '@/components/cat-editor-toolbar'
 
 export const Route = createFileRoute('/demo/cat-editor')({
   component: CATEditorDemo,
@@ -411,46 +390,16 @@ const TEXT_SNIPPETS = [
   { label: 'Line break', text: '\n' },
 ]
 
-// ─── Collapsible section helper ──────────────────────────────────────────────
+// ─── Flash-range presets ─────────────────────────────────────────────────────
 
-function Section({
-  title,
-  icon,
-  enabled,
-  onToggle,
-  children,
-  defaultOpen = false,
-}: {
-  title: string
-  icon: React.ReactNode
-  enabled: boolean
-  onToggle: (v: boolean) => void
-  children: React.ReactNode
-  defaultOpen?: boolean
-}) {
-  const [open, setOpen] = useState(defaultOpen)
-  return (
-    <div className="rounded-lg border border-border bg-card overflow-hidden">
-      <div className="flex items-center gap-3 px-3 py-2 bg-muted/30">
-        <Switch checked={enabled} onCheckedChange={onToggle} />
-        <button
-          type="button"
-          className="flex items-center gap-1.5 text-sm font-medium text-foreground hover:text-foreground/80 flex-1 text-left"
-          onClick={() => setOpen(!open)}
-        >
-          {icon}
-          {title}
-          {open ? (
-            <ChevronDown className="h-3.5 w-3.5 ml-auto text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-3.5 w-3.5 ml-auto text-muted-foreground" />
-          )}
-        </button>
-      </div>
-      {open && <div className="p-3 border-t border-border">{children}</div>}
-    </div>
-  )
-}
+const FLASH_RANGES = [
+  { label: '"layz"', start: 35, end: 39 },
+  { label: '"sentance"', start: 50, end: 58 },
+  { label: '"severl"', start: 68, end: 74 },
+  { label: '"speling"', start: 75, end: 82 },
+  { label: 'First 10 chars', start: 0, end: 10 },
+  { label: 'Chars 100–120', start: 100, end: 120 },
+]
 
 // ─── Demo component ──────────────────────────────────────────────────────────
 
@@ -846,661 +795,95 @@ function CATEditorDemo() {
           </p>
         </div>
 
-        {/* ─── Rule editors ─────────────────────────────────────────── */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-foreground">
-              Rules Configuration
-            </h2>
+        {/* ─── Compact toolbar ──────────────────────────────────────── */}
+        <CATEditorToolbar
+          onReset={handleReset}
+          spellcheckEnabled={spellcheckEnabled}
+          onSpellcheckEnabledChange={setSpellcheckEnabled}
+          spellcheckData={spellcheckData}
+          onSpellcheckUpdate={updateSpellcheck}
+          onSpellcheckRemove={removeSpellcheck}
+          onSpellcheckAdd={addSpellcheck}
+          flashedSpellcheckId={flashedSpellcheckId}
+          onFlashSpellcheck={handleFlashSpellcheck}
+          lexiqaEnabled={lexiqaEnabled}
+          onLexiqaEnabledChange={setLexiqaEnabled}
+          lexiqaEntries={lexiqaEntries}
+          onLexiqaUpdate={(idx, patch) =>
+            updateKeyword(setLexiqaEntries, idx, patch)
+          }
+          onLexiqaRemove={(idx) => removeKeyword(setLexiqaEntries, idx)}
+          onLexiqaAdd={() => addKeyword(setLexiqaEntries)}
+          tbTargetEnabled={tbTargetEnabled}
+          onTbTargetEnabledChange={setTbTargetEnabled}
+          tbEntries={tbEntries}
+          onTbUpdate={(idx, patch) => updateKeyword(setTbEntries, idx, patch)}
+          onTbRemove={(idx) => removeKeyword(setTbEntries, idx)}
+          onTbAdd={() => addKeyword(setTbEntries)}
+          specialCharEnabled={specialCharEnabled}
+          onSpecialCharEnabledChange={setSpecialCharEnabled}
+          specialCharEntries={specialCharEntries}
+          onSpecialCharUpdate={updateSpecialChar}
+          onSpecialCharRemove={removeSpecialChar}
+          onSpecialCharAdd={addSpecialChar}
+          tagsEnabled={tagsEnabled}
+          onTagsEnabledChange={setTagsEnabled}
+          tagsCollapsed={tagsCollapsed}
+          onTagsCollapsedChange={setTagsCollapsed}
+          tagCollapseScope={tagCollapseScope}
+          onTagCollapseScopeChange={(v) =>
+            setTagCollapseScope(v ? 'html-only' : 'all')
+          }
+          tagsDetectInner={tagsDetectInner}
+          onTagsDetectInnerChange={setTagsDetectInner}
+          tagPattern={tagPattern}
+          onTagPatternChange={setTagPattern}
+          quotesEnabled={quotesEnabled}
+          onQuotesEnabledChange={setQuotesEnabled}
+          singleQuoteOpen={singleQuoteOpen}
+          onSingleQuoteOpenChange={setSingleQuoteOpen}
+          singleQuoteClose={singleQuoteClose}
+          onSingleQuoteCloseChange={setSingleQuoteClose}
+          doubleQuoteOpen={doubleQuoteOpen}
+          onDoubleQuoteOpenChange={setDoubleQuoteOpen}
+          doubleQuoteClose={doubleQuoteClose}
+          onDoubleQuoteCloseChange={setDoubleQuoteClose}
+          quotesInTags={quotesInTags}
+          onQuotesInTagsChange={setQuotesInTags}
+          quoteEscapeContractions={quoteEscapeContractions}
+          onQuoteEscapeContractionsChange={setQuoteEscapeContractions}
+          quoteAllowNesting={quoteAllowNesting}
+          onQuoteAllowNestingChange={setQuoteAllowNesting}
+          quoteDetectInner={quoteDetectInner}
+          onQuoteDetectInnerChange={setQuoteDetectInner}
+          linkEnabled={linkEnabled}
+          onLinkEnabledChange={setLinkEnabled}
+          openLinksOnClick={openLinksOnClick}
+          onOpenLinksOnClickChange={setOpenLinksOnClick}
+          mentionEnabled={mentionEnabled}
+          onMentionEnabledChange={setMentionEnabled}
+          mentionTrigger={mentionTrigger}
+          onMentionTriggerChange={setMentionTrigger}
+          mentionSerializeFormat={mentionSerializeFormat}
+          onMentionSerializeFormatChange={setMentionSerializeFormat}
+          mentionShowAvatar={mentionShowAvatar}
+          onMentionShowAvatarChange={setMentionShowAvatar}
+          mentionUserCount={DEFAULT_MENTION_USERS.length}
+          editorDir={editorDir}
+          onEditorDirChange={setEditorDir}
+          popoverDir={popoverDir}
+          onPopoverDirChange={setPopoverDir}
+          jpFont={jpFont}
+          onJpFontChange={setJpFont}
+          editorEditable={editorEditable}
+          onEditorEditableChange={(v) => {
+            setEditorEditable(v)
+            if (v) setReadOnlySelectable(false)
+          }}
+          readOnlySelectable={readOnlySelectable}
+          onReadOnlySelectableChange={setReadOnlySelectable}
+          settingsExtra={
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={handleReset}>
-                <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-                Reset
-              </Button>
-            </div>
-          </div>
-
-          {/* Spellcheck */}
-          <Section
-            title="Spellcheck"
-            icon={<SpellCheck className="h-4 w-4 text-red-500" />}
-            enabled={spellcheckEnabled}
-            onToggle={setSpellcheckEnabled}
-          >
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {spellcheckData.map((v, i) => (
-                <div
-                  key={i}
-                  className="flex items-start gap-2 rounded border border-border/50 bg-background p-2"
-                >
-                  <div className="grid grid-cols-[80px_1fr] gap-1.5 flex-1 text-xs">
-                    <span className="text-muted-foreground self-center">
-                      content
-                    </span>
-                    <Input
-                      className="h-7 text-xs"
-                      value={v.content}
-                      onChange={(e) =>
-                        updateSpellcheck(i, { content: e.target.value })
-                      }
-                    />
-                    <span className="text-muted-foreground self-center">
-                      categoryId
-                    </span>
-                    <Input
-                      className="h-7 text-xs"
-                      value={v.categoryId}
-                      onChange={(e) =>
-                        updateSpellcheck(i, { categoryId: e.target.value })
-                      }
-                    />
-                    <span className="text-muted-foreground self-center">
-                      start / end
-                    </span>
-                    <div className="flex gap-1">
-                      <Input
-                        className="h-7 text-xs w-16"
-                        type="number"
-                        value={v.start}
-                        onChange={(e) =>
-                          updateSpellcheck(i, {
-                            start: parseInt(e.target.value) || 0,
-                          })
-                        }
-                      />
-                      <Input
-                        className="h-7 text-xs w-16"
-                        type="number"
-                        value={v.end}
-                        onChange={(e) =>
-                          updateSpellcheck(i, {
-                            end: parseInt(e.target.value) || 0,
-                          })
-                        }
-                      />
-                    </div>
-                    <span className="text-muted-foreground self-center">
-                      message
-                    </span>
-                    <Input
-                      className="h-7 text-xs"
-                      value={v.message}
-                      onChange={(e) =>
-                        updateSpellcheck(i, { message: e.target.value })
-                      }
-                    />
-                    <span className="text-muted-foreground self-center">
-                      suggestions
-                    </span>
-                    <Input
-                      className="h-7 text-xs"
-                      value={v.suggestions.map((s) => s.value).join(', ')}
-                      placeholder="comma-separated"
-                      onChange={(e) =>
-                        updateSpellcheck(i, {
-                          suggestions: e.target.value
-                            .split(',')
-                            .map((s) => ({ value: s.trim() }))
-                            .filter((s) => s.value),
-                        })
-                      }
-                    />
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive shrink-0"
-                    onClick={() => removeSpellcheck(i)}
-                  >
-                    <Minus className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-2"
-              onClick={addSpellcheck}
-            >
-              <Plus className="mr-1 h-3.5 w-3.5" />
-              Add validation
-            </Button>
-
-            {/* ── Spellcheck error list (click to flash-highlight) ── */}
-            {spellcheckEnabled && spellcheckData.length > 0 && (
-              <div className="mt-4 border-t border-border pt-3">
-                <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
-                  <MousePointerClick className="h-3.5 w-3.5" />
-                  Click to highlight in editor
-                </h4>
-                <div className="flex flex-wrap gap-1.5">
-                  {spellcheckData.map((v) => {
-                    const annId = `sc-${v.start}-${v.end}`
-                    const isActive = flashedSpellcheckId === annId
-                    return (
-                      <button
-                        key={annId}
-                        type="button"
-                        className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium transition-colors ${
-                          isActive
-                            ? 'bg-pink-100 border-pink-300 text-pink-700 dark:bg-pink-900/40 dark:border-pink-700 dark:text-pink-300'
-                            : 'border-border bg-background text-foreground hover:bg-muted'
-                        }`}
-                        onClick={() => {
-                          handleFlashSpellcheck(annId, 5000)
-                        }}
-                      >
-                        <span className="font-mono">{v.content || '…'}</span>
-                        <span className="text-muted-foreground text-[10px]">
-                          [{v.start}–{v.end}]
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-          </Section>
-
-          {/* LexiQA */}
-          <Section
-            title="LexiQA (keyword)"
-            icon={<BookOpen className="h-4 w-4 text-violet-500" />}
-            enabled={lexiqaEnabled}
-            onToggle={setLexiqaEnabled}
-          >
-            <KeywordEditor
-              entries={lexiqaEntries}
-              onUpdate={(idx, patch) =>
-                updateKeyword(setLexiqaEntries, idx, patch)
-              }
-              onRemove={(idx) => removeKeyword(setLexiqaEntries, idx)}
-              onAdd={() => addKeyword(setLexiqaEntries)}
-            />
-          </Section>
-
-          {/* TB Target */}
-          <Section
-            title="TB Target (keyword)"
-            icon={<Database className="h-4 w-4 text-teal-500" />}
-            enabled={tbTargetEnabled}
-            onToggle={setTbTargetEnabled}
-          >
-            <KeywordEditor
-              entries={tbEntries}
-              onUpdate={(idx, patch) => updateKeyword(setTbEntries, idx, patch)}
-              onRemove={(idx) => removeKeyword(setTbEntries, idx)}
-              onAdd={() => addKeyword(setTbEntries)}
-            />
-          </Section>
-
-          {/* Special Chars */}
-          <Section
-            title="Special Characters"
-            icon={<Eye className="h-4 w-4 text-amber-500" />}
-            enabled={specialCharEnabled}
-            onToggle={setSpecialCharEnabled}
-          >
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {specialCharEntries.map((e, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-2 rounded border border-border/50 bg-background p-1.5"
-                >
-                  <Input
-                    className="h-7 text-xs flex-1"
-                    value={e.description ?? ''}
-                    placeholder="Name"
-                    onChange={(ev) =>
-                      updateSpecialChar(i, {
-                        description: ev.target.value || undefined,
-                      })
-                    }
-                  />
-                  <Input
-                    className="h-7 text-xs w-40 font-mono"
-                    value={e.pattern}
-                    placeholder="Regex pattern"
-                    onChange={(ev) =>
-                      updateSpecialChar(i, { pattern: ev.target.value })
-                    }
-                  />
-                  <Input
-                    className="h-7 text-xs w-14 text-center font-mono"
-                    value={e.displaySymbol ?? ''}
-                    placeholder="—"
-                    title="Display symbol shown in the editor"
-                    onChange={(ev) =>
-                      updateSpecialChar(i, {
-                        displaySymbol: ev.target.value || undefined,
-                      })
-                    }
-                  />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive shrink-0"
-                    onClick={() => removeSpecialChar(i)}
-                  >
-                    <Minus className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-            <p className="text-[10px] text-muted-foreground/60 mt-1">
-              <strong>Display symbol</strong>: the character shown in the editor
-              for invisible / special chars (e.g. set <strong>&amp;</strong> to{' '}
-              <strong>?</strong> to display ampersands as question marks).
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-2"
-              onClick={addSpecialChar}
-            >
-              <Plus className="mr-1 h-3.5 w-3.5" />
-              Add entry
-            </Button>
-          </Section>
-
-          {/* Tags */}
-          <Section
-            title="Tags"
-            icon={<Code className="h-4 w-4 text-sky-500" />}
-            enabled={tagsEnabled}
-            onToggle={setTagsEnabled}
-          >
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-4 text-sm">
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={tagsCollapsed}
-                    onCheckedChange={setTagsCollapsed}
-                  />
-                  <Label
-                    className="text-xs cursor-pointer"
-                    title="Collapse tags into short labels like <1>, </1>"
-                  >
-                    Collapse
-                  </Label>
-                </div>
-                {tagsCollapsed && (
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      checked={tagCollapseScope === 'html-only'}
-                      onCheckedChange={(v) =>
-                        setTagCollapseScope(v ? 'html-only' : 'all')
-                      }
-                    />
-                    <Label
-                      className="text-xs cursor-pointer"
-                      title="When on, only HTML tags are collapsed; placeholders like {{var}} stay expanded"
-                    >
-                      HTML only
-                    </Label>
-                  </div>
-                )}
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={tagsDetectInner}
-                    onCheckedChange={setTagsDetectInner}
-                  />
-                  <Label
-                    className="text-xs cursor-pointer"
-                    title="Match innermost tag pairs first (LIFO stack pairing)"
-                  >
-                    Detect inner
-                  </Label>
-                </div>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">
-                  Detection pattern (regex)
-                </Label>
-                <Input
-                  className="h-7 text-xs font-mono"
-                  value={tagPattern}
-                  placeholder="Custom regex pattern…"
-                  onChange={(e) => setTagPattern(e.target.value)}
-                />
-                <p className="text-[10px] text-muted-foreground/60">
-                  Leave empty to use built-in HTML tag pairing. With a custom
-                  pattern, HTML matches are still paired; non-HTML matches are
-                  numbered sequentially.
-                </p>
-              </div>
-            </div>
-          </Section>
-
-          {/* Quotes */}
-          <Section
-            title="Quote replacement"
-            icon={<Quote className="h-4 w-4 text-orange-500" />}
-            enabled={quotesEnabled}
-            onToggle={setQuotesEnabled}
-          >
-            <div className="space-y-3">
-              <div className="grid grid-cols-[auto_1fr_1fr] gap-2 items-center text-xs">
-                <span />
-                <span className="text-muted-foreground text-center">
-                  Opening
-                </span>
-                <span className="text-muted-foreground text-center">
-                  Closing
-                </span>
-                <span className="text-muted-foreground">Single</span>
-                <Input
-                  className="h-7 text-xs text-center font-mono"
-                  value={singleQuoteOpen}
-                  onChange={(e) => setSingleQuoteOpen(e.target.value)}
-                />
-                <Input
-                  className="h-7 text-xs text-center font-mono"
-                  value={singleQuoteClose}
-                  onChange={(e) => setSingleQuoteClose(e.target.value)}
-                />
-                <span className="text-muted-foreground">Double</span>
-                <Input
-                  className="h-7 text-xs text-center font-mono"
-                  value={doubleQuoteOpen}
-                  onChange={(e) => setDoubleQuoteOpen(e.target.value)}
-                />
-                <Input
-                  className="h-7 text-xs text-center font-mono"
-                  value={doubleQuoteClose}
-                  onChange={(e) => setDoubleQuoteClose(e.target.value)}
-                />
-              </div>
-              <div className="flex flex-wrap items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={quotesInTags}
-                    onCheckedChange={setQuotesInTags}
-                  />
-                  <Label
-                    className="text-xs cursor-pointer"
-                    title={
-                      'Also detect quotes inside HTML tags (e.g. attribute values like href="\u2026")'
-                    }
-                  >
-                    Detect in tags
-                  </Label>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={quoteEscapeContractions}
-                    onCheckedChange={setQuoteEscapeContractions}
-                  />
-                  <Label
-                    className="text-xs cursor-pointer"
-                    title="Skip apostrophes in contractions like don't, it's, they're"
-                  >
-                    Escape contractions
-                  </Label>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={quoteAllowNesting}
-                    onCheckedChange={setQuoteAllowNesting}
-                  />
-                  <Label
-                    className="text-xs cursor-pointer"
-                    title="Allow overlapping quote types (e.g. double quotes containing single quotes that extend beyond)"
-                  >
-                    Allow nesting
-                  </Label>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={quoteDetectInner}
-                    onCheckedChange={setQuoteDetectInner}
-                  />
-                  <Label
-                    className="text-xs cursor-pointer"
-                    title="Detect quotes of the other type that open and close inside an already-open quote"
-                  >
-                    Detect inner quotes
-                  </Label>
-                </div>
-              </div>
-            </div>
-          </Section>
-
-          {/* Links */}
-          <Section
-            title="Link Detection"
-            icon={<Link2 className="h-4 w-4 text-blue-500" />}
-            enabled={linkEnabled}
-            onToggle={setLinkEnabled}
-          >
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={openLinksOnClick}
-                  onCheckedChange={setOpenLinksOnClick}
-                />
-                <Label className="text-xs text-muted-foreground">
-                  Open link on click
-                </Label>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Automatically detects URLs (http/https and www-prefixed) in the
-                text and highlights them.{' '}
-                {openLinksOnClick
-                  ? 'Click a highlighted link to open it.'
-                  : 'Link clicks are disabled — clicking positions the cursor instead.'}
-              </p>
-            </div>
-          </Section>
-
-          {/* Mentions */}
-          <Section
-            title="Mention Detection"
-            icon={<AtSign className="h-4 w-4 text-purple-500" />}
-            enabled={mentionEnabled}
-            onToggle={setMentionEnabled}
-          >
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Label className="text-xs text-muted-foreground w-20">
-                  Trigger
-                </Label>
-                <Input
-                  className="h-7 text-xs font-mono w-16"
-                  value={mentionTrigger}
-                  onChange={(e) => setMentionTrigger(e.target.value)}
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <Label className="text-xs text-muted-foreground w-20">
-                  Serialize
-                </Label>
-                <Input
-                  className="h-7 text-xs font-mono flex-1"
-                  value={mentionSerializeFormat}
-                  onChange={(e) => setMentionSerializeFormat(e.target.value)}
-                  placeholder="@{id}"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={mentionShowAvatar}
-                  onCheckedChange={setMentionShowAvatar}
-                />
-                <Label className="text-xs text-muted-foreground">
-                  Show avatar (custom renderMentionDOM)
-                </Label>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Type the trigger character (default: @) to open a user
-                typeahead. Select a user to insert a mention node. The model
-                text format is controlled by{' '}
-                <code className="text-[11px] bg-muted px-1 rounded">
-                  mentionSerialize
-                </code>{' '}
-                (use{' '}
-                <code className="text-[11px] bg-muted px-1 rounded">id</code> as
-                placeholder, e.g.{' '}
-                <code className="text-[11px] bg-muted px-1 rounded">
-                  {'@{id}'}
-                </code>
-                ,{' '}
-                <code className="text-[11px] bg-muted px-1 rounded">
-                  {'@[id]'}
-                </code>
-                ). Display is resolved to{' '}
-                <code className="text-[11px] bg-muted px-1 rounded">
-                  @UserName
-                </code>
-                . {DEFAULT_MENTION_USERS.length} users available.
-              </p>
-            </div>
-          </Section>
-        </div>
-        <div className="flex flex-wrap gap-4 text-sm">
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-spellcheck" />
-            <span className="text-muted-foreground">Spellcheck error</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-keyword cat-highlight-keyword-lexiqa" />
-            <span className="text-muted-foreground">LexiQA term</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-keyword cat-highlight-keyword-tb-target" />
-            <span className="text-muted-foreground">TB Target term</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-keyword cat-highlight-keyword-search" />
-            <span className="text-muted-foreground">Keyword search</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-keyword cat-highlight-keyword-special-char" />
-            <span className="text-muted-foreground">Special character</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-tag" />
-            <span className="text-muted-foreground">Tag / placeholder</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-quote" />
-            <span className="text-muted-foreground">Quote replacement</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-link" />
-            <span className="text-muted-foreground">Link</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-4 px-1.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 leading-4">
-              @A
-            </span>
-            <span className="text-muted-foreground">
-              Mention (type @ to trigger)
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-nested cat-highlight-keyword cat-highlight-keyword-lexiqa" />
-            <span className="text-muted-foreground">
-              Nested (multiple rules)
-            </span>
-          </div>
-          <div className="text-muted-foreground/60 ml-auto text-xs">
-            Hover a highlight to see details &amp; suggestions
-          </div>
-        </div>
-
-        {/* ─── Editor Options ─────────────────────────────────────── */}
-        <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
-          <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-            <Settings className="h-4 w-4 text-slate-500" />
-            Editor Options
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Direction */}
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Direction</Label>
-              <Select
-                value={editorDir}
-                onValueChange={(v) => setEditorDir(v as 'ltr' | 'rtl' | 'auto')}
-              >
-                <SelectTrigger className="h-8 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ltr">LTR (left-to-right)</SelectItem>
-                  <SelectItem value="rtl">RTL (right-to-left)</SelectItem>
-                  <SelectItem value="auto">Auto</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Popover Direction */}
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">
-                Popover Direction
-              </Label>
-              <Select
-                value={popoverDir}
-                onValueChange={(v) =>
-                  setPopoverDir(v as 'ltr' | 'rtl' | 'auto' | 'inherit')
-                }
-              >
-                <SelectTrigger className="h-8 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ltr">LTR (default)</SelectItem>
-                  <SelectItem value="rtl">RTL</SelectItem>
-                  <SelectItem value="auto">Auto</SelectItem>
-                  <SelectItem value="inherit">Inherit from editor</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* JP Font */}
-            <div className="flex items-center gap-3 sm:pt-5">
-              <Switch checked={jpFont} onCheckedChange={setJpFont} />
-              <Label className="text-sm text-foreground cursor-pointer">
-                Japanese font
-              </Label>
-            </div>
-
-            {/* Editable */}
-            <div className="flex items-center gap-3">
-              <Switch
-                checked={editorEditable}
-                onCheckedChange={(v) => {
-                  setEditorEditable(v)
-                  if (v) setReadOnlySelectable(false)
-                }}
-              />
-              <Label className="text-sm text-foreground cursor-pointer">
-                Editable
-              </Label>
-            </div>
-
-            {/* Read-only selectable */}
-            <div className="flex items-center gap-3">
-              <Switch
-                checked={readOnlySelectable}
-                onCheckedChange={setReadOnlySelectable}
-                disabled={editorEditable}
-              />
-              <Label
-                className={`text-sm cursor-pointer ${
-                  editorEditable ? 'text-muted-foreground' : 'text-foreground'
-                }`}
-              >
-                Allow selection when read-only
-                <span className="block text-xs text-muted-foreground font-normal">
-                  Caret &amp; copy work, but content is locked
-                </span>
-              </Label>
-            </div>
-
-            {/* Intercept Enter */}
-            <div className="flex items-center gap-3 sm:col-span-2">
               <Switch
                 checked={interceptEnter}
                 onCheckedChange={(v) => {
@@ -1508,43 +891,79 @@ function CATEditorDemo() {
                   setKeyDownLog([])
                 }}
               />
-              <Label className="text-sm text-foreground cursor-pointer">
-                Intercept Enter key
-                <span className="block text-xs text-muted-foreground font-normal">
-                  Enter triggers custom action &middot; Shift+Enter inserts
-                  newline
-                </span>
-              </Label>
+              <Label className="text-xs">Intercept Enter key</Label>
             </div>
-          </div>
+          }
+          searchValue={searchKeywords}
+          onSearchChange={(e) => setSearchKeywords(e.target.value)}
+        />
 
-          {/* Key-down log */}
-          {interceptEnter && keyDownLog.length > 0 && (
-            <div className="rounded-lg bg-muted p-3 space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">
-                Key-down log:
+        {/* Key-down log */}
+        {interceptEnter && keyDownLog.length > 0 && (
+          <div className="rounded-lg bg-muted p-3 space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">
+              Key-down log:
+            </p>
+            {keyDownLog.map((msg, i) => (
+              <p key={i} className="text-xs font-mono text-foreground">
+                {msg}
               </p>
-              {keyDownLog.map((msg, i) => (
-                <p key={i} className="text-xs font-mono text-foreground">
-                  {msg}
-                </p>
-              ))}
+            ))}
+          </div>
+        )}
+
+        {/* ─── Legend ─────────────────────────────────────────────── */}
+        <CATEditorLegend showMention />
+
+        {/* ─── Text Snippets & Flash Range ────────────────────────── */}
+        <CATEditorSnippetsAndFlash
+          snippets={TEXT_SNIPPETS}
+          flashRanges={FLASH_RANGES}
+          onInsertText={(text) => editorRef.current?.insertText(text)}
+          onSetText={(text) => editorRef.current?.setText(text)}
+          onFlashRange={(start, end, ms) =>
+            editorRef.current?.flashRange(start, end, ms)
+          }
+          customSnippetSlot={(mode) => (
+            <div className="flex items-center gap-1.5 pt-1">
+              <Input
+                value={customSnippet}
+                onChange={(e) => setCustomSnippet(e.target.value)}
+                placeholder="Custom text…"
+                className="h-7 text-xs flex-1"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && customSnippet) {
+                    if (mode === 'reset') {
+                      editorRef.current?.setText(customSnippet)
+                    } else {
+                      editorRef.current?.insertText(customSnippet)
+                    }
+                    setCustomSnippet('')
+                  }
+                }}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                disabled={!customSnippet}
+                onClick={() => {
+                  if (mode === 'reset') {
+                    editorRef.current?.setText(customSnippet)
+                  } else {
+                    editorRef.current?.insertText(customSnippet)
+                  }
+                  setCustomSnippet('')
+                }}
+              >
+                <Plus className="mr-1 h-3 w-3" />
+                {mode === 'reset' ? 'Reset' : 'Insert'}
+              </Button>
             </div>
           )}
-        </div>
+        />
 
-        {/* Search keywords — placed right above the editor */}
-        <div className="flex items-center gap-2">
-          <Search className="h-4 w-4 text-blue-500 shrink-0" />
-          <Input
-            value={searchKeywords}
-            onChange={(e) => setSearchKeywords(e.target.value)}
-            placeholder="Search keywords (comma-separated)…"
-            className="h-8 text-sm"
-          />
-        </div>
-
-        {/* Editor */}
+        {/* ─── Editor ─────────────────────────────────────────────── */}
         <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
           <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-2.5">
             <div className="flex gap-1.5">
@@ -1573,7 +992,6 @@ function CATEditorDemo() {
             readOnlySelectable={readOnlySelectable}
             onKeyDown={interceptEnter ? handleEditorKeyDown : undefined}
             onChange={() => {
-              // Clear flash state when user edits text
               if (flashedSpellcheckId) {
                 setFlashedSpellcheckId(null)
                 if (flashDemoTimerRef.current) {
@@ -1587,57 +1005,7 @@ function CATEditorDemo() {
           />
         </div>
 
-        {/* Text Snippets — insert into editor at cursor */}
-        <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
-          <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-            <Type className="h-4 w-4 text-blue-500" />
-            Text Snippets
-          </h3>
-          <p className="text-xs text-muted-foreground">
-            Click a snippet to insert it at the editor cursor. This section is
-            independent — it lives outside the editor component.
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {TEXT_SNIPPETS.map((snippet) => (
-              <button
-                key={snippet.label}
-                type="button"
-                className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1 text-sm font-medium text-foreground transition-colors hover:bg-primary hover:text-primary-foreground hover:border-primary"
-                onClick={() => editorRef.current?.insertText(snippet.text)}
-              >
-                {snippet.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-2 pt-1">
-            <Input
-              value={customSnippet}
-              onChange={(e) => setCustomSnippet(e.target.value)}
-              placeholder="Custom text…"
-              className="h-8 text-sm max-w-xs"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && customSnippet) {
-                  editorRef.current?.insertText(customSnippet)
-                  setCustomSnippet('')
-                }
-              }}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!customSnippet}
-              onClick={() => {
-                editorRef.current?.insertText(customSnippet)
-                setCustomSnippet('')
-              }}
-            >
-              <Plus className="mr-1 h-3.5 w-3.5" />
-              Insert
-            </Button>
-          </div>
-        </div>
-
-        {/* Applied suggestions log */}
+        {/* ─── Applied suggestions log ────────────────────────────── */}
         <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
           <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground mb-3">
             <CheckCircle2 className="h-4 w-4 text-green-500" />
@@ -1672,66 +1040,5 @@ function CATEditorDemo() {
         </div>
       </div>
     </div>
-  )
-}
-
-// ─── Shared keyword editor ──────────────────────────────────────────────────
-
-function KeywordEditor({
-  entries,
-  onUpdate,
-  onRemove,
-  onAdd,
-}: {
-  entries: Array<IKeywordsEntry>
-  onUpdate: (idx: number, patch: Partial<IKeywordsEntry>) => void
-  onRemove: (idx: number) => void
-  onAdd: () => void
-}) {
-  return (
-    <>
-      <div className="space-y-2 max-h-48 overflow-y-auto">
-        {entries.map((e, i) => (
-          <div
-            key={i}
-            className="flex items-center gap-2 rounded border border-border/50 bg-background p-1.5"
-          >
-            <Input
-              className="h-7 text-xs flex-1 font-mono"
-              value={e.pattern}
-              placeholder="Pattern (e.g. fox|dog, \\bAPI\\b)"
-              onChange={(ev) => onUpdate(i, { pattern: ev.target.value })}
-            />
-            <Input
-              className="h-7 text-xs flex-1"
-              value={e.description ?? ''}
-              placeholder="Description (optional)"
-              onChange={(ev) =>
-                onUpdate(i, {
-                  description: ev.target.value || undefined,
-                })
-              }
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive shrink-0"
-              onClick={() => onRemove(i)}
-            >
-              <Minus className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        ))}
-      </div>
-      <p className="text-[10px] text-muted-foreground/60 mt-1">
-        Each entry matches by <strong>Pattern</strong> (regex). e.g.{' '}
-        <code className="bg-muted px-0.5 rounded">fox|dog</code>,{' '}
-        <code className="bg-muted px-0.5 rounded">{'\\bAPI\\b'}</code>.
-      </p>
-      <Button variant="outline" size="sm" className="mt-2" onClick={onAdd}>
-        <Plus className="mr-1 h-3.5 w-3.5" />
-        Add entry
-      </Button>
-    </>
   )
 }

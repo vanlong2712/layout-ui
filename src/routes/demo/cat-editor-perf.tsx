@@ -1,45 +1,30 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { memo, useCallback, useMemo, useRef, useState } from 'react'
 import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual'
-import { Popover } from '@base-ui/react/popover'
-import {
-  BookOpen,
-  Code,
-  Database,
-  Eye,
-  Link2,
-  Minus,
-  Plus,
-  Quote,
-  RotateCcw,
-  Search,
-  Settings,
-  Zap,
-} from 'lucide-react'
+import { Zap } from 'lucide-react'
 
 import type { DetectQuotesOptions } from '@/utils/detect-quotes'
 import type { Range } from '@tanstack/react-virtual'
 
 import type {
+  CATEditorRef,
   IKeywordsEntry,
   IKeywordsRule,
   ILinkRule,
   IQuoteRule,
+  ISpellCheckRule,
+  ISpellCheckValidation,
   ITagRule,
   MooRule,
 } from '@/layout/cat-editor'
 import { CATEditor } from '@/layout/cat-editor'
-import { Button } from '@/components/ui/button'
-import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+  CATEditorLegend,
+  CATEditorSnippetsAndFlash,
+  CATEditorToolbar,
+} from '@/components/cat-editor-toolbar'
 
 export const Route = createFileRoute('/demo/cat-editor-perf')({
   component: CATEditorPerfDemo,
@@ -208,6 +193,27 @@ const DEFAULT_TB_ENTRIES: Array<IKeywordsEntry> = [
   { pattern: 'fox', description: 'Translate as "zorro" in Spanish.' },
 ]
 
+const DEFAULT_SPELLCHECK: Array<ISpellCheckValidation> = [
+  {
+    categoryId: 'TYPOS',
+    start: 0,
+    end: 3,
+    content: 'The',
+    message: 'Demo spellcheck: first word of every row.',
+    shortMessage: 'Demo',
+    suggestions: [{ value: 'A' }, { value: 'This' }],
+  },
+  {
+    categoryId: 'TYPOS',
+    start: 10,
+    end: 15,
+    content: 'brown',
+    message: 'Possible colour name. Did you mean a different word?',
+    shortMessage: 'Typo',
+    suggestions: [{ value: 'brawn' }, { value: 'brow' }],
+  },
+]
+
 const DEFAULT_SPECIAL_CHARS: Array<IKeywordsEntry> = [
   { pattern: '&', description: 'Ampersand', atomic: true },
   { pattern: '\\t', description: 'Tab', atomic: true, displaySymbol: '⇥' },
@@ -250,104 +256,30 @@ const DEFAULT_SPECIAL_CHARS: Array<IKeywordsEntry> = [
   { pattern: ' ', description: 'Space', atomic: true },
 ]
 
-// ─── Toolbar popover button ──────────────────────────────────────────────────
+// ─── Text snippet & flash-range presets ──────────────────────────────────────
 
-function ToolbarPopoverButton({
-  label,
-  icon,
-  enabled,
-  onToggle,
-  children,
-}: {
-  label: string
-  icon: React.ReactNode
-  enabled: boolean
-  onToggle: (v: boolean) => void
-  children: React.ReactNode
-}) {
-  return (
-    <Popover.Root>
-      <Popover.Trigger
-        render={
-          <button
-            type="button"
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors
-              ${enabled ? 'bg-primary/10 border-primary/30 text-primary hover:bg-primary/20' : 'bg-muted/50 border-border text-muted-foreground hover:bg-muted'}
-            `}
-          />
-        }
-      >
-        {icon}
-        {label}
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Positioner sideOffset={8} side="bottom" align="start">
-          <Popover.Popup className="z-50 w-80 max-h-[70vh] overflow-y-auto rounded-lg border bg-popover text-popover-foreground shadow-lg p-3 space-y-3 data-starting-style:scale-95 data-starting-style:opacity-0 data-ending-style:scale-95 data-ending-style:opacity-0 origin-(--transform-origin) transition-[transform,scale,opacity] duration-150">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold">{label}</span>
-              <Switch checked={enabled} onCheckedChange={onToggle} />
-            </div>
-            {children}
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
-  )
-}
+const TEXT_SNIPPETS = [
+  { label: 'Hello World', text: 'Hello World' },
+  { label: '©', text: '©' },
+  { label: '™', text: '™' },
+  { label: '®', text: '®' },
+  { label: 'NBSP', text: '\u00A0' },
+  { label: '→', text: '→' },
+  { label: '—', text: '—' },
+  { label: '…', text: '…' },
+  { label: '«»', text: '«»' },
+  { label: 'ZWS', text: '\u200B' },
+  { label: 'Line break', text: '\n' },
+]
 
-// ─── Shared keyword editor ──────────────────────────────────────────────────
-
-function KeywordEditor({
-  entries,
-  onUpdate,
-  onRemove,
-  onAdd,
-}: {
-  entries: Array<IKeywordsEntry>
-  onUpdate: (idx: number, patch: Partial<IKeywordsEntry>) => void
-  onRemove: (idx: number) => void
-  onAdd: () => void
-}) {
-  return (
-    <>
-      <div className="space-y-2 max-h-48 overflow-y-auto">
-        {entries.map((e, i) => (
-          <div
-            key={i}
-            className="flex items-center gap-2 rounded border border-border/50 bg-background p-1.5"
-          >
-            <Input
-              className="h-7 text-xs flex-1 font-mono"
-              value={e.pattern}
-              placeholder="Pattern (e.g. fox|dog, \\bAPI\\b)"
-              onChange={(ev) => onUpdate(i, { pattern: ev.target.value })}
-            />
-            <Input
-              className="h-7 text-xs flex-1"
-              value={e.description ?? ''}
-              placeholder="Description (optional)"
-              onChange={(ev) =>
-                onUpdate(i, { description: ev.target.value || undefined })
-              }
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive shrink-0"
-              onClick={() => onRemove(i)}
-            >
-              <Minus className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        ))}
-      </div>
-      <Button variant="outline" size="sm" className="mt-2" onClick={onAdd}>
-        <Plus className="mr-1 h-3.5 w-3.5" />
-        Add entry
-      </Button>
-    </>
-  )
-}
+const FLASH_RANGES = [
+  { label: 'First 5 chars', start: 0, end: 5 },
+  { label: 'Chars 10–25', start: 10, end: 25 },
+  { label: 'Chars 30–45', start: 30, end: 45 },
+  { label: 'Chars 50–60', start: 50, end: 60 },
+  { label: 'Chars 0–20', start: 0, end: 20 },
+  { label: 'Chars 25–50', start: 25, end: 50 },
+]
 
 // ─── Memoised editor row ─────────────────────────────────────────────────────
 
@@ -356,34 +288,54 @@ const EditorRow = memo(function EditorRow({
   text,
   rules,
   onFocus,
-  onBlur,
+  registerRef,
+  dir,
+  popoverDir,
+  jpFont,
+  editable,
+  readOnlySelectable,
+  openLinksOnClick,
 }: {
   index: number
   text: string
   rules: Array<MooRule>
   onFocus: (index: number) => void
-  onBlur: () => void
+  registerRef: (index: number, instance: CATEditorRef | null) => void
+  dir?: 'ltr' | 'rtl' | 'auto'
+  popoverDir?: 'ltr' | 'rtl' | 'auto' | 'inherit'
+  jpFont?: boolean
+  editable?: boolean
+  readOnlySelectable?: boolean
+  openLinksOnClick?: boolean
 }) {
+  const editorRefCallback = useCallback(
+    (instance: CATEditorRef | null) => {
+      registerRef(index, instance)
+    },
+    [index, registerRef],
+  )
+
   return (
     <div
       className="flex items-stretch gap-3 "
       onFocusCapture={() => onFocus(index)}
-      onBlurCapture={(e) => {
-        // Only clear if focus is leaving this row entirely
-        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-          onBlur()
-        }
-      }}
     >
       <div className="flex items-center justify-center w-12 shrink-0 text-xs font-mono text-muted-foreground bg-muted/30 rounded-l-lg border-r border-border">
         {index + 1}
       </div>
       <div className="flex-1 min-w-0 py-1">
         <CATEditor
+          ref={editorRefCallback}
           initialText={text}
           rules={rules}
           placeholder={`Row ${index + 1}`}
           className="cat-perf-row-editor [&_.cat-editor-root]:min-h-0!"
+          dir={dir}
+          popoverDir={popoverDir}
+          jpFont={jpFont}
+          editable={editable}
+          readOnlySelectable={readOnlySelectable}
+          openLinksOnClick={openLinksOnClick}
         />
       </div>
     </div>
@@ -396,6 +348,7 @@ function CATEditorPerfDemo() {
   const [resetKey, setResetKey] = useState(0)
 
   // ── Rule enable/disable toggles ──────────────────────────────────────
+  const [spellcheckEnabled, setSpellcheckEnabled] = useState(true)
   const [lexiqaEnabled, setLexiqaEnabled] = useState(true)
   const [tbTargetEnabled, setTbTargetEnabled] = useState(true)
   const [specialCharEnabled, setSpecialCharEnabled] = useState(true)
@@ -408,8 +361,18 @@ function CATEditorPerfDemo() {
 
   // ── Editor options ───────────────────────────────────────────────────
   const [editorDir, setEditorDir] = useState<'ltr' | 'rtl' | 'auto'>('ltr')
+  const [popoverDir, setPopoverDir] = useState<
+    'ltr' | 'rtl' | 'auto' | 'inherit'
+  >('ltr')
+  const [jpFont, setJpFont] = useState(false)
+  const [editorEditable, setEditorEditable] = useState(true)
+  const [readOnlySelectable, setReadOnlySelectable] = useState(false)
+  const [openLinksOnClick, setOpenLinksOnClick] = useState(true)
 
   // ── Editable rule data ───────────────────────────────────────────────
+  // Spellcheck validations
+  const [spellcheckData, setSpellcheckData] =
+    useState<Array<ISpellCheckValidation>>(DEFAULT_SPELLCHECK)
   const [lexiqaEntries, setLexiqaEntries] = useState<Array<IKeywordsEntry>>(
     DEFAULT_LEXIQA_ENTRIES,
   )
@@ -436,6 +399,12 @@ function CATEditorPerfDemo() {
   const [quoteEscapeContractions, setQuoteEscapeContractions] = useState(true)
   const [quoteAllowNesting, setQuoteAllowNesting] = useState(false)
   const [quoteDetectInner, setQuoteDetectInner] = useState(true)
+
+  // Track which spellcheck annotation is currently flash-highlighted
+  const [flashedSpellcheckId, setFlashedSpellcheckId] = useState<string | null>(
+    null,
+  )
+  const flashDemoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ── Row count ────────────────────────────────────────────────────────
   const [rowCount, setRowCount] = useState(TOTAL_ROWS)
@@ -489,6 +458,12 @@ function CATEditorPerfDemo() {
   // ── Build active rules from state ────────────────────────────────────
   const rules = useMemo<Array<MooRule>>(() => {
     const active: Array<MooRule> = []
+    if (spellcheckEnabled) {
+      active.push({
+        type: 'spellcheck',
+        validations: spellcheckData,
+      } satisfies ISpellCheckRule)
+    }
     if (lexiqaEnabled) {
       active.push({
         type: 'keyword',
@@ -551,6 +526,8 @@ function CATEditorPerfDemo() {
     }
     return active
   }, [
+    spellcheckEnabled,
+    spellcheckData,
     lexiqaEnabled,
     lexiqaEntries,
     tbTargetEnabled,
@@ -576,6 +553,10 @@ function CATEditorPerfDemo() {
   ])
 
   const handleReset = useCallback(() => {
+    setSpellcheckEnabled(true)
+    setSpellcheckData(DEFAULT_SPELLCHECK)
+    setFlashedSpellcheckId(null)
+    if (flashDemoTimerRef.current) clearTimeout(flashDemoTimerRef.current)
     setLexiqaEnabled(true)
     setTbTargetEnabled(true)
     setSpecialCharEnabled(true)
@@ -601,6 +582,11 @@ function CATEditorPerfDemo() {
     setQuoteAllowNesting(false)
     setQuoteDetectInner(true)
     setEditorDir('ltr')
+    setPopoverDir('ltr')
+    setJpFont(false)
+    setEditorEditable(true)
+    setReadOnlySelectable(false)
+    setOpenLinksOnClick(true)
     setRowCount(TOTAL_ROWS)
     setResetKey((k) => k + 1)
   }, [])
@@ -614,9 +600,66 @@ function CATEditorPerfDemo() {
   const handleFocusRow = useCallback((index: number) => {
     setFocusedRow(index)
   }, [])
-  const handleBlurRow = useCallback(() => {
-    setFocusedRow(null)
-  }, [])
+
+  // ── Per-row editor ref map ───────────────────────────────────────
+  // Stores CATEditorRef instances keyed by row index so the global
+  // Text Snippets / Flash Range sections can target the focused editor.
+  const editorRefsMap = useRef<Map<number, CATEditorRef>>(new Map())
+  const registerEditorRef = useCallback(
+    (index: number, instance: CATEditorRef | null) => {
+      if (instance) {
+        editorRefsMap.current.set(index, instance)
+      } else {
+        editorRefsMap.current.delete(index)
+      }
+    },
+    [],
+  )
+
+  // ── Spellcheck helpers ───────────────────────────────────────────
+  const updateSpellcheck = useCallback(
+    (idx: number, patch: Partial<ISpellCheckValidation>) =>
+      setSpellcheckData((prev) =>
+        prev.map((v, i) => (i === idx ? { ...v, ...patch } : v)),
+      ),
+    [],
+  )
+  const removeSpellcheck = useCallback(
+    (idx: number) =>
+      setSpellcheckData((prev) => prev.filter((_, i) => i !== idx)),
+    [],
+  )
+  const addSpellcheck = useCallback(
+    () =>
+      setSpellcheckData((prev) => [
+        ...prev,
+        {
+          categoryId: 'TYPOS',
+          start: 0,
+          end: 0,
+          content: '',
+          message: '',
+          shortMessage: '',
+          suggestions: [],
+        },
+      ]),
+    [],
+  )
+
+  /** Flash a spellcheck annotation on the focused editor. */
+  const handleFlashSpellcheck = useCallback(
+    (annId: string, durationMs = 5000) => {
+      if (flashDemoTimerRef.current) clearTimeout(flashDemoTimerRef.current)
+      setFlashedSpellcheckId(annId)
+      if (focusedRow !== null) {
+        editorRefsMap.current.get(focusedRow)?.flashHighlight(annId, durationMs)
+      }
+      flashDemoTimerRef.current = setTimeout(() => {
+        setFlashedSpellcheckId(null)
+      }, durationMs)
+    },
+    [focusedRow],
+  )
 
   // Custom range extractor: always include the focused row so the
   // virtualizer never unmounts it (the editor needs the DOM node to
@@ -663,319 +706,142 @@ function CATEditorPerfDemo() {
         </div>
 
         {/* ─── Compact toolbar ──────────────────────────────────────── */}
-        <div className="flex items-center gap-2 flex-wrap rounded-lg border border-border bg-card px-3 py-2 shadow-sm">
-          {/* Reset */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleReset}
-            className="h-7 px-2 text-xs"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-          </Button>
-
-          <div className="w-px h-5 bg-border" />
-
-          {/* LexiQA */}
-          <ToolbarPopoverButton
-            label="LexiQA"
-            icon={<BookOpen className="h-3.5 w-3.5" />}
-            enabled={lexiqaEnabled}
-            onToggle={setLexiqaEnabled}
-          >
-            <KeywordEditor
-              entries={lexiqaEntries}
-              onUpdate={(idx, patch) =>
-                updateKeyword(setLexiqaEntries, idx, patch)
-              }
-              onRemove={(idx) => removeKeyword(setLexiqaEntries, idx)}
-              onAdd={() => addKeyword(setLexiqaEntries)}
-            />
-          </ToolbarPopoverButton>
-
-          {/* TB Target */}
-          <ToolbarPopoverButton
-            label="TB Target"
-            icon={<Database className="h-3.5 w-3.5" />}
-            enabled={tbTargetEnabled}
-            onToggle={setTbTargetEnabled}
-          >
-            <KeywordEditor
-              entries={tbEntries}
-              onUpdate={(idx, patch) => updateKeyword(setTbEntries, idx, patch)}
-              onRemove={(idx) => removeKeyword(setTbEntries, idx)}
-              onAdd={() => addKeyword(setTbEntries)}
-            />
-          </ToolbarPopoverButton>
-
-          {/* Special Chars */}
-          <ToolbarPopoverButton
-            label="Special"
-            icon={<Eye className="h-3.5 w-3.5" />}
-            enabled={specialCharEnabled}
-            onToggle={setSpecialCharEnabled}
-          >
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {specialCharEntries.map((e, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-1.5 rounded border border-border/50 bg-background p-1"
-                >
-                  <Input
-                    className="h-6 text-xs flex-1"
-                    value={e.description ?? ''}
-                    placeholder="Name"
-                    onChange={(ev) =>
-                      updateSpecialChar(i, {
-                        description: ev.target.value || undefined,
-                      })
-                    }
-                  />
-                  <Input
-                    className="h-6 text-xs w-24 font-mono"
-                    value={e.pattern}
-                    placeholder="Pattern"
-                    onChange={(ev) =>
-                      updateSpecialChar(i, { pattern: ev.target.value })
-                    }
-                  />
-                  <Input
-                    className="h-6 text-xs w-10 text-center font-mono"
-                    value={e.displaySymbol ?? ''}
-                    placeholder="—"
-                    onChange={(ev) =>
-                      updateSpecialChar(i, {
-                        displaySymbol: ev.target.value || undefined,
-                      })
-                    }
-                  />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive shrink-0"
-                    onClick={() => removeSpecialChar(i)}
-                  >
-                    <Minus className="h-3 w-3" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-2 h-6 text-xs"
-              onClick={addSpecialChar}
-            >
-              <Plus className="mr-1 h-3 w-3" />
-              Add
-            </Button>
-          </ToolbarPopoverButton>
-
-          {/* Tags */}
-          <ToolbarPopoverButton
-            label="Tags"
-            icon={<Code className="h-3.5 w-3.5" />}
-            enabled={tagsEnabled}
-            onToggle={setTagsEnabled}
-          >
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-3 text-xs">
-                <div className="flex items-center gap-1.5">
-                  <Switch
-                    checked={tagsCollapsed}
-                    onCheckedChange={setTagsCollapsed}
-                  />
-                  <Label className="text-xs">Collapse</Label>
-                </div>
-                {tagsCollapsed && (
-                  <div className="flex items-center gap-1.5">
-                    <Switch
-                      checked={tagCollapseScope === 'html-only'}
-                      onCheckedChange={(v) =>
-                        setTagCollapseScope(v ? 'html-only' : 'all')
-                      }
-                    />
-                    <Label className="text-xs">HTML only</Label>
-                  </div>
-                )}
-                <div className="flex items-center gap-1.5">
-                  <Switch
-                    checked={tagsDetectInner}
-                    onCheckedChange={setTagsDetectInner}
-                  />
-                  <Label className="text-xs">Inner</Label>
-                </div>
-              </div>
+        <CATEditorToolbar
+          onReset={handleReset}
+          spellcheckEnabled={spellcheckEnabled}
+          onSpellcheckEnabledChange={setSpellcheckEnabled}
+          spellcheckData={spellcheckData}
+          onSpellcheckUpdate={updateSpellcheck}
+          onSpellcheckRemove={removeSpellcheck}
+          onSpellcheckAdd={addSpellcheck}
+          flashedSpellcheckId={flashedSpellcheckId}
+          onFlashSpellcheck={handleFlashSpellcheck}
+          spellcheckFlashDisabled={focusedRow === null}
+          lexiqaEnabled={lexiqaEnabled}
+          onLexiqaEnabledChange={setLexiqaEnabled}
+          lexiqaEntries={lexiqaEntries}
+          onLexiqaUpdate={(idx, patch) =>
+            updateKeyword(setLexiqaEntries, idx, patch)
+          }
+          onLexiqaRemove={(idx) => removeKeyword(setLexiqaEntries, idx)}
+          onLexiqaAdd={() => addKeyword(setLexiqaEntries)}
+          tbTargetEnabled={tbTargetEnabled}
+          onTbTargetEnabledChange={setTbTargetEnabled}
+          tbEntries={tbEntries}
+          onTbUpdate={(idx, patch) => updateKeyword(setTbEntries, idx, patch)}
+          onTbRemove={(idx) => removeKeyword(setTbEntries, idx)}
+          onTbAdd={() => addKeyword(setTbEntries)}
+          specialCharEnabled={specialCharEnabled}
+          onSpecialCharEnabledChange={setSpecialCharEnabled}
+          specialCharEntries={specialCharEntries}
+          onSpecialCharUpdate={updateSpecialChar}
+          onSpecialCharRemove={removeSpecialChar}
+          onSpecialCharAdd={addSpecialChar}
+          tagsEnabled={tagsEnabled}
+          onTagsEnabledChange={setTagsEnabled}
+          tagsCollapsed={tagsCollapsed}
+          onTagsCollapsedChange={setTagsCollapsed}
+          tagCollapseScope={tagCollapseScope}
+          onTagCollapseScopeChange={(v) =>
+            setTagCollapseScope(v ? 'html-only' : 'all')
+          }
+          tagsDetectInner={tagsDetectInner}
+          onTagsDetectInnerChange={setTagsDetectInner}
+          tagPattern={tagPattern}
+          onTagPatternChange={setTagPattern}
+          quotesEnabled={quotesEnabled}
+          onQuotesEnabledChange={setQuotesEnabled}
+          singleQuoteOpen={singleQuoteOpen}
+          onSingleQuoteOpenChange={setSingleQuoteOpen}
+          singleQuoteClose={singleQuoteClose}
+          onSingleQuoteCloseChange={setSingleQuoteClose}
+          doubleQuoteOpen={doubleQuoteOpen}
+          onDoubleQuoteOpenChange={setDoubleQuoteOpen}
+          doubleQuoteClose={doubleQuoteClose}
+          onDoubleQuoteCloseChange={setDoubleQuoteClose}
+          quotesInTags={quotesInTags}
+          onQuotesInTagsChange={setQuotesInTags}
+          quoteEscapeContractions={quoteEscapeContractions}
+          onQuoteEscapeContractionsChange={setQuoteEscapeContractions}
+          quoteAllowNesting={quoteAllowNesting}
+          onQuoteAllowNestingChange={setQuoteAllowNesting}
+          quoteDetectInner={quoteDetectInner}
+          onQuoteDetectInnerChange={setQuoteDetectInner}
+          linkEnabled={linkEnabled}
+          onLinkEnabledChange={setLinkEnabled}
+          openLinksOnClick={openLinksOnClick}
+          onOpenLinksOnClickChange={setOpenLinksOnClick}
+          editorDir={editorDir}
+          onEditorDirChange={setEditorDir}
+          popoverDir={popoverDir}
+          onPopoverDirChange={setPopoverDir}
+          jpFont={jpFont}
+          onJpFontChange={setJpFont}
+          editorEditable={editorEditable}
+          onEditorEditableChange={(v) => {
+            setEditorEditable(v)
+            if (v) setReadOnlySelectable(false)
+          }}
+          readOnlySelectable={readOnlySelectable}
+          onReadOnlySelectableChange={setReadOnlySelectable}
+          settingsExtra={
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Row count</Label>
               <Input
-                className="h-6 text-xs font-mono"
-                value={tagPattern}
-                placeholder="Regex pattern…"
-                onChange={(e) => setTagPattern(e.target.value)}
+                className="h-7 text-xs"
+                type="number"
+                min={1}
+                max={10000}
+                value={rowCount}
+                onChange={(e) =>
+                  setRowCount(
+                    Math.max(
+                      1,
+                      Math.min(1000000, parseInt(e.target.value) || 1),
+                    ),
+                  )
+                }
               />
             </div>
-          </ToolbarPopoverButton>
+          }
+          searchValue={searchInput}
+          onSearchChange={(e) => {
+            const v = e.target.value
+            setSearchInput(v)
+            if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+            searchTimerRef.current = setTimeout(() => setSearchKeywords(v), 300)
+          }}
+          afterSearch={
+            <span className="text-[10px] text-muted-foreground ml-auto tabular-nums">
+              {rowCount.toLocaleString()} rows
+            </span>
+          }
+        />
 
-          {/* Quotes */}
-          <ToolbarPopoverButton
-            label="Quotes"
-            icon={<Quote className="h-3.5 w-3.5" />}
-            enabled={quotesEnabled}
-            onToggle={setQuotesEnabled}
-          >
-            <div className="space-y-2">
-              <div className="grid grid-cols-[auto_1fr_1fr] gap-1.5 items-center text-xs">
-                <span />
-                <span className="text-muted-foreground text-center text-[10px]">
-                  Open
-                </span>
-                <span className="text-muted-foreground text-center text-[10px]">
-                  Close
-                </span>
-                <span className="text-muted-foreground">Single</span>
-                <Input
-                  className="h-6 text-xs text-center font-mono"
-                  value={singleQuoteOpen}
-                  onChange={(e) => setSingleQuoteOpen(e.target.value)}
-                />
-                <Input
-                  className="h-6 text-xs text-center font-mono"
-                  value={singleQuoteClose}
-                  onChange={(e) => setSingleQuoteClose(e.target.value)}
-                />
-                <span className="text-muted-foreground">Double</span>
-                <Input
-                  className="h-6 text-xs text-center font-mono"
-                  value={doubleQuoteOpen}
-                  onChange={(e) => setDoubleQuoteOpen(e.target.value)}
-                />
-                <Input
-                  className="h-6 text-xs text-center font-mono"
-                  value={doubleQuoteClose}
-                  onChange={(e) => setDoubleQuoteClose(e.target.value)}
-                />
-              </div>
-              <div className="flex flex-wrap gap-3 text-xs">
-                <div className="flex items-center gap-1.5">
-                  <Switch
-                    checked={quotesInTags}
-                    onCheckedChange={setQuotesInTags}
-                  />
-                  <Label className="text-xs">In tags</Label>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Switch
-                    checked={quoteEscapeContractions}
-                    onCheckedChange={setQuoteEscapeContractions}
-                  />
-                  <Label className="text-xs">Contractions</Label>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Switch
-                    checked={quoteAllowNesting}
-                    onCheckedChange={setQuoteAllowNesting}
-                  />
-                  <Label className="text-xs">Nesting</Label>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Switch
-                    checked={quoteDetectInner}
-                    onCheckedChange={setQuoteDetectInner}
-                  />
-                  <Label className="text-xs">Inner</Label>
-                </div>
-              </div>
-            </div>
-          </ToolbarPopoverButton>
+        {/* ─── Legend ─────────────────────────────────────────────── */}
+        <CATEditorLegend />
 
-          {/* Links */}
-          <ToolbarPopoverButton
-            label="Links"
-            icon={<Link2 className="h-3.5 w-3.5" />}
-            enabled={linkEnabled}
-            onToggle={setLinkEnabled}
-          >
-            <p className="text-xs text-muted-foreground">
-              Auto-detects URLs (http/https and www-prefixed).
-            </p>
-          </ToolbarPopoverButton>
-
-          {/* Settings */}
-          <ToolbarPopoverButton
-            label="Settings"
-            icon={<Settings className="h-3.5 w-3.5" />}
-            enabled={true}
-            onToggle={() => {}}
-          >
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">
-                  Direction
-                </Label>
-                <Select
-                  value={editorDir}
-                  onValueChange={(v) =>
-                    setEditorDir(v as 'ltr' | 'rtl' | 'auto')
-                  }
-                >
-                  <SelectTrigger className="h-7 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ltr">LTR</SelectItem>
-                    <SelectItem value="rtl">RTL</SelectItem>
-                    <SelectItem value="auto">Auto</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">
-                  Row count
-                </Label>
-                <Input
-                  className="h-7 text-xs"
-                  type="number"
-                  min={1}
-                  max={10000}
-                  value={rowCount}
-                  onChange={(e) =>
-                    setRowCount(
-                      Math.max(
-                        1,
-                        Math.min(10000, parseInt(e.target.value) || 1),
-                      ),
-                    )
-                  }
-                />
-              </div>
-            </div>
-          </ToolbarPopoverButton>
-
-          <div className="w-px h-5 bg-border" />
-
-          {/* Search inline */}
-          <div className="flex items-center gap-1.5 flex-1 min-w-30 max-w-60">
-            <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <Input
-              value={searchInput}
-              onChange={(e) => {
-                const v = e.target.value
-                setSearchInput(v)
-                if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
-                searchTimerRef.current = setTimeout(
-                  () => setSearchKeywords(v),
-                  300,
-                )
-              }}
-              placeholder="Search…"
-              className="h-7 text-xs"
-            />
-          </div>
-
-          {/* Row count badge */}
-          <span className="text-[10px] text-muted-foreground ml-auto tabular-nums">
-            {rowCount.toLocaleString()} rows
-          </span>
-        </div>
+        {/* ─── Text Snippets & Flash Range ────────────────────────── */}
+        <CATEditorSnippetsAndFlash
+          snippets={TEXT_SNIPPETS}
+          flashRanges={FLASH_RANGES}
+          disabled={focusedRow === null}
+          onInsertText={(text) => {
+            if (focusedRow !== null) {
+              editorRefsMap.current.get(focusedRow)?.insertText(text)
+            }
+          }}
+          onSetText={(text) => {
+            if (focusedRow !== null) {
+              editorRefsMap.current.get(focusedRow)?.setText(text)
+            }
+          }}
+          onFlashRange={(start, end, ms) => {
+            if (focusedRow !== null) {
+              editorRefsMap.current.get(focusedRow)?.flashRange(start, end, ms)
+            }
+          }}
+        />
 
         {/* ─── Virtualized editor rows ────────────────────────────── */}
         <div
@@ -1010,7 +876,13 @@ function CATEditorPerfDemo() {
                   text={SAMPLE_TEXTS[virtualRow.index] ?? ''}
                   rules={rules}
                   onFocus={handleFocusRow}
-                  onBlur={handleBlurRow}
+                  registerRef={registerEditorRef}
+                  dir={editorDir}
+                  popoverDir={popoverDir}
+                  jpFont={jpFont}
+                  editable={editorEditable}
+                  readOnlySelectable={readOnlySelectable}
+                  openLinksOnClick={openLinksOnClick}
                 />
               </div>
             ))}

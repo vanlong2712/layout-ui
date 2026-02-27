@@ -315,6 +315,13 @@ export interface CATEditorRef {
    *  `durationMs` (default 5 000 ms), when the user edits the text, or
    *  when `clearFlash` / another `flashHighlight` call is made. */
   flashHighlight: (annotationId: string, durationMs?: number) => void
+  /** Temporarily highlight text between `start` and `end` (global character
+   *  offsets, matching the positions used by rules / annotations) with a
+   *  pink flash overlay.  Auto-removed after `durationMs` (default 5 000 ms),
+   *  on user edit, or when `clearFlash` is called. */
+  flashRange: (start: number, end: number, durationMs?: number) => void
   /** Remove any active flash highlight immediately. */
   clearFlash: () => void
+  /** Replace all editor content with new text (supports newlines). */
+  setText: (text: string) => void
 }
