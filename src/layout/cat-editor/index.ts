@@ -6,6 +6,21 @@ export { CATEditor, default } from './CATEditor'
 export type { CATEditorProps } from './CATEditor'
 
 export { CODEPOINT_DISPLAY_MAP, getEffectiveCodepointMap } from './constants'
+export {
+  MentionNode,
+  $createMentionNode,
+  $isMentionNode,
+  setMentionNodeConfig,
+  getMentionModelText,
+  getMentionPattern,
+} from './mention-node'
+export type {
+  SerializedMentionNode,
+  MentionDOMRenderer,
+  MentionNodeConfig,
+} from './mention-node'
+export { MentionPlugin } from './mention-plugin'
+export type { MentionPluginProps } from './mention-plugin'
 
 export type {
   CATEditorRef,
@@ -13,8 +28,11 @@ export type {
   HighlightSegment,
   IGlossaryEntry,
   IGlossaryRule,
+  IKeywordsEntry,
+  IKeywordsRule,
   ILinkRule,
   IMentionRule,
+  IMentionUser,
   IQuoteRule,
   IQuoteRuleMapping,
   ISpecialCharEntry,
@@ -23,8 +41,8 @@ export type {
   ISpellCheckValidation,
   ISuggestion,
   ITagRule,
+  KeywordsAnnotation,
   LinkAnnotation,
-  MentionAnnotation,
   MooRule,
   PopoverContentRenderer,
   PopoverContentRendererProps,

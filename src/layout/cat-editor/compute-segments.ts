@@ -331,25 +331,53 @@ export function computeHighlightSegments(
     } else if (rule.type === 'glossary') {
       const { label, entries } = rule
       for (const entry of entries) {
-        if (!entry.term) continue
-        const lowerText = text.toLowerCase()
-        const lowerTerm = entry.term.toLowerCase()
-        let idx = 0
-        while ((idx = lowerText.indexOf(lowerTerm, idx)) !== -1) {
-          rawRanges.push({
-            start: idx,
-            end: idx + entry.term.length,
-            annotation: {
-              type: 'glossary',
-              id: `gl-${label}-${idx}-${idx + entry.term.length}`,
-              data: {
-                label,
-                term: entry.term,
-                description: entry.description,
+        if (!entry.term && !entry.pattern) continue
+
+        if (entry.pattern) {
+          // Entry has a regex pattern — use it for matching
+          let re: RegExp
+          try {
+            re = new RegExp(entry.pattern, 'g')
+          } catch {
+            continue // skip invalid regex
+          }
+          let m: RegExpExecArray | null
+          while ((m = re.exec(text)) !== null) {
+            rawRanges.push({
+              start: m.index,
+              end: m.index + m[0].length,
+              annotation: {
+                type: 'glossary',
+                id: `gl-${label}-${m.index}-${m.index + m[0].length}`,
+                data: {
+                  label,
+                  term: entry.term || entry.pattern,
+                  description: entry.description,
+                },
               },
-            },
-          })
-          idx += entry.term.length
+            })
+            // Prevent infinite loop for zero-length matches
+            if (m[0].length === 0) re.lastIndex++
+          }
+        } else {
+          // Exact string match (case-sensitive)
+          let idx = 0
+          while ((idx = text.indexOf(entry.term, idx)) !== -1) {
+            rawRanges.push({
+              start: idx,
+              end: idx + entry.term.length,
+              annotation: {
+                type: 'glossary',
+                id: `gl-${label}-${idx}-${idx + entry.term.length}`,
+                data: {
+                  label,
+                  term: entry.term,
+                  description: entry.description,
+                },
+              },
+            })
+            idx += entry.term.length
+          }
         }
       }
     } else if (rule.type === 'tag') {
@@ -496,36 +524,6 @@ export function computeHighlightSegments(
             data: {
               url,
               displayText: matched,
-            },
-          },
-        })
-      }
-    } else if (rule.type === 'mention') {
-      const trigger = rule.trigger ?? '@'
-      const escapedTrigger = trigger.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      const patternSource = rule.pattern ?? `${escapedTrigger}[a-zA-Z0-9_.-]+`
-      let re: RegExp
-      try {
-        re = new RegExp(patternSource, 'g')
-      } catch {
-        continue
-      }
-      let m: RegExpExecArray | null
-      while ((m = re.exec(text)) !== null) {
-        if (m[0].length === 0) {
-          re.lastIndex++
-          continue
-        }
-        rawRanges.push({
-          start: m.index,
-          end: m.index + m[0].length,
-          annotation: {
-            type: 'mention',
-            id: `mention-${m.index}-${m.index + m[0].length}`,
-            data: {
-              trigger,
-              name: m[0].slice(trigger.length),
-              fullMatch: m[0],
             },
           },
         })

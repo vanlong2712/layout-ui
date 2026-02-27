@@ -1,5 +1,6 @@
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+import type React from 'react'
 import type { DetectQuotesOptions } from '@/utils/detect-quotes'
 
 export interface ISuggestion {
@@ -22,22 +23,34 @@ export interface ISpellCheckRule {
   validations: Array<ISpellCheckValidation>
 }
 
-// ─── Glossary (generic term-matching) ─────────────────────────────────────────
-// Covers LexiQA, TB Target, keyword search, and any future term-match rule.
+// ─── Keywords (generic term-matching) ─────────────────────────────────────────
+// Covers LexiQA, TB Target, keyword search, missing keywords, and any future
+// term-match rule.
 
-export interface IGlossaryEntry {
+export interface IKeywordsEntry {
+  /** The term text used for exact string matching and display. */
   term: string
+  /** Optional description shown in the popover. */
   description?: string
+  /** Optional regex source string.  When provided, it is used for matching
+   *  instead of an exact `term` lookup.  The `g` flag is added automatically.
+   *  Example: `'hello|hi'` matches both "hello" and "hi". */
+  pattern?: string
 }
 
 /** Generic term-highlighting rule.
  *  `label` controls CSS class (`cat-highlight-glossary-{label}`) and badge text.
  *  Examples: label='lexiqa', label='tb-target', label='search' */
-export interface IGlossaryRule {
+export interface IKeywordsRule {
   type: 'glossary'
   label: string
-  entries: Array<IGlossaryEntry>
+  entries: Array<IKeywordsEntry>
 }
+
+/** @deprecated Use `IKeywordsEntry` instead. */
+export type IGlossaryEntry = IKeywordsEntry
+/** @deprecated Use `IKeywordsRule` instead. */
+export type IGlossaryRule = IKeywordsRule
 
 export interface ISpecialCharEntry {
   /** Human-readable name shown in the popover, e.g. "Non-Breaking Space" */
@@ -108,18 +121,25 @@ export interface ILinkRule {
 
 // ─── Mention detection ────────────────────────────────────────────────────────
 
+/** A user that can be mentioned via the @ trigger. */
+export interface IMentionUser {
+  id: string
+  name: string
+  /** Optional avatar render function. When omitted an initials fallback is shown. */
+  avatar?: () => React.ReactNode
+}
+
 export interface IMentionRule {
   type: 'mention'
+  /** List of users available for the mention typeahead. */
+  users: Array<IMentionUser>
   /** Trigger character, default `@`. */
   trigger?: string
-  /** Custom regex pattern (source string) for matching mentions.
-   *  When omitted, `@[a-zA-Z0-9_.-]+` is used (with the configured trigger). */
-  pattern?: string
 }
 
 export type MooRule =
   | ISpellCheckRule
-  | IGlossaryRule
+  | IKeywordsRule
   | ISpecialCharRule
   | ITagRule
   | IQuoteRule
@@ -134,11 +154,14 @@ export interface SpellCheckAnnotation {
   data: ISpellCheckValidation
 }
 
-export interface GlossaryAnnotation {
+export interface KeywordsAnnotation {
   type: 'glossary'
   id: string
   data: { label: string; term: string; description?: string }
 }
+
+/** @deprecated Use `KeywordsAnnotation` instead. */
+export type GlossaryAnnotation = KeywordsAnnotation
 
 export interface SpecialCharAnnotation {
   type: 'special-char'
@@ -181,24 +204,13 @@ export interface LinkAnnotation {
   }
 }
 
-export interface MentionAnnotation {
-  type: 'mention'
-  id: string
-  data: {
-    trigger: string
-    name: string
-    fullMatch: string
-  }
-}
-
 export type RuleAnnotation =
   | SpellCheckAnnotation
-  | GlossaryAnnotation
+  | KeywordsAnnotation
   | SpecialCharAnnotation
   | TagAnnotation
   | QuoteAnnotation
   | LinkAnnotation
-  | MentionAnnotation
 
 // Raw range from rule matching (before nesting resolution)
 export interface RawRange {

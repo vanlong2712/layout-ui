@@ -2,6 +2,7 @@ import { $getRoot } from 'lexical'
 
 import { NL_MARKER_PREFIX } from './constants'
 import { $isHighlightNode } from './highlight-node'
+import { $isMentionNode } from './mention-node'
 
 import type { ElementNode } from 'lexical'
 import type { HighlightNode } from './highlight-node'
@@ -69,6 +70,11 @@ export function $pointToGlobalOffset(nodeKey: string, offset: number): number {
           return global + (offset > 0 ? child.getTextContent().length : 0)
         }
 
+        // MentionNode is a CEF token — cursor at 0 means before, >0 means after.
+        if ($isMentionNode(child)) {
+          return global + (offset > 0 ? child.getTextContent().length : 0)
+        }
+
         return global + offset
       }
 
@@ -124,6 +130,15 @@ export function $globalOffsetToPoint(
       // If remaining ≤ 0, the target is BEFORE this node —
       // return an element-type position at this child's index.
       if ($isHighlightNode(child) && $isCEFalseToken(child)) {
+        if (remaining <= 0) {
+          return { key: p.getKey(), offset: ci, type: 'element' }
+        }
+        remaining -= len
+        continue
+      }
+
+      // MentionNode is CE=false token — cursor cannot enter it.
+      if ($isMentionNode(child)) {
         if (remaining <= 0) {
           return { key: p.getKey(), offset: ci, type: 'element' }
         }
@@ -193,6 +208,7 @@ export function $globalOffsetToPoint(
         )
           continue
         if ($isHighlightNode(child) && $isCEFalseToken(child)) continue
+        if ($isMentionNode(child)) continue
         return {
           key: child.getKey(),
           offset: child.getTextContent().length,

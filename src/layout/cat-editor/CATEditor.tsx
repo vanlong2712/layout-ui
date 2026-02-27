@@ -24,6 +24,9 @@ import { PlainTextPlugin } from '@lexical/react/LexicalPlainTextPlugin'
 
 import { NL_MARKER_PREFIX } from './constants'
 import { $isHighlightNode, HighlightNode } from './highlight-node'
+import { MentionNode } from './mention-node'
+import { setMentionNodeConfig } from './mention-node'
+import { MentionPlugin } from './mention-plugin'
 import {
   EditorRefPlugin,
   HighlightsPlugin,
@@ -36,11 +39,13 @@ import type { LexicalEditor } from 'lexical'
 
 import type {
   CATEditorRef,
+  IMentionUser,
   MooRule,
   PopoverContentRenderer,
   PopoverState,
   RuleAnnotation,
 } from './types'
+import type { MentionDOMRenderer } from './mention-node'
 import { cn } from '@/lib/utils'
 
 // ─── Main CATEditor Component ────────────────────────────────────────────────
@@ -72,8 +77,26 @@ export interface CATEditorProps {
   /** Called when a link highlight is clicked.  If not provided, links
    *  open in a new browser tab via `window.open`. */
   onLinkClick?: (url: string) => void
-  /** Called when a mention highlight is clicked. */
-  onMentionClick?: (name: string) => void
+  /** Whether clicking a link highlight should open the URL.
+   *  When `false`, link clicks are ignored (the click positions the
+   *  cursor in the editor text instead).  Default: `true`. */
+  openLinksOnClick?: boolean
+  /** Called when a mention node is clicked. */
+  onMentionClick?: (userId: string, userName: string) => void
+  /** Called when a mention is inserted via the typeahead. */
+  onMentionInsert?: (user: IMentionUser) => void
+  /** Converts a mention ID to model text.
+   *  Default: `` id => `@{${id}}` `` producing `@{5}`, `@{user_abc}`, etc. */
+  mentionSerialize?: (id: string) => string
+  /** RegExp to detect mention patterns in pasted / imported text.
+   *  Must have one capture group for the ID and use the `g` flag.
+   *  Default: `/@\{([^}]+)\}/g` */
+  mentionPattern?: RegExp
+  /** Custom DOM renderer for mention nodes.
+   *  Receives the `<span>` host element, the mentionId and the
+   *  display name.  Return `true` to take over rendering;
+   *  return `false`/`undefined` to use the default `@name` label. */
+  renderMentionDOM?: MentionDOMRenderer
   /** Placeholder text */
   placeholder?: string
   /** Additional class name for the editor container */
@@ -92,7 +115,12 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
       codepointDisplayMap,
       renderPopoverContent,
       onLinkClick,
+      openLinksOnClick = true,
       onMentionClick,
+      onMentionInsert,
+      mentionSerialize,
+      mentionPattern,
+      renderMentionDOM,
       placeholder = 'Start typing or paste text here…',
       className,
       readOnly = false,
@@ -107,6 +135,15 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
     } | null>(null)
     const containerRef = useRef<HTMLDivElement>(null)
     const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+    // ── Sync MentionNode global config whenever props change ──────────────
+    useEffect(() => {
+      setMentionNodeConfig({
+        renderDOM: renderMentionDOM,
+        serialize: mentionSerialize,
+        pattern: mentionPattern,
+      })
+    }, [renderMentionDOM, mentionSerialize, mentionPattern])
 
     // ── Flash highlight state ──────────────────────────────────────────────
     const flashIdRef = useRef<string | null>(null)
@@ -306,7 +343,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
             base: 'cat-editor-text',
           },
         },
-        nodes: [HighlightNode],
+        nodes: [HighlightNode, MentionNode],
         editable: !readOnly,
         onError: (error: Error) => {
           console.error('CATEditor Lexical error:', error)
@@ -409,30 +446,43 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
       if (!container) return
 
       const handleClick = (e: MouseEvent) => {
-        const target = (e.target as HTMLElement).closest('.cat-highlight')
-        if (!target) return
+        // Check for link highlights
+        if (openLinksOnClick) {
+          const highlightTarget = (e.target as HTMLElement).closest(
+            '.cat-highlight',
+          )
+          if (highlightTarget) {
+            const ruleIdsAttr = highlightTarget.getAttribute('data-rule-ids')
+            if (ruleIdsAttr) {
+              const ids = ruleIdsAttr.split(',')
+              for (const id of ids) {
+                const ann = annotationMapRef.current.get(id)
+                if (!ann) continue
 
-        const ruleIdsAttr = target.getAttribute('data-rule-ids')
-        if (!ruleIdsAttr) return
-
-        const ids = ruleIdsAttr.split(',')
-        for (const id of ids) {
-          const ann = annotationMapRef.current.get(id)
-          if (!ann) continue
-
-          if (ann.type === 'link') {
-            e.preventDefault()
-            if (onLinkClick) {
-              onLinkClick(ann.data.url)
-            } else {
-              window.open(ann.data.url, '_blank', 'noopener,noreferrer')
+                if (ann.type === 'link') {
+                  e.preventDefault()
+                  if (onLinkClick) {
+                    onLinkClick(ann.data.url)
+                  } else {
+                    window.open(ann.data.url, '_blank', 'noopener,noreferrer')
+                  }
+                  return
+                }
+              }
             }
-            return
           }
+        }
 
-          if (ann.type === 'mention') {
+        // Check for mention nodes
+        const mentionTarget = (e.target as HTMLElement).closest(
+          '.cat-mention-node',
+        )
+        if (mentionTarget) {
+          const mentionId = mentionTarget.getAttribute('data-mention-id')
+          const mentionName = mentionTarget.getAttribute('data-mention-name')
+          if (mentionId && mentionName) {
             e.preventDefault()
-            onMentionClick?.(ann.data.name)
+            onMentionClick?.(mentionId, mentionName)
             return
           }
         }
@@ -442,7 +492,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
       return () => {
         container.removeEventListener('click', handleClick)
       }
-    }, [onLinkClick, onMentionClick])
+    }, [onLinkClick, openLinksOnClick, onMentionClick])
 
     // Handle suggestion click -> replace the highlighted text
     const handleSuggestionClick = useCallback(
@@ -528,6 +578,20 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
               savedSelectionRef={savedSelectionRef}
             />
             <NLMarkerNavigationPlugin />
+            {/* Mention typeahead plugin — enabled when a mention rule is present */}
+            {rules
+              .filter(
+                (r): r is import('./types').IMentionRule =>
+                  r.type === 'mention',
+              )
+              .map((mentionRule, i) => (
+                <MentionPlugin
+                  key={`mention-${i}`}
+                  users={mentionRule.users}
+                  trigger={mentionRule.trigger}
+                  onMentionInsert={onMentionInsert}
+                />
+              ))}
           </div>
         </LexicalComposer>
 

@@ -68,7 +68,7 @@ function SpellCheckPopoverContent({
   )
 }
 
-function GlossaryPopoverContent({
+function KeywordsPopoverContent({
   data,
 }: {
   data: { label: string; term: string; description?: string }
@@ -199,23 +199,6 @@ function LinkPopoverContent({
       <button type="button" className="cat-suggestion-btn" onClick={onOpen}>
         Open link ↗
       </button>
-    </div>
-  )
-}
-
-function MentionPopoverContent({
-  data,
-}: {
-  data: { trigger: string; name: string; fullMatch: string }
-}) {
-  return (
-    <div className="p-3 max-w-xs space-y-2">
-      <span className="cat-badge cat-badge-mention">Mention</span>
-      <p className="text-sm leading-relaxed text-foreground">
-        <strong className="font-semibold text-foreground">
-          {data.fullMatch}
-        </strong>
-      </p>
     </div>
   )
 }
@@ -369,7 +352,7 @@ export function HighlightPopover({
                 onSuggestionClick={(s) => onSuggestionClick(s, ann.id)}
               />
             ) : ann.type === 'glossary' ? (
-              <GlossaryPopoverContent data={ann.data} />
+              <KeywordsPopoverContent data={ann.data} />
             ) : ann.type === 'tag' ? (
               <TagPopoverContent data={ann.data} />
             ) : ann.type === 'quote' ? (
@@ -385,8 +368,6 @@ export function HighlightPopover({
                   }
                 }}
               />
-            ) : ann.type === 'mention' ? (
-              <MentionPopoverContent data={ann.data} />
             ) : (
               <SpecialCharPopoverContent data={ann.data} />
             )}

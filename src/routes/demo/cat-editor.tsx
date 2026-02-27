@@ -1,5 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useCallback, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
+import { createRoot } from 'react-dom/client'
 import {
   AtSign,
   BookOpen,
@@ -24,16 +26,18 @@ import type { DetectQuotesOptions } from '@/utils/detect-quotes'
 
 import type {
   CATEditorRef,
-  IGlossaryEntry,
-  IGlossaryRule,
+  IKeywordsEntry,
+  IKeywordsRule,
   ILinkRule,
   IMentionRule,
+  IMentionUser,
   IQuoteRule,
   ISpecialCharEntry,
   ISpecialCharRule,
   ISpellCheckRule,
   ISpellCheckValidation,
   ITagRule,
+  MentionDOMRenderer,
   MooRule,
   RuleAnnotation,
 } from '@/layout/cat-editor'
@@ -51,7 +55,7 @@ export const Route = createFileRoute('/demo/cat-editor')({
 // ─── Default sample data ─────────────────────────────────────────────────────
 
 const SAMPLE_TEXT =
-  'The quick brown fox jumps over the layz dog. This sentance contains severl speling errors and some technical terms like API endpoint and HTTP request.\nTom & Jerry\u00A0say\u2009hello\u2003world\u200Bhidden\u2060join\u200Ahair.\tTabbed here.\n<a href="https://example.com">Click <b>here</b> for more</a> info <br/> end.\nHello {{userName}}, your order ${orderId} is ready. Total: $amount — use code %PROMO to save.\nShe said "run away" and he replied \'OK fine\' before leaving.\nVisit https://github.com/lexical or www.example.com for details. Contact @john.doe or @admin for help.'
+  'The quick brown fox jumps over the layz dog. This sentance contains severl speling errors and some technical terms like API endpoint and HTTP request.\nTom & Jerry\u00A0say\u2009hello\u2003world\u200Bhidden\u2060join\u200Ahair.\tTabbed here.\n<a href="https://example.com">Click <b>here</b> for more</a> info <br/> end.\nHello {{userName}}, your order ${orderId} is ready. Total: $amount — use code %PROMO to save.\nShe said "run away" and he replied \'OK fine\' before leaving.\nVisit https://github.com/lexical or www.example.com for details. Type @ to mention a user.'
 
 const DEFAULT_SPELLCHECK: Array<ISpellCheckValidation> = [
   {
@@ -103,12 +107,12 @@ const DEFAULT_SPELLCHECK: Array<ISpellCheckValidation> = [
 const DEFAULT_TAG_PATTERN =
   '<[^>]+>|(\\{\\{[^{}]*\\}\\})|(\\{[^{}]*\\})|(["\']?\\{[^{}]*\\}["\']?)|(["\']?\\$\\{[^{}]*\\}["\']?)|(["\']?\\$[A-Za-z0-9_]+["\']?)|(["\']?%[A-Za-z0-9]+["\']?)'
 
-const DEFAULT_LEXIQA_ENTRIES: Array<IGlossaryEntry> = [
+const DEFAULT_LEXIQA_ENTRIES: Array<IKeywordsEntry> = [
   { term: 'API endpoint' },
   { term: 'HTTP request' },
 ]
 
-const DEFAULT_TB_ENTRIES: Array<IGlossaryEntry> = [
+const DEFAULT_TB_ENTRIES: Array<IKeywordsEntry> = [
   {
     term: 'endpoint',
     description:
@@ -143,6 +147,174 @@ const DEFAULT_SPECIAL_CHARS: Array<ISpecialCharEntry> = [
   { name: 'Null Character', pattern: new RegExp('\\u0000') },
   { name: 'Line Break', pattern: /\n/ },
   { name: 'Space', pattern: / / },
+]
+
+const DEFAULT_MENTION_USERS: Array<IMentionUser> = [
+  {
+    id: '1',
+    name: 'Alice Johnson',
+    avatar: () => (
+      <img
+        src="https://i.pravatar.cc/48?u=alice-johnson"
+        className="rounded-full w-full h-full object-cover"
+        alt=""
+      />
+    ),
+  },
+  {
+    id: '2',
+    name: 'Bob Smith',
+    avatar: () => (
+      <img
+        src="https://i.pravatar.cc/48?u=bob-smith"
+        className="rounded-full w-full h-full object-cover"
+        alt=""
+      />
+    ),
+  },
+  {
+    id: '3',
+    name: 'Charlie Brown',
+    avatar: () => (
+      <img
+        src="https://i.pravatar.cc/48?u=charlie-brown"
+        className="rounded-full w-full h-full object-cover"
+        alt=""
+      />
+    ),
+  },
+  {
+    id: '4',
+    name: 'Diana Prince',
+    avatar: () => (
+      <img
+        src="https://i.pravatar.cc/48?u=diana-prince"
+        className="rounded-full w-full h-full object-cover"
+        alt=""
+      />
+    ),
+  },
+  {
+    id: '5',
+    name: 'Eve Williams',
+    avatar: () => (
+      <img
+        src="https://i.pravatar.cc/48?u=eve-williams"
+        className="rounded-full w-full h-full object-cover"
+        alt=""
+      />
+    ),
+  },
+  {
+    id: '6',
+    name: 'Frank Castle',
+    avatar: () => (
+      <img
+        src="https://i.pravatar.cc/48?u=frank-castle"
+        className="rounded-full w-full h-full object-cover"
+        alt=""
+      />
+    ),
+  },
+  {
+    id: '7',
+    name: 'Grace Hopper',
+    avatar: () => (
+      <img
+        src="https://i.pravatar.cc/48?u=grace-hopper"
+        className="rounded-full w-full h-full object-cover"
+        alt=""
+      />
+    ),
+  },
+  {
+    id: '8',
+    name: 'Henry Ford',
+    avatar: () => (
+      <img
+        src="https://i.pravatar.cc/48?u=henry-ford"
+        className="rounded-full w-full h-full object-cover"
+        alt=""
+      />
+    ),
+  },
+  {
+    id: '9',
+    name: 'Ivy Chen',
+    avatar: () => (
+      <img
+        src="https://i.pravatar.cc/48?u=ivy-chen"
+        className="rounded-full w-full h-full object-cover"
+        alt=""
+      />
+    ),
+  },
+  {
+    id: '10',
+    name: 'Jack Daniels',
+    avatar: () => (
+      <img
+        src="https://i.pravatar.cc/48?u=jack-daniels"
+        className="rounded-full w-full h-full object-cover"
+        alt=""
+      />
+    ),
+  },
+  {
+    id: '11',
+    name: 'Karen Lee',
+    avatar: () => (
+      <img
+        src="https://i.pravatar.cc/48?u=karen-lee"
+        className="rounded-full w-full h-full object-cover"
+        alt=""
+      />
+    ),
+  },
+  {
+    id: '12',
+    name: 'Leo Messi',
+    avatar: () => (
+      <img
+        src="https://i.pravatar.cc/48?u=leo-messi"
+        className="rounded-full w-full h-full object-cover"
+        alt=""
+      />
+    ),
+  },
+  {
+    id: '13',
+    name: 'Mia Wong',
+    avatar: () => (
+      <img
+        src="https://i.pravatar.cc/48?u=mia-wong"
+        className="rounded-full w-full h-full object-cover"
+        alt=""
+      />
+    ),
+  },
+  {
+    id: '14',
+    name: 'Nathan Drake',
+    avatar: () => (
+      <img
+        src="https://i.pravatar.cc/48?u=nathan-drake"
+        className="rounded-full w-full h-full object-cover"
+        alt=""
+      />
+    ),
+  },
+  {
+    id: '15',
+    name: 'Olivia Kim',
+    avatar: () => (
+      <img
+        src="https://i.pravatar.cc/48?u=olivia-kim"
+        className="rounded-full w-full h-full object-cover"
+        alt=""
+      />
+    ),
+  },
 ]
 
 // ─── Text snippets for insertion ──────────────────────────────────────────────
@@ -222,6 +394,8 @@ function CATEditorDemo() {
   const [linkEnabled, setLinkEnabled] = useState(true)
   const [mentionEnabled, setMentionEnabled] = useState(true)
   const [mentionTrigger, setMentionTrigger] = useState('@')
+  const [mentionShowAvatar, setMentionShowAvatar] = useState(true)
+  const [mentionSerializeFormat, setMentionSerializeFormat] = useState('@{id}')
   const [searchKeywords, setSearchKeywords] = useState('')
 
   // ── Editable rule data ───────────────────────────────────────────────
@@ -229,12 +403,12 @@ function CATEditorDemo() {
   const [spellcheckData, setSpellcheckData] =
     useState<Array<ISpellCheckValidation>>(DEFAULT_SPELLCHECK)
 
-  // Glossary entries
-  const [lexiqaEntries, setLexiqaEntries] = useState<Array<IGlossaryEntry>>(
+  // Keywords entries
+  const [lexiqaEntries, setLexiqaEntries] = useState<Array<IKeywordsEntry>>(
     DEFAULT_LEXIQA_ENTRIES,
   )
   const [tbEntries, setTbEntries] =
-    useState<Array<IGlossaryEntry>>(DEFAULT_TB_ENTRIES)
+    useState<Array<IKeywordsEntry>>(DEFAULT_TB_ENTRIES)
 
   // Special-char entries
   const [specialCharEntries, setSpecialCharEntries] = useState<
@@ -285,6 +459,32 @@ function CATEditorDemo() {
 
   const demoMeta = layoutDemos.find((d) => d.to === '/demo/cat-editor')
 
+  // ── Custom mention DOM renderer ──────────────────────────────────────
+  const renderMentionDOM = useCallback<MentionDOMRenderer>(
+    (element, mentionId, mentionName) => {
+      element.textContent = ''
+      const user = DEFAULT_MENTION_USERS.find((u) => u.id === mentionId)
+
+      if (mentionShowAvatar && user?.avatar) {
+        const container = document.createElement('span')
+        container.className = 'cat-mention-avatar'
+        container.style.width = '16px'
+        container.style.height = '16px'
+        const root = createRoot(container)
+        flushSync(() => root.render(user.avatar!()))
+        element.appendChild(container)
+      }
+
+      const label = document.createElement('span')
+      label.className = 'cat-mention-label'
+      label.textContent = `@${user?.name ?? mentionName}`
+      element.appendChild(label)
+
+      return true
+    },
+    [mentionShowAvatar],
+  )
+
   // ── Parse optional codepoint map ─────────────────────────────────────
   const codepointDisplayMap = useMemo<
     Record<number, string> | undefined
@@ -303,6 +503,26 @@ function CATEditorDemo() {
     }
   }, [codepointMapJson])
 
+  // ── Derive mentionSerialize / mentionPattern from format template ───
+  const mentionSerialize = useMemo(() => {
+    const fmt = mentionSerializeFormat.trim()
+    if (!fmt || fmt === '@{id}') return undefined // use default
+    return (id: string) => fmt.replace(/\bid\b/g, id)
+  }, [mentionSerializeFormat])
+
+  const mentionPattern = useMemo(() => {
+    const fmt = mentionSerializeFormat.trim()
+    if (!fmt || fmt === '@{id}') return undefined // use default
+    // Escape all regex-special chars, then replace the literal `id` with a capture group
+    const escaped = fmt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const withCapture = escaped.replace(/\\b?id\\b?|id/g, '([^\\s]+)')
+    try {
+      return new RegExp(withCapture, 'g')
+    } catch {
+      return undefined
+    }
+  }, [mentionSerializeFormat])
+
   // ── Build active rules from state ────────────────────────────────────
   const rules = useMemo<Array<MooRule>>(() => {
     const active: Array<MooRule> = []
@@ -317,14 +537,14 @@ function CATEditorDemo() {
         type: 'glossary',
         label: 'lexiqa',
         entries: lexiqaEntries,
-      } satisfies IGlossaryRule)
+      } satisfies IKeywordsRule)
     }
     if (tbTargetEnabled) {
       active.push({
         type: 'glossary',
         label: 'tb-target',
         entries: tbEntries,
-      } satisfies IGlossaryRule)
+      } satisfies IKeywordsRule)
     }
     if (specialCharEnabled) {
       active.push({
@@ -363,6 +583,7 @@ function CATEditorDemo() {
     if (mentionEnabled) {
       active.push({
         type: 'mention',
+        users: DEFAULT_MENTION_USERS,
         trigger: mentionTrigger || '@',
       } satisfies IMentionRule)
     }
@@ -375,8 +596,8 @@ function CATEditorDemo() {
         active.push({
           type: 'glossary',
           label: 'search',
-          entries: terms.map((t) => ({ term: t })),
-        } satisfies IGlossaryRule)
+          entries: terms.map((t) => ({ term: t, pattern: t })),
+        } satisfies IKeywordsRule)
       }
     }
     return active
@@ -452,6 +673,8 @@ function CATEditorDemo() {
     setLinkEnabled(true)
     setMentionEnabled(true)
     setMentionTrigger('@')
+    setMentionShowAvatar(true)
+    setMentionSerializeFormat('@{id}')
     setSearchKeywords('')
     setFlashedSpellcheckId(null)
     if (flashDemoTimerRef.current) {
@@ -486,17 +709,17 @@ function CATEditorDemo() {
     ])
 
   const updateGlossary = (
-    setter: React.Dispatch<React.SetStateAction<Array<IGlossaryEntry>>>,
+    setter: React.Dispatch<React.SetStateAction<Array<IKeywordsEntry>>>,
     idx: number,
-    patch: Partial<IGlossaryEntry>,
+    patch: Partial<IKeywordsEntry>,
   ) =>
     setter((prev) => prev.map((e, i) => (i === idx ? { ...e, ...patch } : e)))
   const removeGlossary = (
-    setter: React.Dispatch<React.SetStateAction<Array<IGlossaryEntry>>>,
+    setter: React.Dispatch<React.SetStateAction<Array<IKeywordsEntry>>>,
     idx: number,
   ) => setter((prev) => prev.filter((_, i) => i !== idx))
   const addGlossary = (
-    setter: React.Dispatch<React.SetStateAction<Array<IGlossaryEntry>>>,
+    setter: React.Dispatch<React.SetStateAction<Array<IKeywordsEntry>>>,
   ) => setter((prev) => [...prev, { term: '' }])
 
   const updateSpecialChar = (
@@ -544,15 +767,6 @@ function CATEditorDemo() {
               Rules Configuration
             </h2>
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5">
-                <Search className="h-4 w-4 text-blue-500" />
-                <Input
-                  value={searchKeywords}
-                  onChange={(e) => setSearchKeywords(e.target.value)}
-                  placeholder="Search keywords (comma-separated)…"
-                  className="h-8 text-sm w-56"
-                />
-              </div>
               <Button variant="outline" size="sm" onClick={handleReset}>
                 <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
                 Reset
@@ -991,9 +1205,48 @@ function CATEditorDemo() {
                   onChange={(e) => setMentionTrigger(e.target.value)}
                 />
               </div>
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground w-20">
+                  Serialize
+                </Label>
+                <Input
+                  className="h-7 text-xs font-mono flex-1"
+                  value={mentionSerializeFormat}
+                  onChange={(e) => setMentionSerializeFormat(e.target.value)}
+                  placeholder="@{id}"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={mentionShowAvatar}
+                  onCheckedChange={setMentionShowAvatar}
+                />
+                <Label className="text-xs text-muted-foreground">
+                  Show avatar (custom renderMentionDOM)
+                </Label>
+              </div>
               <p className="text-xs text-muted-foreground">
-                Detects mentions like @username in the text. The trigger
-                character can be customised (default: @).
+                Type the trigger character (default: @) to open a user
+                typeahead. Select a user to insert a mention node. The model
+                text format is controlled by{' '}
+                <code className="text-[11px] bg-muted px-1 rounded">
+                  mentionSerialize
+                </code>{' '}
+                (use{' '}
+                <code className="text-[11px] bg-muted px-1 rounded">id</code> as
+                placeholder, e.g.{' '}
+                <code className="text-[11px] bg-muted px-1 rounded">
+                  {'@{id}'}
+                </code>
+                ,{' '}
+                <code className="text-[11px] bg-muted px-1 rounded">
+                  {'@[id]'}
+                </code>
+                ). Display is resolved to{' '}
+                <code className="text-[11px] bg-muted px-1 rounded">
+                  @UserName
+                </code>
+                . {DEFAULT_MENTION_USERS.length} users available.
               </p>
             </div>
           </Section>
@@ -1032,8 +1285,12 @@ function CATEditorDemo() {
             <span className="text-muted-foreground">Link</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-mention" />
-            <span className="text-muted-foreground">Mention</span>
+            <span className="inline-block h-4 px-1.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 leading-4">
+              @A
+            </span>
+            <span className="text-muted-foreground">
+              Mention (type @ to trigger)
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-nested cat-highlight-glossary cat-highlight-glossary-lexiqa" />
@@ -1044,6 +1301,17 @@ function CATEditorDemo() {
           <div className="text-muted-foreground/60 ml-auto text-xs">
             Hover a highlight to see details &amp; suggestions
           </div>
+        </div>
+
+        {/* Search keywords — placed right above the editor */}
+        <div className="flex items-center gap-2">
+          <Search className="h-4 w-4 text-blue-500 shrink-0" />
+          <Input
+            value={searchKeywords}
+            onChange={(e) => setSearchKeywords(e.target.value)}
+            placeholder="Search keywords (comma-separated)…"
+            className="h-8 text-sm"
+          />
         </div>
 
         {/* Editor */}
@@ -1065,6 +1333,9 @@ function CATEditorDemo() {
             rules={rules}
             codepointDisplayMap={codepointDisplayMap}
             onSuggestionApply={handleSuggestionApply}
+            renderMentionDOM={renderMentionDOM}
+            mentionSerialize={mentionSerialize}
+            mentionPattern={mentionPattern}
             onChange={() => {
               // Clear flash state when user edits text
               if (flashedSpellcheckId) {
@@ -1176,8 +1447,8 @@ function GlossaryEditor({
   onRemove,
   onAdd,
 }: {
-  entries: Array<IGlossaryEntry>
-  onUpdate: (idx: number, patch: Partial<IGlossaryEntry>) => void
+  entries: Array<IKeywordsEntry>
+  onUpdate: (idx: number, patch: Partial<IKeywordsEntry>) => void
   onRemove: (idx: number) => void
   onAdd: () => void
 }) {
@@ -1192,8 +1463,18 @@ function GlossaryEditor({
             <Input
               className="h-7 text-xs flex-1"
               value={e.term}
-              placeholder="Term"
+              placeholder="Term (exact match)"
               onChange={(ev) => onUpdate(i, { term: ev.target.value })}
+            />
+            <Input
+              className="h-7 text-xs w-32 font-mono"
+              value={e.pattern ?? ''}
+              placeholder="Regex (optional)"
+              onChange={(ev) =>
+                onUpdate(i, {
+                  pattern: ev.target.value || undefined,
+                })
+              }
             />
             <Input
               className="h-7 text-xs flex-1"
@@ -1216,6 +1497,12 @@ function GlossaryEditor({
           </div>
         ))}
       </div>
+      <p className="text-[10px] text-muted-foreground/60 mt-1">
+        Each entry matches by exact <strong>Term</strong> string. Add an
+        optional <strong>Regex</strong> to match by pattern instead (e.g.{' '}
+        <code className="bg-muted px-0.5 rounded">fox|dog</code>,{' '}
+        <code className="bg-muted px-0.5 rounded">{'\\bAPI\\b'}</code>).
+      </p>
       <Button variant="outline" size="sm" className="mt-2" onClick={onAdd}>
         <Plus className="mr-1 h-3.5 w-3.5" />
         Add entry

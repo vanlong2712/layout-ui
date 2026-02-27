@@ -11,6 +11,7 @@ import {
   COMMAND_PRIORITY_HIGH,
   KEY_ARROW_LEFT_COMMAND,
   KEY_ARROW_RIGHT_COMMAND,
+  PASTE_COMMAND,
   SELECTION_CHANGE_COMMAND,
 } from 'lexical'
 import { useCallback, useEffect, useRef } from 'react'
@@ -22,6 +23,11 @@ import {
   setCodepointOverrides,
 } from './constants'
 import { $createHighlightNode, $isHighlightNode } from './highlight-node'
+import {
+  $createMentionNode,
+  $isMentionNode,
+  getMentionPattern,
+} from './mention-node'
 import { $globalOffsetToPoint, $pointToGlobalOffset } from './selection-helpers'
 
 import type {
@@ -30,7 +36,19 @@ import type {
   LexicalNode,
   PointType,
 } from 'lexical'
-import type { ITagRule, MooRule, RuleAnnotation } from './types'
+import type { IMentionRule, ITagRule, MooRule, RuleAnnotation } from './types'
+
+/** Saved mention position recorded during the text-collection phase. */
+interface SavedMention {
+  /** Global character offset where this mention starts */
+  start: number
+  /** Global character offset where this mention ends */
+  end: number
+  /** Data needed to recreate the MentionNode */
+  mentionId: string
+  mentionName: string
+  text: string
+}
 
 // ─── Highlights Plugin ────────────────────────────────────────────────────────
 
@@ -72,9 +90,14 @@ export function HighlightsPlugin({
         // 1. Collect plain text content (flatten paragraphs).
         //    Skip line-break marker nodes (prefixed __nl-) so that
         //    the ↩ display symbol doesn't compound on each pass.
+        //    Record MentionNode positions so they survive the rebuild.
         const paragraphs = root.getChildren()
         const lines: Array<string> = []
-        for (const p of paragraphs) {
+        const savedMentions: Array<SavedMention> = []
+        let collectOffset = 0
+
+        for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
+          const p = paragraphs[pIdx]
           let lineText = ''
           if ('getChildren' in p) {
             for (const child of (p as ElementNode).getChildren()) {
@@ -84,17 +107,73 @@ export function HighlightsPlugin({
               ) {
                 continue
               }
+              if ($isMentionNode(child)) {
+                const text = child.getTextContent()
+                savedMentions.push({
+                  start: collectOffset + lineText.length,
+                  end: collectOffset + lineText.length + text.length,
+                  mentionId: child.__mentionId,
+                  mentionName: child.__mentionName,
+                  text,
+                })
+              }
               lineText += child.getTextContent()
             }
           } else {
             lineText = p.getTextContent()
           }
           lines.push(lineText)
+          collectOffset += lineText.length + 1 // +1 for \n between paragraphs
         }
         const fullText = lines.join('\n')
 
-        // 2. Compute highlight segments (supports nesting)
-        const segments = computeHighlightSegments(fullText, rules)
+        // 1b. Detect mention patterns in the text that aren't already
+        //     MentionNodes.  This handles pasted text, initial text, or
+        //     programmatic insertions containing the mention pattern.
+        const mentionRule = rules.find(
+          (r): r is IMentionRule => r.type === 'mention',
+        )
+        if (mentionRule) {
+          const pattern = getMentionPattern()
+          let match: RegExpExecArray | null
+          while ((match = pattern.exec(fullText)) !== null) {
+            const matchStart = match.index
+            const matchEnd = matchStart + match[0].length
+            const matchId = match[1]
+
+            // Skip if already tracked as a MentionNode
+            const alreadySaved = savedMentions.some(
+              (m) => m.start === matchStart && m.end === matchEnd,
+            )
+            if (alreadySaved) continue
+
+            // Resolve user name from the mention rule's user list
+            const user = mentionRule.users.find((u) => u.id === matchId)
+            if (user) {
+              savedMentions.push({
+                start: matchStart,
+                end: matchEnd,
+                mentionId: user.id,
+                mentionName: user.name,
+                text: match[0],
+              })
+            }
+          }
+        }
+
+        // 2. Compute highlight segments (supports nesting).
+        //    Replace mention ranges with placeholder chars so that
+        //    highlight patterns (e.g. tag pattern matching `{id}`)
+        //    don't produce segments inside mention model text.
+        let segmentText = fullText
+        for (let mi = savedMentions.length - 1; mi >= 0; mi--) {
+          const m = savedMentions[mi]
+          segmentText =
+            segmentText.slice(0, m.start) +
+            '\x01'.repeat(m.end - m.start) +
+            segmentText.slice(m.end)
+        }
+        const segments = computeHighlightSegments(segmentText, rules)
 
         // 3. Update annotation map for popover
         const newMap = new Map<string, RuleAnnotation>()
@@ -120,7 +199,8 @@ export function HighlightsPlugin({
           )
         }
 
-        // 4. Rebuild the content tree with highlights
+        // 4. Rebuild the content tree with highlights,
+        //    preserving MentionNodes at their original positions.
         root.clear()
 
         if (fullText.length === 0) {
@@ -128,6 +208,69 @@ export function HighlightsPlugin({
           p.append($createTextNode(''))
           root.append(p)
           return
+        }
+
+        // Track emitted mentions to prevent duplicates when a mention
+        // spans multiple segment/gap ranges.
+        const emittedMentionStarts = new Set<number>()
+
+        /** Append nodes for a text range, splitting around any
+         *  saved MentionNodes that overlap the range.
+         *  `makeNode` creates either a TextNode or HighlightNode
+         *  for the non-mention portions. */
+        const appendWithMentions = (
+          paragraph: ElementNode,
+          rangeStart: number,
+          rangeEnd: number,
+          makeNode: (text: string) => LexicalNode,
+        ) => {
+          // Collect mentions that overlap this range (skip already-emitted)
+          const overlapping = savedMentions.filter(
+            (m) =>
+              m.start < rangeEnd &&
+              m.end > rangeStart &&
+              !emittedMentionStarts.has(m.start),
+          )
+          if (overlapping.length === 0) {
+            // No mentions — emit the full range with the provided factory
+            const text = fullText.slice(rangeStart, rangeEnd)
+            if (text.length > 0) {
+              paragraph.append(makeNode(text))
+            }
+            return
+          }
+
+          // Sort mentions by start offset
+          overlapping.sort((a, b) => a.start - b.start)
+          let cursor = rangeStart
+
+          for (const m of overlapping) {
+            const mStart = Math.max(m.start, rangeStart)
+            const mEnd = Math.min(m.end, rangeEnd)
+
+            // Text before this mention
+            if (mStart > cursor) {
+              const beforeText = fullText.slice(cursor, mStart)
+              if (beforeText.length > 0) {
+                paragraph.append(makeNode(beforeText))
+              }
+            }
+
+            // The mention node itself
+            paragraph.append(
+              $createMentionNode(m.mentionId, m.mentionName, m.text),
+            )
+            emittedMentionStarts.add(m.start)
+            cursor = mEnd
+          }
+
+          // Text after the last mention
+          if (cursor < rangeEnd) {
+            const afterText = fullText.slice(cursor, rangeEnd)
+            if (afterText.length > 0) {
+              paragraph.append(makeNode(afterText))
+            }
+          }
         }
 
         const textLines = fullText.split('\n')
@@ -150,7 +293,9 @@ export function HighlightsPlugin({
 
             // Plain text before highlight
             if (sStart > pos) {
-              paragraph.append($createTextNode(fullText.slice(pos, sStart)))
+              appendWithMentions(paragraph, pos, sStart, (text) =>
+                $createTextNode(text),
+              )
             }
 
             // Detect collapsed-tag state early so it can influence types.
@@ -204,22 +349,46 @@ export function HighlightsPlugin({
                 : undefined
             const isQuoteToken = !!quoteAnn
 
-            paragraph.append(
-              $createHighlightNode(
-                fullText.slice(sStart, sEnd),
-                types,
-                ids,
-                tagDisplayText ?? quoteDisplayText,
-                isTagToken || isQuoteToken,
-              ),
+            // Check if this highlight segment entirely falls within a mention.
+            // Mention content is masked before segment computation, so this
+            // should rarely trigger — it's a safety net.
+            const containingMention = savedMentions.find(
+              (m) => m.start <= sStart && m.end >= sEnd,
             )
+
+            if (containingMention) {
+              // Mention takes precedence — create it if not yet emitted
+              if (!emittedMentionStarts.has(containingMention.start)) {
+                paragraph.append(
+                  $createMentionNode(
+                    containingMention.mentionId,
+                    containingMention.mentionName,
+                    containingMention.text,
+                  ),
+                )
+                emittedMentionStarts.add(containingMention.start)
+              }
+              // If already emitted, skip (no node for this range)
+            } else {
+              appendWithMentions(paragraph, sStart, sEnd, (text) =>
+                $createHighlightNode(
+                  text,
+                  types,
+                  ids,
+                  tagDisplayText ?? quoteDisplayText,
+                  isTagToken || isQuoteToken,
+                ),
+              )
+            }
 
             pos = sEnd
           }
 
           // Remaining plain text after last highlight
           if (pos < lineEnd) {
-            paragraph.append($createTextNode(fullText.slice(pos, lineEnd)))
+            appendWithMentions(paragraph, pos, lineEnd, (text) =>
+              $createTextNode(text),
+            )
           }
 
           // Line-break indicator: \n sits at lineEnd in fullText but is a
@@ -316,6 +485,33 @@ export function HighlightsPlugin({
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
   }, [editor, applyHighlights])
+
+  // Strip trailing newlines from pasted text.  Some browsers / OSes add
+  // a trailing \n to clipboard content which causes Lexical to create an
+  // extra empty paragraph after the pasted text.
+  useEffect(() => {
+    return editor.registerCommand(
+      PASTE_COMMAND,
+      (event: ClipboardEvent) => {
+        const clipboardData = event.clipboardData
+        if (!clipboardData) return false
+        const text = clipboardData.getData('text/plain')
+        if (text && text !== text.replace(/\n+$/, '')) {
+          event.preventDefault()
+          const trimmed = text.replace(/\n+$/, '')
+          editor.update(() => {
+            const selection = $getSelection()
+            if ($isRangeSelection(selection)) {
+              selection.insertRawText(trimmed)
+            }
+          })
+          return true
+        }
+        return false
+      },
+      COMMAND_PRIORITY_HIGH,
+    )
+  }, [editor])
 
   return null
 }
