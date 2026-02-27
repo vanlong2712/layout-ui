@@ -23,22 +23,12 @@ export const CODEPOINT_DISPLAY_MAP: Record<number, string> = {
   0xfeff: '◊',
 }
 
-/** Runtime override map set by the component layer.
- *  Merged on top of `CODEPOINT_DISPLAY_MAP` when resolving display symbols. */
-let _codepointOverrides: Record<number, string> | undefined
-
-/** Set the runtime code-point display overrides.  Called from the
- *  HighlightsPlugin whenever the rules change. */
-export function setCodepointOverrides(
-  overrides: Record<number, string> | undefined,
-): void {
-  _codepointOverrides = overrides
-}
-
-/** Resolve the effective display map (built-in + overrides). */
-export function getEffectiveCodepointMap(): Record<number, string> {
-  return _codepointOverrides
-    ? { ...CODEPOINT_DISPLAY_MAP, ..._codepointOverrides }
+/** Build the effective display map (built-in + optional overrides). */
+export function getEffectiveCodepointMap(
+  overrides?: Record<number, string>,
+): Record<number, string> {
+  return overrides
+    ? { ...CODEPOINT_DISPLAY_MAP, ...overrides }
     : CODEPOINT_DISPLAY_MAP
 }
 
@@ -52,9 +42,7 @@ export function replaceInvisibleChars(
   text: string,
   overrides?: Record<number, string>,
 ): string {
-  const map = overrides
-    ? { ...CODEPOINT_DISPLAY_MAP, ...overrides }
-    : getEffectiveCodepointMap()
+  const map = getEffectiveCodepointMap(overrides)
   let result = ''
   for (const ch of text) {
     const cp = ch.codePointAt(0) ?? 0

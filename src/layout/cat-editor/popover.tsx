@@ -1,8 +1,9 @@
 import * as React from 'react'
 import { useLayoutEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { createPopper } from '@popperjs/core'
 
-import { getEffectiveCodepointMap } from './constants'
+import { CODEPOINT_DISPLAY_MAP } from './constants'
 
 import type { Instance as PopperInstance } from '@popperjs/core'
 import type {
@@ -70,63 +71,81 @@ function SpellCheckPopoverContent({
 
 function KeywordsPopoverContent({
   data,
+  effectiveMap,
 }: {
-  data: { label: string; term: string; description?: string }
+  data: {
+    label: string
+    pattern: string
+    description?: string
+    atomic?: boolean
+    displaySymbol?: string
+    matchedText?: string
+    codePoint?: string
+  }
+  effectiveMap?: Record<number, string>
 }) {
   const displayLabel = data.label
     .split('-')
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ')
 
+  // Atomic entries with matched text — show the special-char-style popover
+  if (data.atomic && data.matchedText) {
+    const cp = data.matchedText.codePointAt(0) ?? 0
+    const displaySymbol =
+      (effectiveMap && effectiveMap[cp]) ??
+      data.displaySymbol ??
+      (data.matchedText.trim() === '' ? '·' : data.matchedText)
+
+    return (
+      <div className="p-3 max-w-xs space-y-3">
+        <span
+          className={`cat-badge cat-badge-keyword cat-badge-keyword-${data.label}`}
+        >
+          {displayLabel}
+        </span>
+
+        {/* Large centered visual symbol */}
+        <div className="flex items-center justify-center">
+          <span className="inline-flex items-center justify-center min-w-12 min-h-12 rounded-lg border-2 border-border bg-muted px-3 py-2 text-2xl font-bold font-mono text-foreground select-none">
+            {displaySymbol}
+          </span>
+        </div>
+
+        {data.description && (
+          <p className="text-sm leading-relaxed text-foreground text-center">
+            <strong className="font-semibold">{data.description}</strong>
+          </p>
+        )}
+        {data.codePoint && (
+          <div className="flex items-center justify-center gap-3 text-xs text-muted-foreground">
+            <code className="rounded bg-muted px-1.5 py-0.5 font-mono">
+              {data.codePoint}
+            </code>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="p-3 max-w-xs space-y-2">
       <span
-        className={`cat-badge cat-badge-glossary cat-badge-glossary-${data.label}`}
+        className={`cat-badge cat-badge-keyword cat-badge-keyword-${data.label}`}
       >
         {displayLabel}
       </span>
       <p className="text-sm leading-relaxed text-foreground">
-        Term:{' '}
-        <strong className="font-semibold text-foreground">{data.term}</strong>
+        Pattern:{' '}
+        <strong className="font-semibold text-foreground">
+          {data.pattern}
+        </strong>
       </p>
       {data.description && (
         <p className="text-xs text-muted-foreground leading-relaxed">
           {data.description}
         </p>
       )}
-    </div>
-  )
-}
-
-function SpecialCharPopoverContent({
-  data,
-}: {
-  data: { name: string; char: string; codePoint: string }
-}) {
-  const cp = data.char.codePointAt(0) ?? 0
-  const effectiveMap = getEffectiveCodepointMap()
-  const displaySymbol =
-    effectiveMap[cp] ?? (data.char.trim() === '' ? '·' : data.char)
-
-  return (
-    <div className="p-3 max-w-xs space-y-3">
-      <span className="cat-badge cat-badge-special-char">Special Char</span>
-
-      {/* Large centered visual symbol */}
-      <div className="flex items-center justify-center">
-        <span className="inline-flex items-center justify-center min-w-12 min-h-12 rounded-lg border-2 border-border bg-muted px-3 py-2 text-2xl font-bold font-mono text-foreground select-none">
-          {displaySymbol}
-        </span>
-      </div>
-
-      <p className="text-sm leading-relaxed text-foreground text-center">
-        <strong className="font-semibold">{data.name}</strong>
-      </p>
-      <div className="flex items-center justify-center gap-3 text-xs text-muted-foreground">
-        <code className="rounded bg-muted px-1.5 py-0.5 font-mono">
-          {data.codePoint}
-        </code>
-      </div>
     </div>
   )
 }
@@ -247,6 +266,7 @@ export function HighlightPopover({
   onPopoverEnter,
   renderPopoverContent,
   dir,
+  codepointDisplayMap,
 }: {
   state: PopoverState
   annotationMap: Map<string, RuleAnnotation>
@@ -257,6 +277,8 @@ export function HighlightPopover({
   renderPopoverContent?: PopoverContentRenderer
   /** Text direction for the popover container. */
   dir?: 'ltr' | 'rtl' | 'auto'
+  /** Per-editor codepoint display overrides. */
+  codepointDisplayMap?: Record<number, string>
 }) {
   const popoverRef = useRef<HTMLDivElement>(null)
   const popperRef = useRef<PopperInstance | null>(null)
@@ -333,7 +355,31 @@ export function HighlightPopover({
 
   if (annotations.length === 0) return null
 
-  return (
+  // Pre-compute custom render results so we can detect suppressions.
+  // null → suppress (hide popover for this annotation)
+  // undefined → use built-in default
+  // ReactNode → use custom content
+  const renderResults = annotations.map((ann) =>
+    renderPopoverContent?.({
+      annotation: ann,
+      onSuggestionClick: (s) => onSuggestionClick(s, ann.id),
+    }),
+  )
+
+  // If every annotation is suppressed, don't show the popover at all
+  const visibleAnnotations = annotations.filter(
+    (_, i) => renderResults[i] !== null,
+  )
+  if (visibleAnnotations.length === 0) return null
+
+  const effectiveCodepointMap = codepointDisplayMap
+    ? { ...CODEPOINT_DISPLAY_MAP, ...codepointDisplayMap }
+    : CODEPOINT_DISPLAY_MAP
+
+  // Render via portal to document.body so the popover escapes any
+  // ancestor `transform` (e.g. virtualised rows) that would break
+  // `position: fixed` positioning and cause z-index clipping.
+  return createPortal(
     <div
       ref={popoverRef}
       className="cat-popover"
@@ -349,28 +395,31 @@ export function HighlightPopover({
       onMouseLeave={() => onDismiss()}
     >
       {annotations.map((ann, i) => {
-        const custom = renderPopoverContent?.({
-          annotation: ann,
-          onSuggestionClick: (s) => onSuggestionClick(s, ann.id),
-        })
+        const custom = renderResults[i]
+
+        // null → suppress this annotation's popover entirely
+        if (custom === null) return null
 
         return (
           <React.Fragment key={ann.id}>
             {i > 0 && <hr className="border-border my-0" />}
-            {custom != null ? (
+            {custom !== undefined ? (
               custom
             ) : ann.type === 'spellcheck' ? (
               <SpellCheckPopoverContent
                 data={ann.data}
                 onSuggestionClick={(s) => onSuggestionClick(s, ann.id)}
               />
-            ) : ann.type === 'glossary' ? (
-              <KeywordsPopoverContent data={ann.data} />
+            ) : ann.type === 'keyword' ? (
+              <KeywordsPopoverContent
+                data={ann.data}
+                effectiveMap={effectiveCodepointMap}
+              />
             ) : ann.type === 'tag' ? (
               <TagPopoverContent data={ann.data} />
             ) : ann.type === 'quote' ? (
               <QuotePopoverContent data={ann.data} />
-            ) : ann.type === 'link' ? (
+            ) : (
               <LinkPopoverContent
                 data={ann.data}
                 onOpen={() => {
@@ -381,12 +430,11 @@ export function HighlightPopover({
                   }
                 }}
               />
-            ) : (
-              <SpecialCharPopoverContent data={ann.data} />
             )}
           </React.Fragment>
         )
       })}
-    </div>
+    </div>,
+    document.body,
   )
 }

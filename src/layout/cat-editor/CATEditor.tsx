@@ -252,7 +252,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
               const anchorPt = $globalOffsetToPoint(saved.anchor)
               const focusPt = $globalOffsetToPoint(saved.focus)
               if (anchorPt && focusPt) {
-                // Token-mode nodes (tags, special-chars) are atomic — calling
+                // Token-mode nodes (tags, atomic keywords) are atomic — calling
                 // sel.insertText on them replaces the entire node. Instead,
                 // insert a new text node before or after the token.
                 const anchorNode = $getNodeByKey(anchorPt.key)
@@ -378,6 +378,34 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
       }),
       [applyFlashClass, clearFlashInner],
     )
+
+    // Build the effective codepoint display map: atomic keyword entry
+    // displaySymbol overrides + caller's codepointDisplayMap on top.
+    const effectiveCodepointMap = useMemo(() => {
+      let merged: Record<number, string> | undefined
+      for (const rule of rules) {
+        if (rule.type !== 'keyword') continue
+        for (const entry of rule.entries) {
+          if (!entry.atomic || !entry.displaySymbol) continue
+          const src = entry.pattern
+          let cp: number | undefined
+          const uEsc = /^\\u([0-9A-Fa-f]{4})$/.exec(src)
+          if (uEsc) {
+            cp = parseInt(uEsc[1], 16)
+          } else if ([...src].length === 1) {
+            cp = src.codePointAt(0)
+          }
+          if (cp != null) {
+            merged ??= {}
+            merged[cp] = entry.displaySymbol
+          }
+        }
+      }
+      if (codepointDisplayMap) {
+        merged = { ...merged, ...codepointDisplayMap }
+      }
+      return merged
+    }, [rules, codepointDisplayMap])
 
     const initialConfig = useMemo(
       () => ({
@@ -643,7 +671,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
             <HighlightsPlugin
               rules={rules}
               annotationMapRef={annotationMapRef}
-              codepointDisplayMap={codepointDisplayMap}
+              codepointDisplayMap={effectiveCodepointMap}
             />
             <EditorRefPlugin
               editorRef={editorRef}
@@ -685,6 +713,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
           }}
           renderPopoverContent={renderPopoverContent}
           dir={popoverDirProp === 'inherit' ? dir : popoverDirProp}
+          codepointDisplayMap={effectiveCodepointMap}
         />
       </div>
     )

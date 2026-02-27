@@ -1,5 +1,5 @@
 // Shared layout demo definitions for use in navbar and routes
-import { FileText, Quote, SquareFunction } from 'lucide-react'
+import { FileText, Quote, SquareFunction, Zap } from 'lucide-react'
 
 export const layoutDemos = [
   {
@@ -48,6 +48,15 @@ export const layoutDemos = [
     to: '/demo/cat-editor',
     icon: (
       <FileText className="w-8 h-8 text-cyan-400" aria-label="CAT Editor" />
+    ),
+  },
+  {
+    name: 'CAT Editor Perf',
+    description:
+      'Stress-test: 1000 virtualized CAT editor rows with shared rule configuration and @tanstack/react-virtual.',
+    to: '/demo/cat-editor-perf',
+    icon: (
+      <Zap className="w-8 h-8 text-amber-400" aria-label="CAT Editor Perf" />
     ),
   },
   {

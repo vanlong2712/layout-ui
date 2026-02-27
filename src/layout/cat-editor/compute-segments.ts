@@ -1,10 +1,4 @@
-import type {
-  HighlightSegment,
-  IQuoteRule,
-  ISpecialCharEntry,
-  MooRule,
-  RawRange,
-} from './types'
+import type { HighlightSegment, IQuoteRule, MooRule, RawRange } from './types'
 
 import { detectQuotes } from '@/utils/detect-quotes'
 
@@ -328,56 +322,58 @@ export function computeHighlightSegments(
           })
         }
       }
-    } else if (rule.type === 'glossary') {
+    } else if (rule.type === 'keyword') {
       const { label, entries } = rule
       for (const entry of entries) {
-        if (!entry.term && !entry.pattern) continue
+        if (!entry.pattern) continue
 
-        if (entry.pattern) {
-          // Entry has a regex pattern — use it for matching
-          let re: RegExp
-          try {
-            re = new RegExp(entry.pattern, 'g')
-          } catch {
-            continue // skip invalid regex
+        let re: RegExp
+        try {
+          re = new RegExp(entry.pattern, 'g')
+        } catch {
+          continue // skip invalid regex
+        }
+        let m: RegExpExecArray | null
+        while ((m = re.exec(text)) !== null) {
+          if (m[0].length === 0) {
+            re.lastIndex++
+            continue
           }
-          let m: RegExpExecArray | null
-          while ((m = re.exec(text)) !== null) {
-            rawRanges.push({
-              start: m.index,
-              end: m.index + m[0].length,
-              annotation: {
-                type: 'glossary',
-                id: `gl-${label}-${m.index}-${m.index + m[0].length}`,
-                data: {
-                  label,
-                  term: entry.term || entry.pattern,
-                  description: entry.description,
-                },
+          const matchStr = m[0]
+
+          // Build codepoint string for atomic entries
+          let codePoint: string | undefined
+          if (entry.atomic) {
+            codePoint = matchStr
+              .split('')
+              .map(
+                (c) =>
+                  'U+' +
+                  (c.codePointAt(0) ?? 0)
+                    .toString(16)
+                    .toUpperCase()
+                    .padStart(4, '0'),
+              )
+              .join(' ')
+          }
+
+          rawRanges.push({
+            start: m.index,
+            end: m.index + matchStr.length,
+            annotation: {
+              type: 'keyword',
+              id: `kw-${label}-${m.index}-${m.index + matchStr.length}`,
+              data: {
+                label,
+                pattern: entry.pattern,
+                description: entry.description,
+                atomic: entry.atomic,
+                displaySymbol: entry.displaySymbol,
+                matchedText: entry.atomic ? matchStr : undefined,
+                codePoint,
               },
-            })
-            // Prevent infinite loop for zero-length matches
-            if (m[0].length === 0) re.lastIndex++
-          }
-        } else {
-          // Exact string match (case-sensitive)
-          let idx = 0
-          while ((idx = text.indexOf(entry.term, idx)) !== -1) {
-            rawRanges.push({
-              start: idx,
-              end: idx + entry.term.length,
-              annotation: {
-                type: 'glossary',
-                id: `gl-${label}-${idx}-${idx + entry.term.length}`,
-                data: {
-                  label,
-                  term: entry.term,
-                  description: entry.description,
-                },
-              },
-            })
-            idx += entry.term.length
-          }
+            },
+          })
         }
       }
     } else if (rule.type === 'tag') {
@@ -457,39 +453,6 @@ export function computeHighlightSegments(
           })
         }
       }
-    } else if (rule.type === 'special-char') {
-      const allEntries: Array<ISpecialCharEntry> = [...rule.entries]
-      for (const entry of allEntries) {
-        // Make a global copy of the pattern so we can iterate all matches
-        const flags = entry.pattern.flags.includes('g')
-          ? entry.pattern.flags
-          : entry.pattern.flags + 'g'
-        const re = new RegExp(entry.pattern.source, flags)
-        let m: RegExpExecArray | null
-        while ((m = re.exec(text)) !== null) {
-          const matchStr = m[0]
-          const cp = matchStr
-            .split('')
-            .map(
-              (c) =>
-                'U+' +
-                (c.codePointAt(0) ?? 0)
-                  .toString(16)
-                  .toUpperCase()
-                  .padStart(4, '0'),
-            )
-            .join(' ')
-          rawRanges.push({
-            start: m.index,
-            end: m.index + matchStr.length,
-            annotation: {
-              type: 'special-char',
-              id: `sp-${m.index}-${m.index + matchStr.length}`,
-              data: { name: entry.name, char: matchStr, codePoint: cp },
-            },
-          })
-        }
-      }
     } else if (rule.type === 'link') {
       const defaultPattern = String.raw`https?:\/\/[^\s<>"']+|www\.[^\s<>"']+`
       const patternSource = rule.pattern ?? defaultPattern
@@ -536,7 +499,7 @@ export function computeHighlightSegments(
   // 2. When tags are collapsed they must be atomic — suppress ALL non-tag
   //    ranges that overlap with a tag so the sweep-line never splits a tag
   //    into sub-segments.  When tags are expanded (or absent), keep every
-  //    range so search/glossary can highlight inside tags normally.
+  //    range so search/keyword can highlight inside tags normally.
   //
   //    Quote annotations that overlap with tag ranges are suppressed by
   //    default because quote characters inside HTML attributes (e.g.

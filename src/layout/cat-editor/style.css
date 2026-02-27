@@ -102,39 +102,39 @@
   background-color: var(--cat-spellcheck-bg-hover, oklch(0.7 0.2 25 / 0.25));
 }
 
-/* ─── Glossary (generic term-match) ────────────────────────────────────── */
+/* ─── Keyword (generic term-match) ────────────────────────────────────── */
 
-.cat-highlight-glossary {
-  background-color: var(--cat-glossary-bg, oklch(0.7 0.15 280 / 0.12));
-  border-bottom: 2px solid var(--cat-glossary-underline, oklch(0.6 0.2 280));
+.cat-highlight-keyword {
+  background-color: var(--cat-keyword-bg, oklch(0.7 0.15 280 / 0.12));
+  border-bottom: 2px solid var(--cat-keyword-underline, oklch(0.6 0.2 280));
 }
-.cat-highlight-glossary:hover {
-  background-color: var(--cat-glossary-bg-hover, oklch(0.7 0.15 280 / 0.25));
+.cat-highlight-keyword:hover {
+  background-color: var(--cat-keyword-bg-hover, oklch(0.7 0.15 280 / 0.25));
 }
 
-/* Glossary – tb-target: teal dashed underline */
-.cat-highlight-glossary-tb-target {
-  --cat-glossary-bg: oklch(0.7 0.12 175 / 0.12);
-  --cat-glossary-underline: oklch(0.55 0.15 175);
-  --cat-glossary-bg-hover: oklch(0.7 0.12 175 / 0.25);
+/* Keyword – tb-target: teal dashed underline */
+.cat-highlight-keyword-tb-target {
+  --cat-keyword-bg: oklch(0.7 0.12 175 / 0.12);
+  --cat-keyword-underline: oklch(0.55 0.15 175);
+  --cat-keyword-bg-hover: oklch(0.7 0.12 175 / 0.25);
   border-bottom-style: dashed;
 }
 
-/* Glossary – search: bold yellow highlight */
-.cat-highlight-glossary-search {
-  --cat-glossary-bg: oklch(0.9 0.16 95 / 0.45);
-  --cat-glossary-underline: oklch(0.65 0.18 85);
-  --cat-glossary-bg-hover: oklch(0.9 0.16 95 / 0.65);
+/* Keyword – search: bold yellow highlight */
+.cat-highlight-keyword-search {
+  --cat-keyword-bg: oklch(0.9 0.16 95 / 0.45);
+  --cat-keyword-underline: oklch(0.65 0.18 85);
+  --cat-keyword-bg-hover: oklch(0.9 0.16 95 / 0.65);
 }
 
-/* ─── Special char: amber/orange dotted underline ──────────────────────── */
+/* ─── Special char (keyword-special-char): amber/orange dotted underline ─── */
 
-.cat-highlight-special-char {
+.cat-highlight-keyword-special-char {
   background-color: var(--cat-special-char-bg, oklch(0.75 0.14 70 / 0.14));
   border-bottom: 2px dotted
     var(--cat-special-char-underline, oklch(0.6 0.18 70));
 }
-.cat-highlight-special-char:hover {
+.cat-highlight-keyword-special-char:hover {
   background-color: var(
     --cat-special-char-bg-hover,
     oklch(0.75 0.14 70 / 0.28)
@@ -235,12 +235,12 @@
   z-index: 1000;
 }
 /* When search overlaps a tag, search bg takes priority */
-.cat-highlight-tag.cat-highlight-glossary-search {
-  background-color: var(--cat-glossary-bg, oklch(0.9 0.16 95 / 0.45));
-  border-bottom-color: var(--cat-glossary-underline, oklch(0.65 0.18 85));
+.cat-highlight-tag.cat-highlight-keyword-search {
+  background-color: var(--cat-keyword-bg, oklch(0.9 0.16 95 / 0.45));
+  border-bottom-color: var(--cat-keyword-underline, oklch(0.65 0.18 85));
 }
-.cat-highlight-tag.cat-highlight-glossary-search:hover {
-  background-color: var(--cat-glossary-bg-hover, oklch(0.9 0.16 95 / 0.65));
+.cat-highlight-tag.cat-highlight-keyword-search:hover {
+  background-color: var(--cat-keyword-bg-hover, oklch(0.9 0.16 95 / 0.65));
 }
 
 /* ─── Collapsed tag mode ───────────────────────────────────────────────── */
@@ -375,31 +375,31 @@
   background-color: var(--cat-spellcheck-bg-hover, oklch(0.5 0.2 25 / 0.4));
 }
 
-.dark .cat-highlight-glossary {
-  background-color: var(--cat-glossary-bg, oklch(0.5 0.17 280 / 0.25));
-  border-bottom-color: var(--cat-glossary-underline, oklch(0.65 0.2 280));
+.dark .cat-highlight-keyword {
+  background-color: var(--cat-keyword-bg, oklch(0.5 0.17 280 / 0.25));
+  border-bottom-color: var(--cat-keyword-underline, oklch(0.65 0.2 280));
 }
-.dark .cat-highlight-glossary:hover {
-  background-color: var(--cat-glossary-bg-hover, oklch(0.5 0.17 280 / 0.4));
-}
-
-.dark .cat-highlight-glossary-tb-target {
-  --cat-glossary-bg: oklch(0.45 0.12 175 / 0.25);
-  --cat-glossary-underline: oklch(0.6 0.14 175);
-  --cat-glossary-bg-hover: oklch(0.45 0.12 175 / 0.4);
+.dark .cat-highlight-keyword:hover {
+  background-color: var(--cat-keyword-bg-hover, oklch(0.5 0.17 280 / 0.4));
 }
 
-.dark .cat-highlight-glossary-search {
-  --cat-glossary-bg: oklch(0.6 0.16 85 / 0.45);
-  --cat-glossary-underline: oklch(0.75 0.18 85);
-  --cat-glossary-bg-hover: oklch(0.6 0.16 85 / 0.65);
+.dark .cat-highlight-keyword-tb-target {
+  --cat-keyword-bg: oklch(0.45 0.12 175 / 0.25);
+  --cat-keyword-underline: oklch(0.6 0.14 175);
+  --cat-keyword-bg-hover: oklch(0.45 0.12 175 / 0.4);
 }
 
-.dark .cat-highlight-special-char {
+.dark .cat-highlight-keyword-search {
+  --cat-keyword-bg: oklch(0.6 0.16 85 / 0.45);
+  --cat-keyword-underline: oklch(0.75 0.18 85);
+  --cat-keyword-bg-hover: oklch(0.6 0.16 85 / 0.65);
+}
+
+.dark .cat-highlight-keyword-special-char {
   background-color: var(--cat-special-char-bg, oklch(0.5 0.16 70 / 0.25));
   border-bottom-color: var(--cat-special-char-underline, oklch(0.65 0.18 70));
 }
-.dark .cat-highlight-special-char:hover {
+.dark .cat-highlight-keyword-special-char:hover {
   background-color: var(--cat-special-char-bg-hover, oklch(0.5 0.16 70 / 0.4));
 }
 
@@ -449,12 +449,12 @@
     0 1px 4px oklch(0 0 0 / 0.2);
 }
 
-.dark .cat-highlight-tag.cat-highlight-glossary-search {
-  background-color: var(--cat-glossary-bg, oklch(0.6 0.16 85 / 0.45));
-  border-bottom-color: var(--cat-glossary-underline, oklch(0.75 0.18 85));
+.dark .cat-highlight-tag.cat-highlight-keyword-search {
+  background-color: var(--cat-keyword-bg, oklch(0.6 0.16 85 / 0.45));
+  border-bottom-color: var(--cat-keyword-underline, oklch(0.75 0.18 85));
 }
-.dark .cat-highlight-tag.cat-highlight-glossary-search:hover {
-  background-color: var(--cat-glossary-bg-hover, oklch(0.6 0.16 85 / 0.65));
+.dark .cat-highlight-tag.cat-highlight-keyword-search:hover {
+  background-color: var(--cat-keyword-bg-hover, oklch(0.6 0.16 85 / 0.65));
 }
 
 .dark .cat-highlight-tag-collapsed::before {
@@ -542,38 +542,38 @@
   color: oklch(0.75 0.2 25);
 }
 
-.cat-badge-glossary {
+.cat-badge-keyword {
   background: oklch(0.7 0.15 280 / 0.15);
   color: oklch(0.5 0.2 280);
 }
-.dark .cat-badge-glossary {
+.dark .cat-badge-keyword {
   background: oklch(0.5 0.17 280 / 0.3);
   color: oklch(0.75 0.18 280);
 }
 
-.cat-badge-glossary-tb-target {
+.cat-badge-keyword-tb-target {
   background: oklch(0.7 0.12 175 / 0.15);
   color: oklch(0.45 0.15 175);
 }
-.dark .cat-badge-glossary-tb-target {
+.dark .cat-badge-keyword-tb-target {
   background: oklch(0.45 0.12 175 / 0.3);
   color: oklch(0.7 0.14 175);
 }
 
-.cat-badge-glossary-search {
+.cat-badge-keyword-search {
   background: oklch(0.9 0.16 95 / 0.35);
   color: oklch(0.4 0.15 85);
 }
-.dark .cat-badge-glossary-search {
+.dark .cat-badge-keyword-search {
   background: oklch(0.6 0.16 85 / 0.4);
   color: oklch(0.85 0.16 85);
 }
 
-.cat-badge-special-char {
+.cat-badge-keyword-special-char {
   background: oklch(0.75 0.14 70 / 0.15);
   color: oklch(0.45 0.18 70);
 }
-.dark .cat-badge-special-char {
+.dark .cat-badge-keyword-special-char {
   background: oklch(0.45 0.14 70 / 0.3);
   color: oklch(0.75 0.16 70);
 }

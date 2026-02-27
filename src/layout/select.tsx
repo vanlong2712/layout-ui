@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { z } from 'zod'
 import { Popover } from '@base-ui/react/popover'
 import { Tooltip } from '@base-ui/react/tooltip'
 import { Command } from 'cmdk'
@@ -61,6 +62,19 @@ export interface IOption {
   /** Nested children – rendered as a visual group. */
   children?: Array<IOption>
 }
+
+/** Zod schema for `IOption`.  Validates data-only fields (icon is skipped
+ *  at runtime since it carries React nodes / render functions). */
+export const OptionSchema: z.ZodType<IOption> = z.lazy(() =>
+  z.object({
+    label: z.string(),
+    value: z.union([z.string(), z.number()]),
+    icon: z.custom<IconProp>().optional(),
+    disabled: z.boolean().optional(),
+    disabledTooltip: z.string().optional(),
+    children: z.array(OptionSchema).optional(),
+  }),
+)
 
 // ---- Conditional selection types ----
 

@@ -22,6 +22,35 @@ export type {
 export { MentionPlugin } from './mention-plugin'
 export type { MentionPluginProps } from './mention-plugin'
 
+export {
+  GlossaryEntrySchema,
+  GlossaryRuleSchema,
+  HighlightSegmentSchema,
+  KeywordsAnnotationSchema,
+  KeywordsEntrySchema,
+  KeywordsRuleSchema,
+  LinkAnnotationSchema,
+  LinkRuleSchema,
+  MentionRuleSchema,
+  MentionUserSchema,
+  MooRuleSchema,
+  PopoverStateSchema,
+  QuoteAnnotationSchema,
+  QuoteRuleMappingSchema,
+  QuoteRuleSchema,
+  RawRangeSchema,
+  RuleAnnotationSchema,
+  SpecialCharAnnotationSchema,
+  SpecialCharEntrySchema,
+  SpecialCharRuleSchema,
+  SpellCheckAnnotationSchema,
+  SpellCheckRuleSchema,
+  SpellCheckValidationSchema,
+  SuggestionSchema,
+  TagAnnotationSchema,
+  TagRuleSchema,
+} from './types'
+
 export type {
   CATEditorRef,
   GlossaryAnnotation,

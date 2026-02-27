@@ -51,6 +51,7 @@ export default defineConfig({
     'lexical',
     /^@lexical\//,
     '@popperjs/core',
+    'zod',
   ],
 
   // Resolve the `@/*` path alias used throughout the source to `./src/*`.

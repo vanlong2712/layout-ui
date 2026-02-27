@@ -18,12 +18,12 @@ import {
 import { useCallback, useEffect, useRef } from 'react'
 
 import { computeHighlightSegments } from './compute-segments'
+import { CODEPOINT_DISPLAY_MAP, NL_MARKER_PREFIX } from './constants'
 import {
-  CODEPOINT_DISPLAY_MAP,
-  NL_MARKER_PREFIX,
-  setCodepointOverrides,
-} from './constants'
-import { $createHighlightNode, $isHighlightNode } from './highlight-node'
+  $createHighlightNode,
+  $isHighlightNode,
+  HighlightNode,
+} from './highlight-node'
 import {
   $createMentionNode,
   $isMentionNode,
@@ -68,8 +68,8 @@ export function HighlightsPlugin({
   const rafRef = useRef<number | null>(null)
 
   const applyHighlights = useCallback(() => {
-    // Sync code-point display overrides from the editor-level prop
-    setCodepointOverrides(codepointDisplayMap)
+    // Sync code-point display overrides for this editor instance
+    HighlightNode.__codepointOverrides = codepointDisplayMap
 
     // Check focus BEFORE editor.update() — if the editor doesn't own
     // focus we must not restore (or leave) a selection, otherwise
@@ -312,18 +312,26 @@ export function HighlightsPlugin({
               (collapseScope === 'all' || tagAnn.data.isHtml)
 
             // Highlighted text — carries all annotation types & IDs
-            // Glossary annotations include their label in the CSS type
+            // Keywords annotations include their label in the CSS type
             // so each label gets a unique highlight class.
             const typesArr = [
               ...new Set(
                 seg.annotations.map((a) => {
-                  if (a.type === 'glossary') return `glossary-${a.data.label}`
+                  if (a.type === 'keyword') return `keyword-${a.data.label}`
                   if (a.type === 'spellcheck')
                     return `spellcheck-${a.data.categoryId}`
                   return a.type
                 }),
               ),
             ]
+            // Mark atomic keyword entries so highlight-node.ts renders
+            // them as contentEditable=false with display symbol replacement.
+            const hasAtomic = seg.annotations.some(
+              (a) => a.type === 'keyword' && a.data.atomic,
+            )
+            if (hasAtomic && !typesArr.includes('keyword-atomic')) {
+              typesArr.push('keyword-atomic')
+            }
             // Mark collapsed tags explicitly so highlight-node.ts can
             // distinguish from non-collapsed tags that carry displayText
             // from a quote annotation.
@@ -342,13 +350,16 @@ export function HighlightsPlugin({
             const isTagToken = thisTagCollapsed
 
             // Quote annotations: pass the replacement char as displayText
-            // and force token mode, similar to special-char nodes.
+            // and force token mode, similar to atomic keyword nodes.
             const quoteAnn = seg.annotations.find((a) => a.type === 'quote')
             const quoteDisplayText =
               quoteAnn?.type === 'quote'
                 ? quoteAnn.data.replacementChar
                 : undefined
             const isQuoteToken = !!quoteAnn
+
+            // Atomic keyword nodes also get token mode
+            const isAtomicToken = hasAtomic
 
             // Check if this highlight segment entirely falls within a mention.
             // Mention content is masked before segment computation, so this
@@ -377,7 +388,7 @@ export function HighlightsPlugin({
                   types,
                   ids,
                   tagDisplayText ?? quoteDisplayText,
-                  isTagToken || isQuoteToken,
+                  isTagToken || isQuoteToken || isAtomicToken,
                 ),
               )
             }
@@ -406,7 +417,7 @@ export function HighlightsPlugin({
               const types = [
                 ...new Set(
                   nlAnns.map((a) => {
-                    if (a.type === 'glossary') return `glossary-${a.data.label}`
+                    if (a.type === 'keyword') return `keyword-${a.data.label}`
                     if (a.type === 'spellcheck')
                       return `spellcheck-${a.data.categoryId}`
                     return a.type
@@ -557,14 +568,14 @@ export function EditorRefPlugin({
 
 /** Check whether a node is non-editable in the DOM.
  *  Only nodes with contentEditable="false" qualify: NL markers,
- *  collapsed tags, and quote-char nodes.  Special-char nodes are
- *  token-mode but still navigable — they are NOT non-editable. */
+ *  collapsed tags, quote-char nodes, and atomic keyword nodes. */
 function $isNonEditableNode(node: LexicalNode): boolean {
   if (!$isHighlightNode(node)) return false
   if (node.__ruleIds.startsWith(NL_MARKER_PREFIX)) return true
   const types = node.__highlightTypes.split(',')
   if (types.includes('tag-collapsed')) return true
   if (types.includes('quote') && node.__displayText) return true
+  if (types.includes('keyword-atomic')) return true
   return false
 }
 
@@ -706,7 +717,7 @@ export function NLMarkerNavigationPlugin() {
   const [editor] = useLexicalComposerContext()
   useEffect(() => {
     // ── Right arrow: skip over non-editable nodes (NL markers, collapsed
-    //    tags, quote-chars, special-chars). ──
+    //    tags, quote-chars, atomic keywords). ──
     //    In RTL, right arrow moves backward (toward start), so check
     //    the previous sibling instead of the next one.
     const unregRight = editor.registerCommand(

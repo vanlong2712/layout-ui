@@ -10,12 +10,13 @@ import type { HighlightNode } from './highlight-node'
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Returns true for highlight nodes whose DOM has contentEditable="false":
- *  collapsed tags and quote-char nodes.  These must be skipped when
- *  mapping global offsets to Lexical selection points. */
+ *  collapsed tags, quote-char nodes, and atomic keyword nodes.  These must
+ *  be skipped when mapping global offsets to Lexical selection points. */
 function $isCEFalseToken(node: HighlightNode): boolean {
   const types = node.__highlightTypes.split(',')
   if (types.includes('tag-collapsed')) return true
   if (types.includes('quote') && node.__displayText) return true
+  if (types.includes('keyword-atomic')) return true
   return false
 }
 
@@ -61,7 +62,7 @@ export function $pointToGlobalOffset(nodeKey: string, offset: number): number {
         // (= current global offset, which is past all real text in this para)
         if (isNlMarker) return global
 
-        // Token mode nodes (collapsed tags, quotes, special-chars) may
+        // Token mode nodes (collapsed tags, quotes, atomic keywords) may
         // have a DOM text (e.g. ZWS, 1 char) that differs from the model
         // text (e.g. `<b>`, 3 chars).  Map DOM offsets:
         //   offset 0  → before token  → global + 0
@@ -144,26 +145,6 @@ export function $globalOffsetToPoint(
         }
         remaining -= len
         continue
-      }
-
-      // Editable token nodes (special-chars): cursor can sit at 0 or len.
-      if ($isHighlightNode(child) && child.getMode() === 'token') {
-        if (remaining > len) {
-          remaining -= len
-          continue
-        }
-        return {
-          key: child.getKey(),
-          offset:
-            remaining <= 0
-              ? 0
-              : remaining >= len
-                ? len
-                : remaining <= len / 2
-                  ? 0
-                  : len,
-          type: 'text',
-        }
       }
 
       // Regular text node

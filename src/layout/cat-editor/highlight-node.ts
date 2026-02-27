@@ -24,6 +24,12 @@ export class HighlightNode extends TextNode {
   __ruleIds: string
   __displayText: string
 
+  /** Per-editor codepoint display overrides.
+   *  Set by HighlightsPlugin before each update cycle so that
+   *  createDOM / updateDOM pick up the correct map without
+   *  relying on module-level mutable state. */
+  static __codepointOverrides: Record<number, string> | undefined
+
   static getType(): string {
     return 'highlight'
   }
@@ -56,8 +62,8 @@ export class HighlightNode extends TextNode {
     dom.classList.add('cat-highlight')
     for (const t of this.__highlightTypes.split(',')) {
       dom.classList.add(`cat-highlight-${t}`)
-      if (t.startsWith('glossary-')) {
-        dom.classList.add('cat-highlight-glossary')
+      if (t.startsWith('keyword-')) {
+        dom.classList.add('cat-highlight-keyword')
       }
       if (t.startsWith('spellcheck-')) {
         dom.classList.add('cat-highlight-spellcheck')
@@ -92,18 +98,18 @@ export class HighlightNode extends TextNode {
       dom.contentEditable = 'false'
     }
 
-    // Special-char nodes in token mode: cursor can only sit before/after,
-    // so it's safe to replace textContent with the visible display symbol.
-    if (this.__highlightTypes.split(',').includes('special-char')) {
-      // Regular spaces use a CSS-only approach (::before pseudo-element)
-      // to avoid modifying textContent, which can conflict with Lexical's
-      // internal DOM text tracking and cause some nodes to lose their
-      // HighlightNode identity.
+    // Atomic keyword nodes: contentEditable=false prevents the browser
+    // from placing a caret inside them.
+    if (this.__highlightTypes.split(',').includes('keyword-atomic')) {
+      dom.contentEditable = 'false'
       if (this.__text === ' ') {
         dom.classList.add('cat-highlight-space-char')
         dom.style.position = 'relative'
       } else {
-        const replaced = replaceInvisibleChars(this.__text)
+        const replaced = replaceInvisibleChars(
+          this.__text,
+          HighlightNode.__codepointOverrides,
+        )
         if (replaced !== this.__text) {
           dom.textContent = replaced
         }
@@ -133,8 +139,8 @@ export class HighlightNode extends TextNode {
     if (prevNode.__highlightTypes !== this.__highlightTypes) {
       for (const t of prevNode.__highlightTypes.split(',')) {
         dom.classList.remove(`cat-highlight-${t}`)
-        if (t.startsWith('glossary-')) {
-          dom.classList.remove('cat-highlight-glossary')
+        if (t.startsWith('keyword-')) {
+          dom.classList.remove('cat-highlight-keyword')
         }
         if (t.startsWith('spellcheck-')) {
           dom.classList.remove('cat-highlight-spellcheck')
@@ -143,8 +149,8 @@ export class HighlightNode extends TextNode {
       dom.classList.remove('cat-highlight-nested')
       for (const t of this.__highlightTypes.split(',')) {
         dom.classList.add(`cat-highlight-${t}`)
-        if (t.startsWith('glossary-')) {
-          dom.classList.add('cat-highlight-glossary')
+        if (t.startsWith('keyword-')) {
+          dom.classList.add('cat-highlight-keyword')
         }
         if (t.startsWith('spellcheck-')) {
           dom.classList.add('cat-highlight-spellcheck')
@@ -177,13 +183,17 @@ export class HighlightNode extends TextNode {
       dom.removeAttribute('contenteditable')
     }
 
-    // Re-apply invisible char replacement after any DOM updates
-    if (this.__highlightTypes.split(',').includes('special-char')) {
+    // Re-apply atomic keyword rendering after any DOM updates
+    if (this.__highlightTypes.split(',').includes('keyword-atomic')) {
+      dom.contentEditable = 'false'
       if (this.__text === ' ') {
         dom.classList.add('cat-highlight-space-char')
         dom.style.position = 'relative'
       } else {
-        const replaced = replaceInvisibleChars(this.__text)
+        const replaced = replaceInvisibleChars(
+          this.__text,
+          HighlightNode.__codepointOverrides,
+        )
         if (replaced !== this.__text) {
           dom.textContent = replaced
         }
@@ -241,7 +251,7 @@ export class HighlightNode extends TextNode {
 
   canInsertTextBefore(): boolean {
     if (this.__ruleIds.startsWith(NL_MARKER_PREFIX)) return false
-    // Token mode nodes (collapsed tags, quotes, special-chars) must
+    // Token mode nodes (collapsed tags, quotes, atomic keywords) must
     // reject text insertion so typing creates a sibling TextNode
     // instead of merging into (and corrupting) the highlight node.
     if (this.getMode() === 'token') return false
@@ -264,15 +274,15 @@ export function $createHighlightNode(
   highlightTypes: string,
   ruleIds: string,
   displayText?: string,
-  /** Force token mode (atomic, non-editable). Special-char and NL-marker
+  /** Force token mode (atomic, non-editable). Atomic keyword and NL-marker
    *  nodes are always token; tag nodes should only be token when collapsed. */
   forceToken?: boolean,
 ): HighlightNode {
   const node = new HighlightNode(text, highlightTypes, ruleIds, displayText)
-  // Special-char and NL-marker nodes are always atomic.
+  // Atomic keyword and NL-marker nodes are always atomic.
   // Tag nodes are only atomic when explicitly requested (collapsed mode).
   if (
-    highlightTypes.split(',').includes('special-char') ||
+    highlightTypes.split(',').includes('keyword-atomic') ||
     ruleIds.startsWith(NL_MARKER_PREFIX) ||
     forceToken
   ) {

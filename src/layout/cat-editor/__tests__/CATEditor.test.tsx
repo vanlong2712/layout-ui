@@ -373,12 +373,12 @@ describe('CATEditor', () => {
       })
     })
 
-    it('renders with glossary/keywords rules', async () => {
+    it('renders with keyword rules', async () => {
       const rules: Array<IKeywordsRule> = [
         {
-          type: 'glossary',
+          type: 'keyword',
           label: 'search',
-          entries: [{ term: 'test' }],
+          entries: [{ pattern: 'test' }],
         },
       ]
 

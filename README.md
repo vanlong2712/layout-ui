@@ -46,6 +46,10 @@ The library requires **React 18+** (installed as peer dependency):
 npm install react react-dom
 ```
 
+### Runtime dependencies
+
+The library depends on **zod** (v4+) for runtime schema validation. It is listed as a regular dependency and installed automatically with `npm install`.
+
 ---
 
 ## Prerequisites
@@ -150,18 +154,21 @@ function App() {
 
 ```tsx
 // LayoutSelect
-import { LayoutSelect } from '@longd/layout-ui/layout/select'
+import { LayoutSelect, OptionSchema } from '@longd/layout-ui/layout/select'
 import type { IOption } from '@longd/layout-ui/layout/select'
 
 // CATEditor
-import { CATEditor } from '@longd/layout-ui/layout/cat-editor'
+import { CATEditor, MooRuleSchema } from '@longd/layout-ui/layout/cat-editor'
 import type {
   CATEditorProps,
   MooRule,
 } from '@longd/layout-ui/layout/cat-editor'
 
 // Detect Quotes
-import { detectQuotes } from '@longd/layout-ui/utils/detect-quotes'
+import {
+  detectQuotes,
+  DetectQuotesOptionsSchema,
+} from '@longd/layout-ui/utils/detect-quotes'
 import type { QuoteRange } from '@longd/layout-ui/utils/detect-quotes'
 ```
 
@@ -442,28 +449,55 @@ const editorRef = useRef<CATEditorRef>(null)
 
 ### Rule types (`MooRule`)
 
-| Type             | Interface          | Description                                                              |
-| ---------------- | ------------------ | ------------------------------------------------------------------------ |
-| `'spellcheck'`   | `ISpellCheckRule`  | Spell-check validations with suggestions.                                |
-| `'glossary'`     | `IKeywordsRule`    | Generic keyword/term highlighting (glossary, LexiQA, TB target, search). |
-| `'special-char'` | `ISpecialCharRule` | Highlight special/invisible characters with popover names.               |
-| `'tag'`          | `ITagRule`         | Detect and optionally collapse HTML tags / placeholders.                 |
-| `'quote'`        | `IQuoteRule`       | Smart quote detection and replacement (uses `detectQuotes` internally).  |
-| `'link'`         | `ILinkRule`        | Detect and highlight URLs.                                               |
-| `'mention'`      | `IMentionRule`     | @mention typeahead with user list.                                       |
+| Type           | Interface         | Description                                                                   |
+| -------------- | ----------------- | ----------------------------------------------------------------------------- |
+| `'spellcheck'` | `ISpellCheckRule` | Spell-check validations with suggestions.                                     |
+| `'keyword'`    | `IKeywordsRule`   | Generic keyword/term highlighting (LexiQA, TB target, search, special chars). |
+| `'tag'`        | `ITagRule`        | Detect and optionally collapse HTML tags / placeholders.                      |
+| `'quote'`      | `IQuoteRule`      | Smart quote detection and replacement (uses `detectQuotes` internally).       |
+| `'link'`       | `ILinkRule`       | Detect and highlight URLs.                                                    |
+| `'mention'`    | `IMentionRule`    | @mention typeahead with user list.                                            |
 
 ### Examples
 
-#### Keyword / glossary highlighting
+#### Keyword highlighting
 
 ```tsx
 const rules: MooRule[] = [
   {
-    type: 'glossary',
+    type: 'keyword',
     label: 'tb-target',
     entries: [
-      { term: 'React', description: 'A JavaScript library for building UIs' },
-      { term: 'Tailwind', pattern: 'tailwind(css)?' },
+      {
+        pattern: 'React',
+        description: 'A JavaScript library for building UIs',
+      },
+      { pattern: 'tailwind(css)?' },
+    ],
+  },
+]
+```
+
+#### Atomic keyword entries (special characters)
+
+Use `atomic: true` on keyword entries to make the highlighted node
+non-editable (the caret jumps over it). Add `displaySymbol` to show a
+visible replacement symbol in the editor.
+
+```tsx
+const rules: MooRule[] = [
+  {
+    type: 'keyword',
+    label: 'special-char',
+    entries: [
+      {
+        pattern: '\\u00A0',
+        description: 'Non-Breaking Space',
+        atomic: true,
+        displaySymbol: '⍽',
+      },
+      { pattern: '\\t', description: 'Tab', atomic: true, displaySymbol: '⇥' },
+      { pattern: ' ', description: 'Space', atomic: true },
     ],
   },
 ]
@@ -580,6 +614,34 @@ const result = detectQuotes(`it's a 'test'`, {
   escapeContractions: false,
 })
 // The apostrophe in "it's" is treated as a quote delimiter
+```
+
+---
+
+## Zod Schemas
+
+All data types are defined as **Zod schemas** and re-exported alongside their inferred TypeScript types. This lets you use them for runtime validation, form parsing, API boundary checks, etc.
+
+### Available schemas
+
+| Module                | Schema                      | Inferred Type         |
+| --------------------- | --------------------------- | --------------------- |
+| `layout/select`       | `OptionSchema`              | `IOption`             |
+| `layout/cat-editor`   | `MooRuleSchema`             | `MooRule`             |
+| `layout/cat-editor`   | `KeywordsEntrySchema`       | `IKeywordsEntry`      |
+| `layout/cat-editor`   | `KeywordsRuleSchema`        | `IKeywordsRule`       |
+| `layout/cat-editor`   | `SpellCheckRuleSchema`      | `ISpellCheckRule`     |
+| `layout/cat-editor`   | `RuleAnnotationSchema`      | `RuleAnnotation`      |
+| `utils/detect-quotes` | `QuoteRangeSchema`          | `QuoteRange`          |
+| `utils/detect-quotes` | `DetectQuotesOptionsSchema` | `DetectQuotesOptions` |
+
+### Example: validate a rule at runtime
+
+```ts
+import { MooRuleSchema } from '@longd/layout-ui/layout/cat-editor'
+
+const input = JSON.parse(rawJson)
+const rule = MooRuleSchema.parse(input) // throws on invalid data
 ```
 
 ---

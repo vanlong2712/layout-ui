@@ -33,8 +33,6 @@ import type {
   IMentionRule,
   IMentionUser,
   IQuoteRule,
-  ISpecialCharEntry,
-  ISpecialCharRule,
   ISpellCheckRule,
   ISpellCheckValidation,
   ITagRule,
@@ -116,45 +114,117 @@ const DEFAULT_TAG_PATTERN =
   '<[^>]+>|(\\{\\{[^{}]*\\}\\})|(\\{[^{}]*\\})|(["\']?\\{[^{}]*\\}["\']?)|(["\']?\\$\\{[^{}]*\\}["\']?)|(["\']?\\$[A-Za-z0-9_]+["\']?)|(["\']?%[A-Za-z0-9]+["\']?)'
 
 const DEFAULT_LEXIQA_ENTRIES: Array<IKeywordsEntry> = [
-  { term: 'API endpoint' },
-  { term: 'HTTP request' },
+  { pattern: 'API endpoint' },
+  { pattern: 'HTTP request' },
 ]
 
 const DEFAULT_TB_ENTRIES: Array<IKeywordsEntry> = [
   {
-    term: 'endpoint',
+    pattern: 'endpoint',
     description:
       'Preferred terminology: use "API endpoint" instead of "endpoint" alone.',
   },
   {
-    term: 'fox',
+    pattern: 'fox',
     description:
       'Term Base: "fox" should be translated as "zorro" in the Spanish target.',
   },
 ]
 
-const DEFAULT_SPECIAL_CHARS: Array<ISpecialCharEntry> = [
-  { name: 'Ampersand', pattern: /&/ },
-  { name: 'Tab', pattern: /\t/ },
-  { name: 'Non-Breaking Space', pattern: new RegExp('\\u00A0') },
-  { name: 'En Space', pattern: new RegExp('\\u2002') },
-  { name: 'Em Space', pattern: new RegExp('\\u2003') },
-  { name: 'Thin Space', pattern: new RegExp('\\u2009') },
-  { name: 'Ideographic Space', pattern: new RegExp('\\u3000') },
-  { name: 'Hair Space', pattern: new RegExp('\\u200A') },
-  { name: 'Zero-Width Space', pattern: new RegExp('\\u200B') },
-  { name: 'Zero-Width Non-Joiner', pattern: new RegExp('\\u200C') },
-  { name: 'Zero-Width Joiner', pattern: new RegExp('\\u200D') },
-  { name: 'Word Joiner', pattern: new RegExp('\\u2060') },
-  { name: 'BOM / Zero-Width No-Break Space', pattern: new RegExp('\\uFEFF') },
-  // eslint-disable-next-line no-control-regex
-  { name: 'Carriage Return', pattern: new RegExp('\\u000D') },
-  // eslint-disable-next-line no-control-regex
-  { name: 'Form Feed', pattern: new RegExp('\\u000C') },
-  // eslint-disable-next-line no-control-regex
-  { name: 'Null Character', pattern: new RegExp('\\u0000') },
-  { name: 'Line Break', pattern: /\n/ },
-  { name: 'Space', pattern: / / },
+const DEFAULT_SPECIAL_CHARS: Array<IKeywordsEntry> = [
+  { pattern: '&', description: 'Ampersand', atomic: true },
+  { pattern: '\\t', description: 'Tab', atomic: true, displaySymbol: '⇥' },
+  {
+    pattern: '\\u00A0',
+    description: 'Non-Breaking Space',
+    atomic: true,
+    displaySymbol: '⍽',
+  },
+  {
+    pattern: '\\u2002',
+    description: 'En Space',
+    atomic: true,
+    displaySymbol: '␣',
+  },
+  {
+    pattern: '\\u2003',
+    description: 'Em Space',
+    atomic: true,
+    displaySymbol: '␣',
+  },
+  {
+    pattern: '\\u2009',
+    description: 'Thin Space',
+    atomic: true,
+    displaySymbol: '·',
+  },
+  {
+    pattern: '\\u3000',
+    description: 'Ideographic Space',
+    atomic: true,
+    displaySymbol: '□',
+  },
+  {
+    pattern: '\\u200A',
+    description: 'Hair Space',
+    atomic: true,
+    displaySymbol: '·',
+  },
+  {
+    pattern: '\\u200B',
+    description: 'Zero-Width Space',
+    atomic: true,
+    displaySymbol: '∅',
+  },
+  {
+    pattern: '\\u200C',
+    description: 'Zero-Width Non-Joiner',
+    atomic: true,
+    displaySymbol: '⊘',
+  },
+  {
+    pattern: '\\u200D',
+    description: 'Zero-Width Joiner',
+    atomic: true,
+    displaySymbol: '⊕',
+  },
+  {
+    pattern: '\\u2060',
+    description: 'Word Joiner',
+    atomic: true,
+    displaySymbol: '⁀',
+  },
+  {
+    pattern: '\\uFEFF',
+    description: 'BOM / Zero-Width No-Break Space',
+    atomic: true,
+    displaySymbol: '◊',
+  },
+  {
+    pattern: '\\u000D',
+    description: 'Carriage Return',
+    atomic: true,
+    displaySymbol: '↵',
+  },
+  {
+    pattern: '\\u000C',
+    description: 'Form Feed',
+    atomic: true,
+    displaySymbol: '␌',
+  },
+  {
+    pattern: '\\u0000',
+    description: 'Null Character',
+    atomic: true,
+    displaySymbol: '␀',
+  },
+  {
+    pattern: '\\n',
+    description: 'Line Break',
+    atomic: true,
+    displaySymbol: '↩',
+  },
+  { pattern: ' ', description: 'Space', atomic: true },
 ]
 
 const DEFAULT_MENTION_USERS: Array<IMentionUser> = [
@@ -430,11 +500,10 @@ function CATEditorDemo() {
   const [tbEntries, setTbEntries] =
     useState<Array<IKeywordsEntry>>(DEFAULT_TB_ENTRIES)
 
-  // Special-char entries
+  // Special-char entries (now keyword entries with atomic: true)
   const [specialCharEntries, setSpecialCharEntries] = useState<
-    Array<ISpecialCharEntry>
+    Array<IKeywordsEntry>
   >(DEFAULT_SPECIAL_CHARS)
-  const [codepointMapJson, setCodepointMapJson] = useState('')
 
   // Tag options
   const [tagsCollapsed, setTagsCollapsed] = useState(false)
@@ -505,24 +574,6 @@ function CATEditorDemo() {
     [mentionShowAvatar],
   )
 
-  // ── Parse optional codepoint map ─────────────────────────────────────
-  const codepointDisplayMap = useMemo<
-    Record<number, string> | undefined
-  >(() => {
-    if (!codepointMapJson.trim()) return undefined
-    try {
-      const parsed = JSON.parse(codepointMapJson)
-      const map: Record<number, string> = {}
-      for (const [k, v] of Object.entries(parsed)) {
-        const cp = k.startsWith('0x') ? parseInt(k, 16) : parseInt(k, 10)
-        if (!isNaN(cp) && typeof v === 'string') map[cp] = v
-      }
-      return Object.keys(map).length > 0 ? map : undefined
-    } catch {
-      return undefined
-    }
-  }, [codepointMapJson])
-
   // ── Derive mentionSerialize / mentionPattern from format template ───
   const mentionSerialize = useMemo(() => {
     const fmt = mentionSerializeFormat.trim()
@@ -554,23 +605,24 @@ function CATEditorDemo() {
     }
     if (lexiqaEnabled) {
       active.push({
-        type: 'glossary',
+        type: 'keyword',
         label: 'lexiqa',
         entries: lexiqaEntries,
       } satisfies IKeywordsRule)
     }
     if (tbTargetEnabled) {
       active.push({
-        type: 'glossary',
+        type: 'keyword',
         label: 'tb-target',
         entries: tbEntries,
       } satisfies IKeywordsRule)
     }
     if (specialCharEnabled) {
       active.push({
-        type: 'special-char',
+        type: 'keyword',
+        label: 'special-char',
         entries: specialCharEntries,
-      } satisfies ISpecialCharRule)
+      } satisfies IKeywordsRule)
     }
     if (tagsEnabled) {
       active.push({
@@ -614,9 +666,9 @@ function CATEditorDemo() {
         .filter(Boolean)
       if (terms.length > 0) {
         active.push({
-          type: 'glossary',
+          type: 'keyword',
           label: 'search',
-          entries: terms.map((t) => ({ term: t, pattern: t })),
+          entries: terms.map((t) => ({ pattern: t })),
         } satisfies IKeywordsRule)
       }
     }
@@ -677,7 +729,6 @@ function CATEditorDemo() {
     setLexiqaEntries(DEFAULT_LEXIQA_ENTRIES)
     setTbEntries(DEFAULT_TB_ENTRIES)
     setSpecialCharEntries(DEFAULT_SPECIAL_CHARS)
-    setCodepointMapJson('')
     setTagsCollapsed(false)
     setTagsDetectInner(true)
     setTagPattern(DEFAULT_TAG_PATTERN)
@@ -755,42 +806,30 @@ function CATEditorDemo() {
       },
     ])
 
-  const updateGlossary = (
+  const updateKeyword = (
     setter: React.Dispatch<React.SetStateAction<Array<IKeywordsEntry>>>,
     idx: number,
     patch: Partial<IKeywordsEntry>,
   ) =>
     setter((prev) => prev.map((e, i) => (i === idx ? { ...e, ...patch } : e)))
-  const removeGlossary = (
+  const removeKeyword = (
     setter: React.Dispatch<React.SetStateAction<Array<IKeywordsEntry>>>,
     idx: number,
   ) => setter((prev) => prev.filter((_, i) => i !== idx))
-  const addGlossary = (
+  const addKeyword = (
     setter: React.Dispatch<React.SetStateAction<Array<IKeywordsEntry>>>,
-  ) => setter((prev) => [...prev, { term: '' }])
+  ) => setter((prev) => [...prev, { pattern: '' }])
 
-  const updateSpecialChar = (
-    idx: number,
-    patch: { name?: string; pattern?: string },
-  ) =>
+  const updateSpecialChar = (idx: number, patch: Partial<IKeywordsEntry>) =>
     setSpecialCharEntries((prev) =>
-      prev.map((e, i) => {
-        if (i !== idx) return e
-        const name = patch.name ?? e.name
-        const patternStr = patch.pattern ?? e.pattern.source
-        try {
-          return { name, pattern: new RegExp(patternStr) }
-        } catch {
-          return { name, pattern: e.pattern }
-        }
-      }),
+      prev.map((e, i) => (i === idx ? { ...e, ...patch } : e)),
     )
   const removeSpecialChar = (idx: number) =>
     setSpecialCharEntries((prev) => prev.filter((_, i) => i !== idx))
   const addSpecialChar = () =>
     setSpecialCharEntries((prev) => [
       ...prev,
-      { name: 'New Char', pattern: /x/ },
+      { pattern: 'x', description: 'New Char', atomic: true },
     ])
 
   return (
@@ -966,35 +1005,33 @@ function CATEditorDemo() {
 
           {/* LexiQA */}
           <Section
-            title="LexiQA (glossary)"
+            title="LexiQA (keyword)"
             icon={<BookOpen className="h-4 w-4 text-violet-500" />}
             enabled={lexiqaEnabled}
             onToggle={setLexiqaEnabled}
           >
-            <GlossaryEditor
+            <KeywordEditor
               entries={lexiqaEntries}
               onUpdate={(idx, patch) =>
-                updateGlossary(setLexiqaEntries, idx, patch)
+                updateKeyword(setLexiqaEntries, idx, patch)
               }
-              onRemove={(idx) => removeGlossary(setLexiqaEntries, idx)}
-              onAdd={() => addGlossary(setLexiqaEntries)}
+              onRemove={(idx) => removeKeyword(setLexiqaEntries, idx)}
+              onAdd={() => addKeyword(setLexiqaEntries)}
             />
           </Section>
 
           {/* TB Target */}
           <Section
-            title="TB Target (glossary)"
+            title="TB Target (keyword)"
             icon={<Database className="h-4 w-4 text-teal-500" />}
             enabled={tbTargetEnabled}
             onToggle={setTbTargetEnabled}
           >
-            <GlossaryEditor
+            <KeywordEditor
               entries={tbEntries}
-              onUpdate={(idx, patch) =>
-                updateGlossary(setTbEntries, idx, patch)
-              }
-              onRemove={(idx) => removeGlossary(setTbEntries, idx)}
-              onAdd={() => addGlossary(setTbEntries)}
+              onUpdate={(idx, patch) => updateKeyword(setTbEntries, idx, patch)}
+              onRemove={(idx) => removeKeyword(setTbEntries, idx)}
+              onAdd={() => addKeyword(setTbEntries)}
             />
           </Section>
 
@@ -1013,18 +1050,31 @@ function CATEditorDemo() {
                 >
                   <Input
                     className="h-7 text-xs flex-1"
-                    value={e.name}
+                    value={e.description ?? ''}
                     placeholder="Name"
                     onChange={(ev) =>
-                      updateSpecialChar(i, { name: ev.target.value })
+                      updateSpecialChar(i, {
+                        description: ev.target.value || undefined,
+                      })
                     }
                   />
                   <Input
                     className="h-7 text-xs w-40 font-mono"
-                    value={e.pattern.source}
+                    value={e.pattern}
                     placeholder="Regex pattern"
                     onChange={(ev) =>
                       updateSpecialChar(i, { pattern: ev.target.value })
+                    }
+                  />
+                  <Input
+                    className="h-7 text-xs w-14 text-center font-mono"
+                    value={e.displaySymbol ?? ''}
+                    placeholder="—"
+                    title="Display symbol shown in the editor"
+                    onChange={(ev) =>
+                      updateSpecialChar(i, {
+                        displaySymbol: ev.target.value || undefined,
+                      })
                     }
                   />
                   <Button
@@ -1038,24 +1088,20 @@ function CATEditorDemo() {
                 </div>
               ))}
             </div>
-            <div className="flex items-start gap-4 mt-3">
-              <Button variant="outline" size="sm" onClick={addSpecialChar}>
-                <Plus className="mr-1 h-3.5 w-3.5" />
-                Add entry
-              </Button>
-              <div className="flex-1 space-y-1">
-                <Label className="text-xs text-muted-foreground">
-                  Codepoint display overrides (JSON, e.g.{' '}
-                  {'{"0x00A0": "SP", "0x200B": "ZW"}'})
-                </Label>
-                <Input
-                  className="h-7 text-xs font-mono"
-                  value={codepointMapJson}
-                  placeholder='{"0x00A0": "SP"}'
-                  onChange={(e) => setCodepointMapJson(e.target.value)}
-                />
-              </div>
-            </div>
+            <p className="text-[10px] text-muted-foreground/60 mt-1">
+              <strong>Display symbol</strong>: the character shown in the editor
+              for invisible / special chars (e.g. set <strong>&amp;</strong> to{' '}
+              <strong>?</strong> to display ampersands as question marks).
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2"
+              onClick={addSpecialChar}
+            >
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              Add entry
+            </Button>
           </Section>
 
           {/* Tags */}
@@ -1318,19 +1364,19 @@ function CATEditorDemo() {
             <span className="text-muted-foreground">Spellcheck error</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-glossary cat-highlight-glossary-lexiqa" />
+            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-keyword cat-highlight-keyword-lexiqa" />
             <span className="text-muted-foreground">LexiQA term</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-glossary cat-highlight-glossary-tb-target" />
+            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-keyword cat-highlight-keyword-tb-target" />
             <span className="text-muted-foreground">TB Target term</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-glossary cat-highlight-glossary-search" />
+            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-keyword cat-highlight-keyword-search" />
             <span className="text-muted-foreground">Keyword search</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-special-char" />
+            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-keyword cat-highlight-keyword-special-char" />
             <span className="text-muted-foreground">Special character</span>
           </div>
           <div className="flex items-center gap-2">
@@ -1354,7 +1400,7 @@ function CATEditorDemo() {
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-nested cat-highlight-glossary cat-highlight-glossary-lexiqa" />
+            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-nested cat-highlight-keyword cat-highlight-keyword-lexiqa" />
             <span className="text-muted-foreground">
               Nested (multiple rules)
             </span>
@@ -1515,7 +1561,6 @@ function CATEditorDemo() {
             key={resetKey}
             initialText={SAMPLE_TEXT}
             rules={rules}
-            codepointDisplayMap={codepointDisplayMap}
             onSuggestionApply={handleSuggestionApply}
             renderMentionDOM={renderMentionDOM}
             mentionSerialize={mentionSerialize}
@@ -1630,9 +1675,9 @@ function CATEditorDemo() {
   )
 }
 
-// ─── Shared glossary editor ──────────────────────────────────────────────────
+// ─── Shared keyword editor ──────────────────────────────────────────────────
 
-function GlossaryEditor({
+function KeywordEditor({
   entries,
   onUpdate,
   onRemove,
@@ -1652,20 +1697,10 @@ function GlossaryEditor({
             className="flex items-center gap-2 rounded border border-border/50 bg-background p-1.5"
           >
             <Input
-              className="h-7 text-xs flex-1"
-              value={e.term}
-              placeholder="Term (exact match)"
-              onChange={(ev) => onUpdate(i, { term: ev.target.value })}
-            />
-            <Input
-              className="h-7 text-xs w-32 font-mono"
-              value={e.pattern ?? ''}
-              placeholder="Regex (optional)"
-              onChange={(ev) =>
-                onUpdate(i, {
-                  pattern: ev.target.value || undefined,
-                })
-              }
+              className="h-7 text-xs flex-1 font-mono"
+              value={e.pattern}
+              placeholder="Pattern (e.g. fox|dog, \\bAPI\\b)"
+              onChange={(ev) => onUpdate(i, { pattern: ev.target.value })}
             />
             <Input
               className="h-7 text-xs flex-1"
@@ -1689,10 +1724,9 @@ function GlossaryEditor({
         ))}
       </div>
       <p className="text-[10px] text-muted-foreground/60 mt-1">
-        Each entry matches by exact <strong>Term</strong> string. Add an
-        optional <strong>Regex</strong> to match by pattern instead (e.g.{' '}
+        Each entry matches by <strong>Pattern</strong> (regex). e.g.{' '}
         <code className="bg-muted px-0.5 rounded">fox|dog</code>,{' '}
-        <code className="bg-muted px-0.5 rounded">{'\\bAPI\\b'}</code>).
+        <code className="bg-muted px-0.5 rounded">{'\\bAPI\\b'}</code>.
       </p>
       <Button variant="outline" size="sm" className="mt-2" onClick={onAdd}>
         <Plus className="mr-1 h-3.5 w-3.5" />

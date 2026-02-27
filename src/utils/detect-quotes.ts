@@ -1,19 +1,23 @@
-// ─── Types ────────────────────────────────────────────────────────────────────
+import { z } from 'zod'
 
-export type QuoteType = 'single' | 'double'
+// ─── Schemas ──────────────────────────────────────────────────────────────────
 
-export interface QuoteRange {
-  /** Character index where the opening quote sits */
-  start: number
-  /** Character index where the closing quote sits – `null` when unclosed */
-  end: number | null
-  /** Which kind of quote */
-  quoteType: QuoteType
-  /** The text between the quotes (empty string when unclosed) */
-  content: string
-  /** Whether the quote pair is properly closed */
-  closed: boolean
-}
+/** Schema for quote type (single or double). */
+export const QuoteTypeSchema = z.union([
+  z.literal('single'),
+  z.literal('double'),
+])
+export type QuoteType = z.infer<typeof QuoteTypeSchema>
+
+/** Schema for a detected quote range in the input text. */
+export const QuoteRangeSchema = z.object({
+  start: z.number(),
+  end: z.number().nullable(),
+  quoteType: QuoteTypeSchema,
+  content: z.string(),
+  closed: z.boolean(),
+})
+export type QuoteRange = z.infer<typeof QuoteRangeSchema>
 
 /**
  * Language-specific patterns whose trailing single-quote should NOT be treated
@@ -25,9 +29,8 @@ export interface QuoteRange {
  * Example – `"english"` ships with common English contractions:
  * `don't`, `can't`, `won't`, `isn't`, `it's`, …
  */
-export interface EscapePatterns {
-  [language: string]: Array<string>
-}
+export const EscapePatternsSchema = z.record(z.string(), z.array(z.string()))
+export type EscapePatterns = z.infer<typeof EscapePatternsSchema>
 
 export const BUILTIN_ESCAPE_PATTERNS: EscapePatterns = {
   english: [
@@ -42,50 +45,14 @@ export const BUILTIN_ESCAPE_PATTERNS: EscapePatterns = {
   default: [],
 }
 
-export interface DetectQuotesOptions {
-  /**
-   * When `true` (the default), enable contraction-aware escaping so that
-   * apostrophes inside words like `don't` are not treated as quote delimiters.
-   */
-  escapeContractions?: boolean
-
-  /**
-   * Which set of escape patterns to apply.
-   * Pass a key of `BUILTIN_ESCAPE_PATTERNS` (e.g. `"english"`) or supply
-   * your own object conforming to `EscapePatterns`.
-   *
-   * @default "english"
-   */
-  escapePatterns?: string | EscapePatterns
-
-  /**
-   * When `true`, allow independent tracking of both quote types so they can
-   * overlap (e.g. `"text 'a b" c'` produces two overlapping ranges).
-   *
-   * When `false` (the default), properly nested quotes are still detected,
-   * but if an inner quote of the other type has not closed by the time the
-   * outer quote closes, the inner pending quote is discarded to prevent
-   * overlapping ranges.
-   *
-   * @default false
-   */
-  allowNesting?: boolean
-
-  /**
-   * When `true` (the default), quotes of the other type that open *and close*
-   * inside an already-open quote are detected as separate ranges
-   * (e.g. `'run away'` inside `"she told me 'run away' before dawn"`).
-   *
-   * When `false`, any quote character of the other type is treated as plain
-   * text while an outer quote is open — no inner ranges are produced.
-   *
-   * Has no effect when `allowNesting` is `true` (everything is tracked
-   * independently in that mode).
-   *
-   * @default true
-   */
-  detectInnerQuotes?: boolean
-}
+/** Schema for `detectQuotes()` option bag. */
+export const DetectQuotesOptionsSchema = z.object({
+  escapeContractions: z.boolean().optional(),
+  escapePatterns: z.union([z.string(), EscapePatternsSchema]).optional(),
+  allowNesting: z.boolean().optional(),
+  detectInnerQuotes: z.boolean().optional(),
+})
+export type DetectQuotesOptions = z.infer<typeof DetectQuotesOptionsSchema>
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
