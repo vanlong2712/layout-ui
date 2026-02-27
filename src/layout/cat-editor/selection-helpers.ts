@@ -7,6 +7,22 @@ import { $isMentionNode } from './mention-node'
 import type { ElementNode, NodeKey } from 'lexical'
 import type { HighlightNode } from './highlight-node'
 
+// ─── Text content ─────────────────────────────────────────────────────────────
+
+/** Return the plain-text content of the editor, joining paragraphs with a
+ *  single `\n`.  This is consistent with the global offset system used by
+ *  `$pointToGlobalOffset` / `$globalOffsetToPoint` (which accounts for +1
+ *  per paragraph boundary).  Must be called inside `editor.read()` or
+ *  `editor.update()`.  Lexical's built-in `$getRoot().getTextContent()` uses
+ *  `\n\n` between block elements, which breaks offset calculations. */
+export function $getPlainText(): string {
+  const root = $getRoot()
+  return root
+    .getChildren()
+    .map((p) => p.getTextContent())
+    .join('\n')
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Returns true for highlight nodes whose DOM has contentEditable="false":

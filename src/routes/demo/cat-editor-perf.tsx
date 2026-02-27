@@ -288,6 +288,7 @@ const EditorRow = memo(function EditorRow({
   text,
   rules,
   onFocus,
+  onKeyDown,
   registerRef,
   dir,
   popoverDir,
@@ -300,6 +301,7 @@ const EditorRow = memo(function EditorRow({
   text: string
   rules: Array<MooRule>
   onFocus: (index: number) => void
+  onKeyDown?: (event: KeyboardEvent) => boolean
   registerRef: (index: number, instance: CATEditorRef | null) => void
   dir?: 'ltr' | 'rtl' | 'auto'
   popoverDir?: 'ltr' | 'rtl' | 'auto' | 'inherit'
@@ -336,6 +338,7 @@ const EditorRow = memo(function EditorRow({
           editable={editable}
           readOnlySelectable={readOnlySelectable}
           openLinksOnClick={openLinksOnClick}
+          onKeyDown={onKeyDown}
         />
       </div>
     </div>
@@ -616,6 +619,66 @@ function CATEditorPerfDemo() {
     [],
   )
 
+  // ── Cross-editor caret navigation ────────────────────────────────
+  // When the caret is at offset 0 and user presses ArrowUp → focus
+  // the previous editor's end.  When at the last offset and user
+  // presses ArrowDown → focus the next editor's start.
+  // We use a ref for focusedRow to avoid re-creating the callback
+  // (which would bust EditorRow's memo).
+  const focusedRowRef = useRef(focusedRow)
+  focusedRowRef.current = focusedRow
+  const rowCountRef = useRef(rowCount)
+  rowCountRef.current = rowCount
+
+  const handleEditorKeyDown = useCallback((event: KeyboardEvent): boolean => {
+    const row = focusedRowRef.current
+    if (row === null) return false
+
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      const editorRef = editorRefsMap.current.get(row)
+      if (!editorRef) return false
+
+      const sel = editorRef.getSelection()
+      if (!sel || sel.anchor !== sel.focus) return false // only collapsed caret
+
+      const navigateTo = (targetRow: number, position: 'start' | 'end') => {
+        // Scroll the virtualizer so the target row is centered in the viewport
+        virtualizerRef.current.scrollToIndex(targetRow, { align: 'center' })
+        // Wait for the DOM to update, then focus
+        requestAnimationFrame(() => {
+          const targetRef = editorRefsMap.current.get(targetRow)
+          if (targetRef) {
+            if (position === 'end') {
+              targetRef.focusEnd()
+            } else {
+              targetRef.focusStart()
+            }
+          }
+        })
+      }
+
+      if (event.key === 'ArrowUp' && sel.anchor === 0) {
+        if (row > 0) {
+          navigateTo(row - 1, 'end')
+          return true
+        }
+      }
+
+      if (event.key === 'ArrowDown') {
+        const text = editorRef.getText()
+        if (sel.anchor === text.length) {
+          const maxRow = rowCountRef.current - 1
+          if (row < maxRow) {
+            navigateTo(row + 1, 'start')
+            return true
+          }
+        }
+      }
+    }
+
+    return false
+  }, [])
+
   // ── Spellcheck helpers ───────────────────────────────────────────
   const updateSpellcheck = useCallback(
     (idx: number, patch: Partial<ISpellCheckValidation>) =>
@@ -686,6 +749,9 @@ function CATEditorPerfDemo() {
     measureElement: (el) => el.getBoundingClientRect().height,
     rangeExtractor,
   })
+  // Keep a ref to the virtualizer for the keydown handler
+  const virtualizerRef = useRef(virtualizer)
+  virtualizerRef.current = virtualizer
 
   return (
     <div className="min-h-screen bg-linear-to-br from-background via-background to-muted/30 px-4 py-8 sm:px-6 lg:px-8">
@@ -876,6 +942,7 @@ function CATEditorPerfDemo() {
                   text={SAMPLE_TEXTS[virtualRow.index] ?? ''}
                   rules={rules}
                   onFocus={handleFocusRow}
+                  onKeyDown={handleEditorKeyDown}
                   registerRef={registerEditorRef}
                   dir={editorDir}
                   popoverDir={popoverDir}

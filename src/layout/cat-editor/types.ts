@@ -324,4 +324,11 @@ export interface CATEditorRef {
   clearFlash: () => void
   /** Replace all editor content with new text (supports newlines). */
   setText: (text: string) => void
+  /** Return the current caret / selection as global character offsets.
+   *  Returns `null` when the editor has no selection. */
+  getSelection: () => { anchor: number; focus: number } | null
+  /** Focus the editor and place the caret at the very start (offset 0). */
+  focusStart: () => void
+  /** Focus the editor and place the caret at the very end of the content. */
+  focusEnd: () => void
 }

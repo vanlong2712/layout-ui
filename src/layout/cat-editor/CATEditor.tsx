@@ -13,7 +13,9 @@ import {
   $createTextNode,
   $getNodeByKey,
   $getRoot,
+  $getSelection,
   $isParagraphNode,
+  $isRangeSelection,
   $setSelection,
   COMMAND_PRIORITY_CRITICAL,
   KEY_DOWN_COMMAND,
@@ -39,6 +41,7 @@ import {
 import { HighlightPopover } from './popover'
 import {
   $getNodeKeysInRange,
+  $getPlainText,
   $globalOffsetToPoint,
   $pointToGlobalOffset,
 } from './selection-helpers'
@@ -335,7 +338,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
         getText: () => {
           let text = ''
           editorRef.current?.getEditorState().read(() => {
-            text = $getRoot().getTextContent()
+            text = $getPlainText()
           })
           return text
         },
@@ -416,7 +419,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
           let count = 0
           editor.update(() => {
             const root = $getRoot()
-            const fullText = root.getTextContent()
+            const fullText = $getPlainText()
 
             // Count occurrences
             let idx = 0
@@ -471,6 +474,41 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
               root.append(p)
             }
           })
+        },
+        getSelection: () => {
+          const editor = editorRef.current
+          if (!editor) return null
+          let result: { anchor: number; focus: number } | null = null
+          editor.getEditorState().read(() => {
+            const sel = $getSelection()
+            if ($isRangeSelection(sel)) {
+              result = {
+                anchor: $pointToGlobalOffset(sel.anchor.key, sel.anchor.offset),
+                focus: $pointToGlobalOffset(sel.focus.key, sel.focus.offset),
+              }
+            }
+          })
+          return result ?? savedSelectionRef.current
+        },
+        focusStart: () => {
+          const editor = editorRef.current
+          if (!editor) return
+          editor.update(() => {
+            const root = $getRoot()
+            const first = root.getFirstChild()
+            if (first) first.selectStart()
+          })
+          editor.focus()
+        },
+        focusEnd: () => {
+          const editor = editorRef.current
+          if (!editor) return
+          editor.update(() => {
+            const root = $getRoot()
+            const last = root.getLastChild()
+            if (last) last.selectEnd()
+          })
+          editor.focus()
         },
       }),
       [applyFlashClass, applyFlashRange, clearFlashInner],
@@ -727,8 +765,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
       (editorState: { read: (fn: () => void) => void }) => {
         if (!onChange) return
         editorState.read(() => {
-          const root = $getRoot()
-          onChange(root.getTextContent())
+          onChange($getPlainText())
         })
       },
       [onChange],
