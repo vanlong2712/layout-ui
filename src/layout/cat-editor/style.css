@@ -119,6 +119,32 @@
   background-color: var(--cat-tag-bg-hover, oklch(0.78 0.1 210 / 0.25));
 }
 
+/* ─── Link: blue underline, clickable ──────────────────────────────────── */
+
+.cat-highlight-link {
+  background-color: var(--cat-link-bg, oklch(0.78 0.1 240 / 0.1));
+  border-bottom: 1px solid var(--cat-link-underline, oklch(0.55 0.18 240));
+  color: var(--cat-link-text, oklch(0.45 0.18 240));
+  cursor: pointer;
+  text-decoration: none;
+}
+.cat-highlight-link:hover {
+  background-color: var(--cat-link-bg-hover, oklch(0.78 0.1 240 / 0.22));
+  border-bottom-width: 2px;
+}
+
+/* ─── Mention: purple/violet highlight ─────────────────────────────────── */
+
+.cat-highlight-mention {
+  background-color: var(--cat-mention-bg, oklch(0.78 0.12 300 / 0.12));
+  border-bottom: 2px solid var(--cat-mention-underline, oklch(0.55 0.18 300));
+  color: var(--cat-mention-text, oklch(0.4 0.18 300));
+  cursor: pointer;
+}
+.cat-highlight-mention:hover {
+  background-color: var(--cat-mention-bg-hover, oklch(0.78 0.12 300 / 0.25));
+}
+
 /* When search overlaps a tag, search bg takes priority */
 .cat-highlight-tag.cat-highlight-glossary-search {
   background-color: var(--cat-glossary-bg, oklch(0.9 0.16 95 / 0.45));
@@ -130,7 +156,7 @@
 
 /* ─── Collapsed tag mode ───────────────────────────────────────────────── */
 
-.cat-tags-collapsed .cat-highlight-tag {
+.cat-tags-collapsed .cat-highlight-tag.cat-highlight-tag-collapsed {
   border-bottom: none !important;
   background: none !important;
   background-image: none !important;
@@ -164,7 +190,7 @@
     oklch(0.78 0.1 210 / 0.35)
   );
 }
-.cat-tags-collapsed .cat-highlight-tag:hover {
+.cat-tags-collapsed .cat-highlight-tag-collapsed:hover {
   background: none !important;
 }
 
@@ -296,6 +322,24 @@
   background-color: var(--cat-tag-bg-hover, oklch(0.45 0.12 210 / 0.4));
 }
 
+.dark .cat-highlight-link {
+  background-color: var(--cat-link-bg, oklch(0.45 0.12 240 / 0.25));
+  border-bottom-color: var(--cat-link-underline, oklch(0.65 0.18 240));
+  color: var(--cat-link-text, oklch(0.75 0.16 240));
+}
+.dark .cat-highlight-link:hover {
+  background-color: var(--cat-link-bg-hover, oklch(0.45 0.12 240 / 0.4));
+}
+
+.dark .cat-highlight-mention {
+  background-color: var(--cat-mention-bg, oklch(0.45 0.14 300 / 0.25));
+  border-bottom-color: var(--cat-mention-underline, oklch(0.65 0.18 300));
+  color: var(--cat-mention-text, oklch(0.8 0.16 300));
+}
+.dark .cat-highlight-mention:hover {
+  background-color: var(--cat-mention-bg-hover, oklch(0.45 0.14 300 / 0.4));
+}
+
 .dark .cat-highlight-tag.cat-highlight-glossary-search {
   background-color: var(--cat-glossary-bg, oklch(0.6 0.16 85 / 0.45));
   border-bottom-color: var(--cat-glossary-underline, oklch(0.75 0.18 85));
@@ -356,11 +400,13 @@
 @keyframes cat-popover-in {
   from {
     opacity: 0;
-    transform: translateY(-4px);
+    /* Use `translate` (independent CSS property) instead of `transform`
+       so it does NOT override Popper.js's transform-based positioning. */
+    translate: 0 -4px;
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    translate: 0 0;
   }
 }
 
@@ -430,6 +476,24 @@
 .dark .cat-badge-tag {
   background: oklch(0.4 0.1 210 / 0.35);
   color: oklch(0.75 0.12 210);
+}
+
+.cat-badge-link {
+  background: oklch(0.78 0.1 240 / 0.15);
+  color: oklch(0.4 0.15 240);
+}
+.dark .cat-badge-link {
+  background: oklch(0.4 0.1 240 / 0.35);
+  color: oklch(0.75 0.14 240);
+}
+
+.cat-badge-mention {
+  background: oklch(0.78 0.12 300 / 0.15);
+  color: oklch(0.4 0.15 300);
+}
+.dark .cat-badge-mention {
+  background: oklch(0.4 0.12 300 / 0.35);
+  color: oklch(0.75 0.14 300);
 }
 
 /* Flash highlight dark mode */

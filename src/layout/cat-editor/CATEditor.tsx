@@ -69,6 +69,11 @@ export interface CATEditorProps {
   /** Custom renderer for popover content per annotation.
    *  Return `null`/`undefined` to use the built-in default. */
   renderPopoverContent?: PopoverContentRenderer
+  /** Called when a link highlight is clicked.  If not provided, links
+   *  open in a new browser tab via `window.open`. */
+  onLinkClick?: (url: string) => void
+  /** Called when a mention highlight is clicked. */
+  onMentionClick?: (name: string) => void
   /** Placeholder text */
   placeholder?: string
   /** Additional class name for the editor container */
@@ -86,6 +91,8 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
       onSuggestionApply,
       codepointDisplayMap,
       renderPopoverContent,
+      onLinkClick,
+      onMentionClick,
       placeholder = 'Start typing or paste text here…',
       className,
       readOnly = false,
@@ -251,6 +258,37 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
             )
           }
         },
+        replaceAll: (search: string, replacement: string): number => {
+          const editor = editorRef.current
+          if (!editor || !search) return 0
+
+          let count = 0
+          editor.update(() => {
+            const root = $getRoot()
+            const fullText = root.getTextContent()
+
+            // Count occurrences
+            let idx = 0
+            while ((idx = fullText.indexOf(search, idx)) !== -1) {
+              count++
+              idx += search.length
+            }
+
+            if (count === 0) return
+
+            // Rebuild the content with all replacements applied
+            const newText = fullText.split(search).join(replacement)
+            root.clear()
+            const lines = newText.split('\n')
+            for (const line of lines) {
+              const p = $createParagraphNode()
+              p.append($createTextNode(line))
+              root.append(p)
+            }
+          })
+
+          return count
+        },
         clearFlash: () => {
           clearFlashInner()
         },
@@ -365,6 +403,47 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
       }
     }, [scheduleHide, cancelHide])
 
+    // Handle click on link / mention highlights
+    useEffect(() => {
+      const container = containerRef.current
+      if (!container) return
+
+      const handleClick = (e: MouseEvent) => {
+        const target = (e.target as HTMLElement).closest('.cat-highlight')
+        if (!target) return
+
+        const ruleIdsAttr = target.getAttribute('data-rule-ids')
+        if (!ruleIdsAttr) return
+
+        const ids = ruleIdsAttr.split(',')
+        for (const id of ids) {
+          const ann = annotationMapRef.current.get(id)
+          if (!ann) continue
+
+          if (ann.type === 'link') {
+            e.preventDefault()
+            if (onLinkClick) {
+              onLinkClick(ann.data.url)
+            } else {
+              window.open(ann.data.url, '_blank', 'noopener,noreferrer')
+            }
+            return
+          }
+
+          if (ann.type === 'mention') {
+            e.preventDefault()
+            onMentionClick?.(ann.data.name)
+            return
+          }
+        }
+      }
+
+      container.addEventListener('click', handleClick)
+      return () => {
+        container.removeEventListener('click', handleClick)
+      }
+    }, [onLinkClick, onMentionClick])
+
     // Handle suggestion click -> replace the highlighted text
     const handleSuggestionClick = useCallback(
       (suggestion: string, ruleId: string) => {
@@ -456,6 +535,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
           state={popoverState}
           annotationMap={annotationMapRef.current}
           onSuggestionClick={handleSuggestionClick}
+          onLinkOpen={onLinkClick}
           onDismiss={() => {
             isOverPopoverRef.current = false
             scheduleHide()

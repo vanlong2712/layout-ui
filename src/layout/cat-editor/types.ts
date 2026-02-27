@@ -96,12 +96,35 @@ export interface IQuoteRule {
   detectOptions?: DetectQuotesOptions
 }
 
+// ─── Link detection ───────────────────────────────────────────────────────────
+
+export interface ILinkRule {
+  type: 'link'
+  /** Custom regex pattern (source string) for matching URLs.
+   *  When omitted, a built-in pattern matching http/https URLs and
+   *  www-prefixed domains is used. */
+  pattern?: string
+}
+
+// ─── Mention detection ────────────────────────────────────────────────────────
+
+export interface IMentionRule {
+  type: 'mention'
+  /** Trigger character, default `@`. */
+  trigger?: string
+  /** Custom regex pattern (source string) for matching mentions.
+   *  When omitted, `@[a-zA-Z0-9_.-]+` is used (with the configured trigger). */
+  pattern?: string
+}
+
 export type MooRule =
   | ISpellCheckRule
   | IGlossaryRule
   | ISpecialCharRule
   | ITagRule
   | IQuoteRule
+  | ILinkRule
+  | IMentionRule
 
 // ─── Rule highlight annotations ───────────────────────────────────────────────
 
@@ -149,12 +172,33 @@ export interface QuoteAnnotation {
   }
 }
 
+export interface LinkAnnotation {
+  type: 'link'
+  id: string
+  data: {
+    url: string
+    displayText: string
+  }
+}
+
+export interface MentionAnnotation {
+  type: 'mention'
+  id: string
+  data: {
+    trigger: string
+    name: string
+    fullMatch: string
+  }
+}
+
 export type RuleAnnotation =
   | SpellCheckAnnotation
   | GlossaryAnnotation
   | SpecialCharAnnotation
   | TagAnnotation
   | QuoteAnnotation
+  | LinkAnnotation
+  | MentionAnnotation
 
 // Raw range from rule matching (before nesting resolution)
 export interface RawRange {
@@ -205,6 +249,9 @@ export interface CATEditorRef {
   focus: () => void
   /** Get the full plain-text content. */
   getText: () => string
+  /** Replace all occurrences of `search` with `replacement` in the editor
+   *  content.  Returns the number of replacements made. */
+  replaceAll: (search: string, replacement: string) => number
   /** Temporarily highlight editor elements matching `annotationId` with a
    *  pink "flash" overlay.  The highlight is automatically removed after
    *  `durationMs` (default 5 000 ms), when the user edits the text, or

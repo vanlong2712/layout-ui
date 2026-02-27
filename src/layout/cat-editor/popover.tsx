@@ -1,8 +1,10 @@
 import * as React from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef } from 'react'
+import { createPopper } from '@popperjs/core'
 
 import { getEffectiveCodepointMap } from './constants'
 
+import type { Instance as PopperInstance } from '@popperjs/core'
 import type {
   ISpellCheckValidation,
   PopoverContentRenderer,
@@ -179,6 +181,45 @@ function TagPopoverContent({
   )
 }
 
+function LinkPopoverContent({
+  data,
+  onOpen,
+}: {
+  data: { url: string; displayText: string }
+  onOpen: () => void
+}) {
+  return (
+    <div className="p-3 max-w-xs space-y-2">
+      <span className="cat-badge cat-badge-link">Link</span>
+      <p className="text-sm leading-relaxed text-foreground break-all">
+        <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+          {data.url}
+        </code>
+      </p>
+      <button type="button" className="cat-suggestion-btn" onClick={onOpen}>
+        Open link ↗
+      </button>
+    </div>
+  )
+}
+
+function MentionPopoverContent({
+  data,
+}: {
+  data: { trigger: string; name: string; fullMatch: string }
+}) {
+  return (
+    <div className="p-3 max-w-xs space-y-2">
+      <span className="cat-badge cat-badge-mention">Mention</span>
+      <p className="text-sm leading-relaxed text-foreground">
+        <strong className="font-semibold text-foreground">
+          {data.fullMatch}
+        </strong>
+      </p>
+    </div>
+  )
+}
+
 function QuotePopoverContent({
   data,
 }: {
@@ -218,6 +259,7 @@ export function HighlightPopover({
   state,
   annotationMap,
   onSuggestionClick,
+  onLinkOpen,
   onDismiss,
   onPopoverEnter,
   renderPopoverContent,
@@ -225,33 +267,74 @@ export function HighlightPopover({
   state: PopoverState
   annotationMap: Map<string, RuleAnnotation>
   onSuggestionClick: (suggestion: string, ruleId: string) => void
+  onLinkOpen?: (url: string) => void
   onDismiss: () => void
   onPopoverEnter: () => void
   renderPopoverContent?: PopoverContentRenderer
 }) {
   const popoverRef = useRef<HTMLDivElement>(null)
+  const popperRef = useRef<PopperInstance | null>(null)
 
-  // Adjust position to stay within viewport
-  const [adjustedPos, setAdjustedPos] = useState({ x: state.x, y: state.y })
-
-  useEffect(() => {
-    if (!state.visible || !popoverRef.current) {
-      setAdjustedPos({ x: state.x, y: state.y })
+  // Manage the Popper instance imperatively inside useLayoutEffect so that
+  // positioning is applied to the DOM BEFORE the browser paints —
+  // eliminating the "flash at (0,0)" entirely.
+  useLayoutEffect(() => {
+    const el = popoverRef.current
+    if (!el) {
+      // Popover not in DOM (hidden via early return below)
+      popperRef.current?.destroy()
+      popperRef.current = null
       return
     }
-    const rect = popoverRef.current.getBoundingClientRect()
-    let x = state.x
-    let y = state.y + 6
 
-    if (x + rect.width > window.innerWidth - 16) {
-      x = window.innerWidth - rect.width - 16
+    const virtualEl = {
+      getBoundingClientRect: (): DOMRect =>
+        ({
+          top: state.y,
+          left: state.x,
+          bottom: state.y,
+          right: state.x,
+          width: 0,
+          height: 0,
+          x: state.x,
+          y: state.y,
+          toJSON: () => {},
+        }) as DOMRect,
     }
-    if (x < 16) x = 16
-    if (y + rect.height > window.innerHeight - 16) {
-      y = state.y - rect.height - 6
+
+    // Hide before (re-)positioning so the old position doesn't flash
+    el.style.visibility = 'hidden'
+
+    if (popperRef.current) {
+      // Reuse existing instance — just update the virtual reference
+      popperRef.current.state.elements.reference =
+        virtualEl as unknown as Element
+    } else {
+      popperRef.current = createPopper(virtualEl as unknown as Element, el, {
+        strategy: 'fixed',
+        placement: 'bottom-start',
+        modifiers: [
+          { name: 'offset', options: { offset: [0, 6] } },
+          { name: 'preventOverflow', options: { padding: 16 } },
+          { name: 'flip', options: { padding: 16 } },
+        ],
+      })
     }
-    setAdjustedPos({ x, y })
+
+    // forceUpdate() is SYNCHRONOUS — runs all Popper modifiers (including
+    // applyStyles) immediately, so styles are written to the DOM before we
+    // make the element visible.
+    popperRef.current.forceUpdate()
+    el.style.visibility = ''
   }, [state.visible, state.x, state.y])
+
+  // Destroy popper on unmount
+  useLayoutEffect(() => {
+    return () => {
+      popperRef.current?.destroy()
+      popperRef.current = null
+    }
+  }, [])
 
   if (!state.visible) return null
 
@@ -265,12 +348,7 @@ export function HighlightPopover({
     <div
       ref={popoverRef}
       className="cat-popover"
-      style={{
-        position: 'fixed',
-        left: adjustedPos.x,
-        top: adjustedPos.y,
-        zIndex: 1000,
-      }}
+      style={{ position: 'fixed', left: 0, top: 0, zIndex: 1000 }}
       onMouseEnter={() => onPopoverEnter()}
       onMouseLeave={() => onDismiss()}
     >
@@ -296,6 +374,19 @@ export function HighlightPopover({
               <TagPopoverContent data={ann.data} />
             ) : ann.type === 'quote' ? (
               <QuotePopoverContent data={ann.data} />
+            ) : ann.type === 'link' ? (
+              <LinkPopoverContent
+                data={ann.data}
+                onOpen={() => {
+                  if (onLinkOpen) {
+                    onLinkOpen(ann.data.url)
+                  } else {
+                    window.open(ann.data.url, '_blank', 'noopener,noreferrer')
+                  }
+                }}
+              />
+            ) : ann.type === 'mention' ? (
+              <MentionPopoverContent data={ann.data} />
             ) : (
               <SpecialCharPopoverContent data={ann.data} />
             )}

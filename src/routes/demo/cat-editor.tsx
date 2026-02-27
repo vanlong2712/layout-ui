@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import {
+  AtSign,
   BookOpen,
   CheckCircle2,
   ChevronDown,
@@ -8,6 +9,7 @@ import {
   Code,
   Database,
   Eye,
+  Link2,
   Minus,
   MousePointerClick,
   Plus,
@@ -24,6 +26,8 @@ import type {
   CATEditorRef,
   IGlossaryEntry,
   IGlossaryRule,
+  ILinkRule,
+  IMentionRule,
   IQuoteRule,
   ISpecialCharEntry,
   ISpecialCharRule,
@@ -47,7 +51,7 @@ export const Route = createFileRoute('/demo/cat-editor')({
 // ─── Default sample data ─────────────────────────────────────────────────────
 
 const SAMPLE_TEXT =
-  'The quick brown fox jumps over the layz dog. This sentance contains severl speling errors and some technical terms like API endpoint and HTTP request.\nTom & Jerry\u00A0say\u2009hello\u2003world\u200Bhidden\u2060join\u200Ahair.\tTabbed here.\n<a href="https://example.com">Click <b>here</b> for more</a> info <br/> end.\nHello {{userName}}, your order ${orderId} is ready. Total: $amount — use code %PROMO to save.\nShe said "run away" and he replied \'OK fine\' before leaving.'
+  'The quick brown fox jumps over the layz dog. This sentance contains severl speling errors and some technical terms like API endpoint and HTTP request.\nTom & Jerry\u00A0say\u2009hello\u2003world\u200Bhidden\u2060join\u200Ahair.\tTabbed here.\n<a href="https://example.com">Click <b>here</b> for more</a> info <br/> end.\nHello {{userName}}, your order ${orderId} is ready. Total: $amount — use code %PROMO to save.\nShe said "run away" and he replied \'OK fine\' before leaving.\nVisit https://github.com/lexical or www.example.com for details. Contact @john.doe or @admin for help.'
 
 const DEFAULT_SPELLCHECK: Array<ISpellCheckValidation> = [
   {
@@ -215,6 +219,9 @@ function CATEditorDemo() {
   const [specialCharEnabled, setSpecialCharEnabled] = useState(true)
   const [tagsEnabled, setTagsEnabled] = useState(true)
   const [quotesEnabled, setQuotesEnabled] = useState(true)
+  const [linkEnabled, setLinkEnabled] = useState(true)
+  const [mentionEnabled, setMentionEnabled] = useState(true)
+  const [mentionTrigger, setMentionTrigger] = useState('@')
   const [searchKeywords, setSearchKeywords] = useState('')
 
   // ── Editable rule data ───────────────────────────────────────────────
@@ -348,6 +355,17 @@ function CATEditorDemo() {
         detectOptions,
       } satisfies IQuoteRule)
     }
+    if (linkEnabled) {
+      active.push({
+        type: 'link',
+      } satisfies ILinkRule)
+    }
+    if (mentionEnabled) {
+      active.push({
+        type: 'mention',
+        trigger: mentionTrigger || '@',
+      } satisfies IMentionRule)
+    }
     if (searchKeywords.trim()) {
       const terms = searchKeywords
         .split(',')
@@ -385,6 +403,9 @@ function CATEditorDemo() {
     quoteEscapeContractions,
     quoteAllowNesting,
     quoteDetectInner,
+    linkEnabled,
+    mentionEnabled,
+    mentionTrigger,
     searchKeywords,
   ])
 
@@ -428,6 +449,9 @@ function CATEditorDemo() {
     setQuoteEscapeContractions(true)
     setQuoteAllowNesting(false)
     setQuoteDetectInner(true)
+    setLinkEnabled(true)
+    setMentionEnabled(true)
+    setMentionTrigger('@')
     setSearchKeywords('')
     setFlashedSpellcheckId(null)
     if (flashDemoTimerRef.current) {
@@ -935,9 +959,45 @@ function CATEditorDemo() {
               </div>
             </div>
           </Section>
-        </div>
 
-        {/* Legend */}
+          {/* Links */}
+          <Section
+            title="Link Detection"
+            icon={<Link2 className="h-4 w-4 text-blue-500" />}
+            enabled={linkEnabled}
+            onToggle={setLinkEnabled}
+          >
+            <p className="text-xs text-muted-foreground">
+              Automatically detects URLs (http/https and www-prefixed) in the
+              text and highlights them. Click a highlighted link to open it.
+            </p>
+          </Section>
+
+          {/* Mentions */}
+          <Section
+            title="Mention Detection"
+            icon={<AtSign className="h-4 w-4 text-purple-500" />}
+            enabled={mentionEnabled}
+            onToggle={setMentionEnabled}
+          >
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground w-20">
+                  Trigger
+                </Label>
+                <Input
+                  className="h-7 text-xs font-mono w-16"
+                  value={mentionTrigger}
+                  onChange={(e) => setMentionTrigger(e.target.value)}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Detects mentions like @username in the text. The trigger
+                character can be customised (default: @).
+              </p>
+            </div>
+          </Section>
+        </div>
         <div className="flex flex-wrap gap-4 text-sm">
           <div className="flex items-center gap-2">
             <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-spellcheck" />
@@ -966,6 +1026,14 @@ function CATEditorDemo() {
           <div className="flex items-center gap-2">
             <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-quote" />
             <span className="text-muted-foreground">Quote replacement</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-link" />
+            <span className="text-muted-foreground">Link</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-mention" />
+            <span className="text-muted-foreground">Mention</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="inline-block h-4 w-8 rounded cat-highlight cat-highlight-nested cat-highlight-glossary cat-highlight-glossary-lexiqa" />

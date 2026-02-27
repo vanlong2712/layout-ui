@@ -429,8 +429,7 @@ export function computeHighlightSegments(
           })
         }
       }
-    } else {
-      // special-char
+    } else if (rule.type === 'special-char') {
       const allEntries: Array<ISpecialCharEntry> = [...rule.entries]
       for (const entry of allEntries) {
         // Make a global copy of the pattern so we can iterate all matches
@@ -462,6 +461,74 @@ export function computeHighlightSegments(
             },
           })
         }
+      }
+    } else if (rule.type === 'link') {
+      const defaultPattern = String.raw`https?:\/\/[^\s<>"']+|www\.[^\s<>"']+`
+      const patternSource = rule.pattern ?? defaultPattern
+      let re: RegExp
+      try {
+        re = new RegExp(patternSource, 'gi')
+      } catch {
+        continue
+      }
+      let m: RegExpExecArray | null
+      while ((m = re.exec(text)) !== null) {
+        if (m[0].length === 0) {
+          re.lastIndex++
+          continue
+        }
+        // Trim trailing punctuation that's likely not part of the URL
+        let matched = m[0]
+        const trailingPunct = /[.,;:!?)}\]]+$/
+        const trailingMatch = trailingPunct.exec(matched)
+        if (trailingMatch) {
+          matched = matched.slice(0, -trailingMatch[0].length)
+        }
+        const end = m.index + matched.length
+        // Normalize: www. → https://www.
+        const url = matched.startsWith('www.') ? 'https://' + matched : matched
+        rawRanges.push({
+          start: m.index,
+          end,
+          annotation: {
+            type: 'link',
+            id: `link-${m.index}-${end}`,
+            data: {
+              url,
+              displayText: matched,
+            },
+          },
+        })
+      }
+    } else if (rule.type === 'mention') {
+      const trigger = rule.trigger ?? '@'
+      const escapedTrigger = trigger.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const patternSource = rule.pattern ?? `${escapedTrigger}[a-zA-Z0-9_.-]+`
+      let re: RegExp
+      try {
+        re = new RegExp(patternSource, 'g')
+      } catch {
+        continue
+      }
+      let m: RegExpExecArray | null
+      while ((m = re.exec(text)) !== null) {
+        if (m[0].length === 0) {
+          re.lastIndex++
+          continue
+        }
+        rawRanges.push({
+          start: m.index,
+          end: m.index + m[0].length,
+          annotation: {
+            type: 'mention',
+            id: `mention-${m.index}-${m.index + m[0].length}`,
+            data: {
+              trigger,
+              name: m[0].slice(trigger.length),
+              fullMatch: m[0],
+            },
+          },
+        })
       }
     }
   }
