@@ -419,6 +419,14 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
           visible: true,
           x: rect.left,
           y: rect.bottom,
+          anchorRect: {
+            top: rect.top,
+            left: rect.left,
+            bottom: rect.bottom,
+            right: rect.right,
+            width: rect.width,
+            height: rect.height,
+          },
           ruleIds,
         })
       }

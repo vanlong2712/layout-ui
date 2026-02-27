@@ -392,6 +392,7 @@ function CATEditorDemo() {
   const [tagsEnabled, setTagsEnabled] = useState(true)
   const [quotesEnabled, setQuotesEnabled] = useState(true)
   const [linkEnabled, setLinkEnabled] = useState(true)
+  const [openLinksOnClick, setOpenLinksOnClick] = useState(true)
   const [mentionEnabled, setMentionEnabled] = useState(true)
   const [mentionTrigger, setMentionTrigger] = useState('@')
   const [mentionShowAvatar, setMentionShowAvatar] = useState(true)
@@ -671,6 +672,7 @@ function CATEditorDemo() {
     setQuoteAllowNesting(false)
     setQuoteDetectInner(true)
     setLinkEnabled(true)
+    setOpenLinksOnClick(true)
     setMentionEnabled(true)
     setMentionTrigger('@')
     setMentionShowAvatar(true)
@@ -1181,10 +1183,24 @@ function CATEditorDemo() {
             enabled={linkEnabled}
             onToggle={setLinkEnabled}
           >
-            <p className="text-xs text-muted-foreground">
-              Automatically detects URLs (http/https and www-prefixed) in the
-              text and highlights them. Click a highlighted link to open it.
-            </p>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={openLinksOnClick}
+                  onCheckedChange={setOpenLinksOnClick}
+                />
+                <Label className="text-xs text-muted-foreground">
+                  Open link on click
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Automatically detects URLs (http/https and www-prefixed) in the
+                text and highlights them.{' '}
+                {openLinksOnClick
+                  ? 'Click a highlighted link to open it.'
+                  : 'Link clicks are disabled — clicking positions the cursor instead.'}
+              </p>
+            </div>
           </Section>
 
           {/* Mentions */}
@@ -1336,6 +1352,7 @@ function CATEditorDemo() {
             renderMentionDOM={renderMentionDOM}
             mentionSerialize={mentionSerialize}
             mentionPattern={mentionPattern}
+            openLinksOnClick={openLinksOnClick}
             onChange={() => {
               // Clear flash state when user edits text
               if (flashedSpellcheckId) {

@@ -232,6 +232,16 @@ export interface PopoverState {
   visible: boolean
   x: number
   y: number
+  /** Full bounding rect of the hovered highlight element.
+   *  Used by Popper so that flip/shift avoid overlapping the target. */
+  anchorRect?: {
+    top: number
+    left: number
+    bottom: number
+    right: number
+    width: number
+    height: number
+  }
   ruleIds: Array<string>
 }
 

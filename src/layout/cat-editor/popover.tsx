@@ -270,17 +270,20 @@ export function HighlightPopover({
       return
     }
 
+    // Use the full anchor rect when available so that Popper's flip/shift
+    // modifiers respect the real element bounds and never overlap the target.
+    const ar = state.anchorRect
     const virtualEl = {
       getBoundingClientRect: (): DOMRect =>
         ({
-          top: state.y,
-          left: state.x,
-          bottom: state.y,
-          right: state.x,
-          width: 0,
-          height: 0,
-          x: state.x,
-          y: state.y,
+          top: ar?.top ?? state.y,
+          left: ar?.left ?? state.x,
+          bottom: ar?.bottom ?? state.y,
+          right: ar?.right ?? state.x,
+          width: ar?.width ?? 0,
+          height: ar?.height ?? 0,
+          x: ar?.left ?? state.x,
+          y: ar?.top ?? state.y,
           toJSON: () => {},
         }) as DOMRect,
     }
@@ -309,7 +312,7 @@ export function HighlightPopover({
     // make the element visible.
     popperRef.current.forceUpdate()
     el.style.visibility = ''
-  }, [state.visible, state.x, state.y])
+  }, [state.visible, state.x, state.y, state.anchorRect])
 
   // Destroy popper on unmount
   useLayoutEffect(() => {
@@ -331,7 +334,13 @@ export function HighlightPopover({
     <div
       ref={popoverRef}
       className="cat-popover"
-      style={{ position: 'fixed', left: 0, top: 0, zIndex: 1000 }}
+      style={{
+        position: 'fixed',
+        left: 0,
+        top: 0,
+        zIndex: 1000,
+        visibility: 'hidden',
+      }}
       onMouseEnter={() => onPopoverEnter()}
       onMouseLeave={() => onDismiss()}
     >
