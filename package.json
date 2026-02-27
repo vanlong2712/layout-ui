@@ -1,6 +1,6 @@
 {
   "name": "@longd/layout-ui",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A React component library featuring a powerful multi-select, a CAT (Computer-Assisted Translation) rich-text editor, and a quote-detection utility. Built with Tailwind CSS v4.",
   "repository": {
     "type": "git",
