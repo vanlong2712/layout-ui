@@ -14,8 +14,11 @@ import {
   $getNodeByKey,
   $getRoot,
   $setSelection,
+  COMMAND_PRIORITY_CRITICAL,
+  KEY_DOWN_COMMAND,
 } from 'lexical'
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
+import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
 import { ContentEditable } from '@lexical/react/LexicalContentEditable'
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary'
 import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin'
@@ -101,7 +104,34 @@ export interface CATEditorProps {
   placeholder?: string
   /** Additional class name for the editor container */
   className?: string
-  /** Whether the editor is read-only */
+  /** Text direction.  `'ltr'` (default), `'rtl'`, or `'auto'`. */
+  dir?: 'ltr' | 'rtl' | 'auto'
+  /** When `true`, applies a Japanese-optimised font stack to the editor. */
+  jpFont?: boolean
+  /** Whether the editor content is editable.  Default: `true`.
+   *  When `false`, all text mutations are blocked.
+   *  @see readOnlySelectable */
+  editable?: boolean
+  /** When `editable` is `false` and this is `true`, the editor still
+   *  allows caret placement, range selection and copy — but rejects
+   *  any content changes.  Default: `false`. */
+  readOnlySelectable?: boolean
+  /** Custom keydown handler.  Called before Lexical processes the event.
+   *  Return `true` to prevent Lexical (and the browser) from handling
+   *  the key.  Useful for intercepting Enter, Tab, Escape, etc.
+   *  @example
+   *  ```tsx
+   *  onKeyDown={(e) => {
+   *    if (e.key === 'Enter' && !e.shiftKey) {
+   *      e.preventDefault()
+   *      handleSubmit()
+   *      return true
+   *    }
+   *    return false
+   *  }}
+   *  ``` */
+  onKeyDown?: (event: KeyboardEvent) => boolean
+  /** @deprecated Use `editable` instead. */
   readOnly?: boolean
 }
 
@@ -123,10 +153,19 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
       renderMentionDOM,
       placeholder = 'Start typing or paste text here…',
       className,
-      readOnly = false,
+      dir,
+      jpFont = false,
+      editable: editableProp,
+      readOnlySelectable = false,
+      onKeyDown: onKeyDownProp,
+      readOnly: readOnlyLegacy = false,
     },
     ref,
   ) {
+    // Resolve effective editable: new `editable` prop takes precedence,
+    // falling back to the legacy `readOnly` prop (inverted).
+    const isEditable =
+      editableProp !== undefined ? editableProp : !readOnlyLegacy
     const annotationMapRef = useRef(new Map<string, RuleAnnotation>())
     const editorRef = useRef<LexicalEditor | null>(null)
     const savedSelectionRef = useRef<{
@@ -344,7 +383,9 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
           },
         },
         nodes: [HighlightNode, MentionNode],
-        editable: !readOnly,
+        // When readOnlySelectable, Lexical must be editable so the caret
+        // and selection work — we block mutations via KEY_DOWN_COMMAND.
+        editable: isEditable || readOnlySelectable,
         onError: (error: Error) => {
           console.error('CATEditor Lexical error:', error)
         },
@@ -562,12 +603,28 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
     )
 
     return (
-      <div ref={containerRef} className={cn('cat-editor-container', className)}>
+      <div
+        ref={containerRef}
+        className={cn(
+          'cat-editor-container',
+          jpFont && 'cat-editor-jp-font',
+          className,
+        )}
+        dir={dir}
+      >
         <LexicalComposer initialConfig={initialConfig}>
           <div className="cat-editor-inner">
             <PlainTextPlugin
               contentEditable={
-                <ContentEditable className="cat-editor-editable" />
+                <ContentEditable
+                  className={cn(
+                    'cat-editor-editable',
+                    !isEditable && !readOnlySelectable && 'cat-editor-readonly',
+                    !isEditable &&
+                      readOnlySelectable &&
+                      'cat-editor-readonly-selectable',
+                  )}
+                />
               }
               placeholder={
                 <div className="cat-editor-placeholder">{placeholder}</div>
@@ -586,6 +643,10 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
               savedSelectionRef={savedSelectionRef}
             />
             <NLMarkerNavigationPlugin />
+            {/* Block mutations when read-only but selectable */}
+            {!isEditable && readOnlySelectable && <ReadOnlySelectablePlugin />}
+            {/* Custom key-down handler */}
+            {onKeyDownProp && <KeyDownPlugin onKeyDown={onKeyDownProp} />}
             {/* Mention typeahead plugin — enabled when a mention rule is present */}
             {rules
               .filter(
@@ -624,3 +685,88 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
 )
 
 export default CATEditor
+
+// ─── Internal Plugins ─────────────────────────────────────────────────────────
+
+/** Blocks all content-mutating key presses while keeping caret & selection
+ *  functional.  Registered at CRITICAL priority so it fires before Lexical's
+ *  own handlers. */
+function ReadOnlySelectablePlugin() {
+  const [editor] = useLexicalComposerContext()
+
+  useEffect(() => {
+    return editor.registerCommand(
+      KEY_DOWN_COMMAND,
+      (event: KeyboardEvent) => {
+        // Allow navigation, selection, copy/paste-select, etc.
+        if (
+          event.key.startsWith('Arrow') ||
+          event.key === 'Home' ||
+          event.key === 'End' ||
+          event.key === 'PageUp' ||
+          event.key === 'PageDown' ||
+          event.key === 'Shift' ||
+          event.key === 'Control' ||
+          event.key === 'Alt' ||
+          event.key === 'Meta' ||
+          event.key === 'Tab' ||
+          event.key === 'Escape' ||
+          event.key === 'F5' ||
+          event.key === 'F12' ||
+          // Ctrl/Cmd shortcuts that don't mutate: copy, select-all, find
+          ((event.ctrlKey || event.metaKey) &&
+            (event.key === 'c' ||
+              event.key === 'a' ||
+              event.key === 'f' ||
+              event.key === 'g'))
+        ) {
+          return false // let it through
+        }
+        // Block everything else (typing, Enter, Backspace, Delete, paste, cut…)
+        event.preventDefault()
+        return true
+      },
+      COMMAND_PRIORITY_CRITICAL,
+    )
+  }, [editor])
+
+  // Also block paste and cut at the DOM level
+  useEffect(() => {
+    const root = editor.getRootElement()
+    if (!root) return
+    const block = (e: Event) => e.preventDefault()
+    root.addEventListener('paste', block)
+    root.addEventListener('cut', block)
+    root.addEventListener('drop', block)
+    return () => {
+      root.removeEventListener('paste', block)
+      root.removeEventListener('cut', block)
+      root.removeEventListener('drop', block)
+    }
+  }, [editor])
+
+  return null
+}
+
+/** Fires the consumer's `onKeyDown` before Lexical processes the event.
+ *  If the callback returns `true`, the event is consumed (preventDefault +
+ *  stop Lexical propagation). */
+function KeyDownPlugin({
+  onKeyDown,
+}: {
+  onKeyDown: (event: KeyboardEvent) => boolean
+}) {
+  const [editor] = useLexicalComposerContext()
+
+  useEffect(() => {
+    return editor.registerCommand(
+      KEY_DOWN_COMMAND,
+      (event: KeyboardEvent) => {
+        return onKeyDown(event)
+      },
+      COMMAND_PRIORITY_CRITICAL,
+    )
+  }, [editor, onKeyDown])
+
+  return null
+}

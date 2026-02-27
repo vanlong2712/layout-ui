@@ -18,6 +18,7 @@ import {
   Quote,
   RotateCcw,
   Search,
+  Settings,
   SpellCheck,
   Type,
 } from 'lucide-react'
@@ -46,6 +47,13 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { layoutDemos } from '@/data/layout-demos'
 
 export const Route = createFileRoute('/demo/cat-editor')({
@@ -399,6 +407,14 @@ function CATEditorDemo() {
   const [mentionSerializeFormat, setMentionSerializeFormat] = useState('@{id}')
   const [searchKeywords, setSearchKeywords] = useState('')
 
+  // ── Editor options ───────────────────────────────────────────────────
+  const [editorDir, setEditorDir] = useState<'ltr' | 'rtl' | 'auto'>('ltr')
+  const [jpFont, setJpFont] = useState(false)
+  const [editorEditable, setEditorEditable] = useState(true)
+  const [readOnlySelectable, setReadOnlySelectable] = useState(false)
+  const [interceptEnter, setInterceptEnter] = useState(false)
+  const [keyDownLog, setKeyDownLog] = useState<Array<string>>([])
+
   // ── Editable rule data ───────────────────────────────────────────────
   // Spellcheck validations
   const [spellcheckData, setSpellcheckData] =
@@ -678,6 +694,12 @@ function CATEditorDemo() {
     setMentionShowAvatar(true)
     setMentionSerializeFormat('@{id}')
     setSearchKeywords('')
+    setEditorDir('ltr')
+    setJpFont(false)
+    setEditorEditable(true)
+    setReadOnlySelectable(false)
+    setInterceptEnter(false)
+    setKeyDownLog([])
     setFlashedSpellcheckId(null)
     if (flashDemoTimerRef.current) {
       clearTimeout(flashDemoTimerRef.current)
@@ -685,6 +707,25 @@ function CATEditorDemo() {
     editorRef.current?.clearFlash()
     setResetKey((k) => k + 1)
   }, [])
+
+  // ── onKeyDown demo ─────────────────────────────────────────────────
+  const handleEditorKeyDown = useCallback(
+    (event: KeyboardEvent): boolean => {
+      if (!interceptEnter) return false
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault()
+        setKeyDownLog((prev) =>
+          [
+            `[Enter intercepted] ${new Date().toLocaleTimeString()}`,
+            ...prev,
+          ].slice(0, 8),
+        )
+        return true // block Lexical
+      }
+      return false
+    },
+    [interceptEnter],
+  )
 
   // ── Helpers for editable lists ───────────────────────────────────────
   const updateSpellcheck = (
@@ -1319,6 +1360,106 @@ function CATEditorDemo() {
           </div>
         </div>
 
+        {/* ─── Editor Options ─────────────────────────────────────── */}
+        <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Settings className="h-4 w-4 text-slate-500" />
+            Editor Options
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Direction */}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Direction</Label>
+              <Select
+                value={editorDir}
+                onValueChange={(v) => setEditorDir(v as 'ltr' | 'rtl' | 'auto')}
+              >
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ltr">LTR (left-to-right)</SelectItem>
+                  <SelectItem value="rtl">RTL (right-to-left)</SelectItem>
+                  <SelectItem value="auto">Auto</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* JP Font */}
+            <div className="flex items-center gap-3 sm:pt-5">
+              <Switch checked={jpFont} onCheckedChange={setJpFont} />
+              <Label className="text-sm text-foreground cursor-pointer">
+                Japanese font
+              </Label>
+            </div>
+
+            {/* Editable */}
+            <div className="flex items-center gap-3">
+              <Switch
+                checked={editorEditable}
+                onCheckedChange={(v) => {
+                  setEditorEditable(v)
+                  if (v) setReadOnlySelectable(false)
+                }}
+              />
+              <Label className="text-sm text-foreground cursor-pointer">
+                Editable
+              </Label>
+            </div>
+
+            {/* Read-only selectable */}
+            <div className="flex items-center gap-3">
+              <Switch
+                checked={readOnlySelectable}
+                onCheckedChange={setReadOnlySelectable}
+                disabled={editorEditable}
+              />
+              <Label
+                className={`text-sm cursor-pointer ${
+                  editorEditable ? 'text-muted-foreground' : 'text-foreground'
+                }`}
+              >
+                Allow selection when read-only
+                <span className="block text-xs text-muted-foreground font-normal">
+                  Caret &amp; copy work, but content is locked
+                </span>
+              </Label>
+            </div>
+
+            {/* Intercept Enter */}
+            <div className="flex items-center gap-3 sm:col-span-2">
+              <Switch
+                checked={interceptEnter}
+                onCheckedChange={(v) => {
+                  setInterceptEnter(v)
+                  setKeyDownLog([])
+                }}
+              />
+              <Label className="text-sm text-foreground cursor-pointer">
+                Intercept Enter key
+                <span className="block text-xs text-muted-foreground font-normal">
+                  Enter triggers custom action &middot; Shift+Enter inserts
+                  newline
+                </span>
+              </Label>
+            </div>
+          </div>
+
+          {/* Key-down log */}
+          {interceptEnter && keyDownLog.length > 0 && (
+            <div className="rounded-lg bg-muted p-3 space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">
+                Key-down log:
+              </p>
+              {keyDownLog.map((msg, i) => (
+                <p key={i} className="text-xs font-mono text-foreground">
+                  {msg}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Search keywords — placed right above the editor */}
         <div className="flex items-center gap-2">
           <Search className="h-4 w-4 text-blue-500 shrink-0" />
@@ -1353,6 +1494,11 @@ function CATEditorDemo() {
             mentionSerialize={mentionSerialize}
             mentionPattern={mentionPattern}
             openLinksOnClick={openLinksOnClick}
+            dir={editorDir}
+            jpFont={jpFont}
+            editable={editorEditable}
+            readOnlySelectable={readOnlySelectable}
+            onKeyDown={interceptEnter ? handleEditorKeyDown : undefined}
             onChange={() => {
               // Clear flash state when user edits text
               if (flashedSpellcheckId) {

@@ -26,6 +26,27 @@
   outline: none;
 }
 
+/* Read-only: fully non-interactive (no caret, no selection) */
+.cat-editor-readonly {
+  cursor: default;
+  user-select: none;
+  caret-color: transparent;
+  opacity: 0.75;
+}
+
+/* Read-only but selectable: caret visible, text can be selected & copied */
+.cat-editor-readonly-selectable {
+  cursor: text;
+}
+
+/* ─── Japanese font stack ──────────────────────────────────────────────────── */
+
+.cat-editor-jp-font .cat-editor-editable {
+  font-family:
+    'Noto Sans JP', 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Yu Gothic',
+    'Meiryo', sans-serif;
+}
+
 .cat-editor-paragraph {
   margin: 0;
 }
