@@ -1,15 +1,19 @@
 # @longd/layout-ui
 
-A React component library featuring a powerful, feature-rich select component with virtualization, drag-and-drop sorting, grouped options, and intelligent chip overflow management. Built with **Tailwind CSS v4**.
+A React component library featuring a powerful select component, a CAT (Computer-Assisted Translation) rich-text editor with rule-based highlighting, and a quote-detection utility. Built with **Tailwind CSS v4**.
 
 ## Features
 
-- **Virtualized Select** - LayoutSelect Features - Advanced select with drag-and-drop, virtualization, and custom rendering.
+- **Virtualized Select** — LayoutSelect with drag-and-drop, virtualization, and custom rendering.
+- **CAT Editor** — Lexical-based rich-text editor with spell-check, glossary/keyword highlighting, tag collapsing, quote detection, link detection, and @mention support.
+- **Detect Quotes** — Standalone utility for scanning text and returning all single/double quote ranges with contraction-aware escaping.
 
 ## Demo
 
 - **Full demo site**: https://layout-ui-seven.vercel.app
 - **LayoutSelect component**: https://layout-ui-seven.vercel.app/demo/layout-select
+- **CAT Editor**: https://layout-ui-seven.vercel.app/demo/cat-editor
+- **Detect Quotes**: https://layout-ui-seven.vercel.app/demo/detect-quotes
 
 ## LayoutSelect Features
 
@@ -145,8 +149,20 @@ function App() {
 ### Deep import (tree-shaking)
 
 ```tsx
+// LayoutSelect
 import { LayoutSelect } from '@longd/layout-ui/layout/select'
 import type { IOption } from '@longd/layout-ui/layout/select'
+
+// CATEditor
+import { CATEditor } from '@longd/layout-ui/layout/cat-editor'
+import type {
+  CATEditorProps,
+  MooRule,
+} from '@longd/layout-ui/layout/cat-editor'
+
+// Detect Quotes
+import { detectQuotes } from '@longd/layout-ui/utils/detect-quotes'
+import type { QuoteRange } from '@longd/layout-ui/utils/detect-quotes'
 ```
 
 ---
@@ -335,6 +351,235 @@ const [options, setOptions] = useState<IOption[]>(initialOptions)
   onChange={setSelected}
   collapsed
 />
+```
+
+---
+
+## CATEditor
+
+A Lexical-based rich-text editor designed for Computer-Assisted Translation workflows. Supports rule-based highlighting with popovers, tag collapsing, smart quote replacement, link detection, and @mention typeahead.
+
+### Quick start
+
+```tsx
+import { CATEditor } from '@longd/layout-ui/layout/cat-editor'
+import type { MooRule, CATEditorRef } from '@longd/layout-ui/layout/cat-editor'
+
+const rules: MooRule[] = [
+  {
+    type: 'spellcheck',
+    validations: [
+      {
+        categoryId: 'spelling',
+        start: 0,
+        end: 5,
+        content: 'Helo',
+        message: 'Possible spelling mistake',
+        shortMessage: 'Spelling',
+        suggestions: [{ value: 'Hello' }],
+      },
+    ],
+  },
+]
+
+function App() {
+  return (
+    <CATEditor
+      initialText="Helo world"
+      rules={rules}
+      onChange={(text) => console.log(text)}
+    />
+  )
+}
+```
+
+### CSS requirement
+
+CATEditor ships its own CSS. When using the deep import, the CSS is imported automatically from the entry point. Make sure your bundler supports CSS imports.
+
+### `<CATEditor>` props
+
+| Prop                   | Type                                            | Default           | Description                                                                |
+| ---------------------- | ----------------------------------------------- | ----------------- | -------------------------------------------------------------------------- |
+| `initialText`          | `string`                                        | `''`              | Initial text content for the editor.                                       |
+| `rules`                | `MooRule[]`                                     | `[]`              | Rules to apply for highlighting.                                           |
+| `onChange`             | `(text: string) => void`                        | —                 | Called when editor content changes.                                        |
+| `onSuggestionApply`    | `(ruleId, suggestion, range, ruleType) => void` | —                 | Called when a spell-check suggestion is applied.                           |
+| `codepointDisplayMap`  | `Record<number, string>`                        | —                 | Custom code-point → display symbol map, merged on top of the built-in map. |
+| `renderPopoverContent` | `PopoverContentRenderer`                        | —                 | Custom renderer for popover content per annotation.                        |
+| `onLinkClick`          | `(url: string) => void`                         | —                 | Called when a link highlight is clicked.                                   |
+| `openLinksOnClick`     | `boolean`                                       | `true`            | Whether clicking a link highlight opens the URL.                           |
+| `onMentionClick`       | `(userId, userName) => void`                    | —                 | Called when a mention node is clicked.                                     |
+| `onMentionInsert`      | `(user: IMentionUser) => void`                  | —                 | Called when a mention is inserted via the typeahead.                       |
+| `mentionSerialize`     | `(id: string) => string`                        | `` `@{${id}}` ``  | Converts a mention ID to model text.                                       |
+| `mentionPattern`       | `RegExp`                                        | `/@\{([^}]+)\}/g` | RegExp to detect mention patterns in pasted/imported text.                 |
+| `renderMentionDOM`     | `MentionDOMRenderer`                            | —                 | Custom DOM renderer for mention nodes.                                     |
+| `placeholder`          | `string`                                        | `'Start typing…'` | Placeholder text.                                                          |
+| `className`            | `string`                                        | —                 | Additional class name for the editor container.                            |
+| `dir`                  | `'ltr' \| 'rtl' \| 'auto'`                      | `'ltr'`           | Text direction.                                                            |
+| `jpFont`               | `boolean`                                       | `false`           | When `true`, applies a Japanese-optimised font stack.                      |
+| `editable`             | `boolean`                                       | `true`            | Whether the editor content is editable.                                    |
+| `readOnlySelectable`   | `boolean`                                       | `false`           | When `editable` is `false`, still allows caret/selection and copy.         |
+| `onKeyDown`            | `(event: KeyboardEvent) => boolean`             | —                 | Custom keydown handler. Return `true` to prevent default handling.         |
+
+### `CATEditorRef` (imperative API)
+
+Access via `ref`:
+
+```tsx
+const editorRef = useRef<CATEditorRef>(null)
+<CATEditor ref={editorRef} ... />
+```
+
+| Method                                      | Description                                         |
+| ------------------------------------------- | --------------------------------------------------- |
+| `insertText(text)`                          | Insert text at the current cursor position.         |
+| `focus()`                                   | Focus the editor.                                   |
+| `getText()`                                 | Get the full plain-text content.                    |
+| `replaceAll(search, replacement)`           | Replace all occurrences. Returns count.             |
+| `flashHighlight(annotationId, durationMs?)` | Flash-highlight elements matching an annotation ID. |
+| `clearFlash()`                              | Remove any active flash highlight.                  |
+
+### Rule types (`MooRule`)
+
+| Type             | Interface          | Description                                                              |
+| ---------------- | ------------------ | ------------------------------------------------------------------------ |
+| `'spellcheck'`   | `ISpellCheckRule`  | Spell-check validations with suggestions.                                |
+| `'glossary'`     | `IKeywordsRule`    | Generic keyword/term highlighting (glossary, LexiQA, TB target, search). |
+| `'special-char'` | `ISpecialCharRule` | Highlight special/invisible characters with popover names.               |
+| `'tag'`          | `ITagRule`         | Detect and optionally collapse HTML tags / placeholders.                 |
+| `'quote'`        | `IQuoteRule`       | Smart quote detection and replacement (uses `detectQuotes` internally).  |
+| `'link'`         | `ILinkRule`        | Detect and highlight URLs.                                               |
+| `'mention'`      | `IMentionRule`     | @mention typeahead with user list.                                       |
+
+### Examples
+
+#### Keyword / glossary highlighting
+
+```tsx
+const rules: MooRule[] = [
+  {
+    type: 'glossary',
+    label: 'tb-target',
+    entries: [
+      { term: 'React', description: 'A JavaScript library for building UIs' },
+      { term: 'Tailwind', pattern: 'tailwind(css)?' },
+    ],
+  },
+]
+```
+
+#### Tag collapsing
+
+```tsx
+const rules: MooRule[] = [
+  {
+    type: 'tag',
+    collapsed: true,
+    collapseScope: 'html-only',
+  },
+]
+```
+
+#### Smart quote replacement
+
+```tsx
+const rules: MooRule[] = [
+  {
+    type: 'quote',
+    singleQuote: { opening: '\u2018', closing: '\u2019' },
+    doubleQuote: { opening: '\u201C', closing: '\u201D' },
+  },
+]
+```
+
+#### @mention typeahead
+
+```tsx
+const rules: MooRule[] = [
+  {
+    type: 'mention',
+    users: [
+      { id: '1', name: 'Alice' },
+      { id: '2', name: 'Bob' },
+    ],
+  },
+]
+```
+
+---
+
+## Detect Quotes
+
+A standalone, framework-agnostic utility for scanning text and returning all single and double quote ranges. Handles nested quotes, backslash escapes, and English contractions (`don't`, `it's`, etc.).
+
+### Quick start
+
+```ts
+import { detectQuotes } from '@longd/layout-ui/utils/detect-quotes'
+
+const result = detectQuotes(`She said "hello" and 'goodbye'`)
+
+// Map keyed by both start and end indices:
+// 10 => { start: 10, end: 16, quoteType: "double", content: "hello", closed: true }
+// 16 => { start: 10, end: 16, quoteType: "double", content: "hello", closed: true }
+// 22 => { start: 22, end: 30, quoteType: "single", content: "goodbye", closed: true }
+// 30 => { start: 22, end: 30, quoteType: "single", content: "goodbye", closed: true }
+```
+
+### `detectQuotes(text, options?)`
+
+Returns a `Map<number, QuoteRange>` keyed by both start and end position indices.
+
+### `QuoteRange`
+
+```ts
+interface QuoteRange {
+  start: number // Index of the opening quote
+  end: number | null // Index of the closing quote (null when unclosed)
+  quoteType: 'single' | 'double'
+  content: string // Text between the quotes
+  closed: boolean // Whether the quote pair is properly closed
+}
+```
+
+### `DetectQuotesOptions`
+
+| Option               | Type                       | Default     | Description                                                                                |
+| -------------------- | -------------------------- | ----------- | ------------------------------------------------------------------------------------------ |
+| `escapeContractions` | `boolean`                  | `true`      | Skip apostrophes in contractions (`don't`, `it's`).                                        |
+| `escapePatterns`     | `string \| EscapePatterns` | `'english'` | Which contraction patterns to apply. Pass `'english'` or a custom `EscapePatterns` object. |
+| `allowNesting`       | `boolean`                  | `false`     | Allow independent tracking of both quote types (can overlap).                              |
+| `detectInnerQuotes`  | `boolean`                  | `true`      | Detect quotes of the other type inside an already-open quote.                              |
+
+### `BUILTIN_ESCAPE_PATTERNS`
+
+Pre-built contraction patterns for English: `n't`, `'s`, `'re`, `'ve`, `'ll`, `'m`, `'d`.
+
+### Examples
+
+#### With contractions
+
+```ts
+// Apostrophes in "don't" and "it's" are skipped
+const result = detectQuotes(`He said "don't worry, it's fine"`)
+// Only the double-quoted range is detected
+```
+
+#### Nested quotes
+
+```ts
+const result = detectQuotes(`"she told me 'run away' before dawn"`)
+// Detects both the outer double-quoted and inner single-quoted ranges
+```
+
+#### Disable contraction escaping
+
+```ts
+const result = detectQuotes(`it's a 'test'`, {
+  escapeContractions: false,
+})
+// The apostrophe in "it's" is treated as a quote delimiter
 ```
 
 ---

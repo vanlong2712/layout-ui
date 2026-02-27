@@ -9,3 +9,31 @@
 // Layout
 export { LayoutSelect, default as LayoutSelectDefault } from './layout/select'
 export type { LayoutSelectProps, IOption, IconProp } from './layout/select'
+
+// Layout — CATEditor
+export { CATEditor } from './layout/cat-editor'
+export type { CATEditorProps } from './layout/cat-editor'
+export type {
+  CATEditorRef,
+  MooRule,
+  ISpellCheckRule,
+  IKeywordsRule,
+  ISpecialCharRule,
+  ITagRule,
+  IQuoteRule,
+  ILinkRule,
+  IMentionRule,
+  IMentionUser,
+  RuleAnnotation,
+  PopoverContentRenderer,
+  PopoverContentRendererProps,
+} from './layout/cat-editor'
+
+// Utils — Detect Quotes
+export { detectQuotes, BUILTIN_ESCAPE_PATTERNS } from './utils/detect-quotes'
+export type {
+  QuoteRange,
+  QuoteType,
+  DetectQuotesOptions,
+  EscapePatterns,
+} from './utils/detect-quotes'

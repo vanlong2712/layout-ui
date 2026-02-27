@@ -246,6 +246,7 @@ export function HighlightPopover({
   onDismiss,
   onPopoverEnter,
   renderPopoverContent,
+  dir,
 }: {
   state: PopoverState
   annotationMap: Map<string, RuleAnnotation>
@@ -254,6 +255,8 @@ export function HighlightPopover({
   onDismiss: () => void
   onPopoverEnter: () => void
   renderPopoverContent?: PopoverContentRenderer
+  /** Text direction for the popover container. */
+  dir?: 'ltr' | 'rtl' | 'auto'
 }) {
   const popoverRef = useRef<HTMLDivElement>(null)
   const popperRef = useRef<PopperInstance | null>(null)
@@ -334,6 +337,7 @@ export function HighlightPopover({
     <div
       ref={popoverRef}
       className="cat-popover"
+      dir={dir}
       style={{
         position: 'fixed',
         left: 0,

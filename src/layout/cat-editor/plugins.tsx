@@ -1,4 +1,5 @@
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
+import { $isParentElementRTL } from '@lexical/selection'
 import {
   $addUpdateTag,
   $createParagraphNode,
@@ -706,6 +707,8 @@ export function NLMarkerNavigationPlugin() {
   useEffect(() => {
     // ── Right arrow: skip over non-editable nodes (NL markers, collapsed
     //    tags, quote-chars, special-chars). ──
+    //    In RTL, right arrow moves backward (toward start), so check
+    //    the previous sibling instead of the next one.
     const unregRight = editor.registerCommand(
       KEY_ARROW_RIGHT_COMMAND,
       (event) => {
@@ -713,34 +716,50 @@ export function NLMarkerNavigationPlugin() {
         if (!$isRangeSelection(selection) || !selection.isCollapsed())
           return false
 
+        const isRTL = $isParentElementRTL(selection)
         const { anchor } = selection
         const node = anchor.getNode()
 
-        // Check if the next sibling is non-editable
-        let nextNode: LexicalNode | null = null
-        if (anchor.type === 'text') {
-          if (anchor.offset < node.getTextContent().length) return false
-          nextNode = node.getNextSibling()
+        // Check if the adjacent sibling (based on direction) is non-editable
+        let adjacentNode: LexicalNode | null = null
+        if (isRTL) {
+          // RTL: right arrow = backward = previous sibling
+          if (anchor.type === 'text') {
+            if (anchor.offset > 0) return false
+            adjacentNode = node.getPreviousSibling()
+          } else {
+            const children = (node as ElementNode).getChildren()
+            adjacentNode = children[anchor.offset - 1] ?? null
+          }
         } else {
-          const children = (node as ElementNode).getChildren()
-          nextNode = children[anchor.offset] ?? null
+          // LTR: right arrow = forward = next sibling
+          if (anchor.type === 'text') {
+            if (anchor.offset < node.getTextContent().length) return false
+            adjacentNode = node.getNextSibling()
+          } else {
+            const children = (node as ElementNode).getChildren()
+            adjacentNode = children[anchor.offset] ?? null
+          }
         }
 
-        if (nextNode && $isNonEditableNode(nextNode)) {
-          const target = $findNextEditable(nextNode)
+        if (adjacentNode && $isNonEditableNode(adjacentNode)) {
+          const target = isRTL
+            ? $findPrevEditable(adjacentNode)
+            : $findNextEditable(adjacentNode)
           if (target) {
             selection.anchor.set(target.key, target.offset, target.type)
             selection.focus.set(target.key, target.offset, target.type)
             event.preventDefault()
             return true
           }
-          // No editable target — let browser handle (end of content)
           return false
         }
 
         // Also handle: cursor is ON a non-editable node (e.g. after click)
         if ($isNonEditableNode(node)) {
-          const target = $findNextEditable(node)
+          const target = isRTL
+            ? $findPrevEditable(node)
+            : $findNextEditable(node)
           if (target) {
             selection.anchor.set(target.key, target.offset, target.type)
             selection.focus.set(target.key, target.offset, target.type)
@@ -756,6 +775,8 @@ export function NLMarkerNavigationPlugin() {
     )
 
     // ── Left arrow: skip over non-editable nodes. ──
+    //    In RTL, left arrow moves forward (toward end), so check
+    //    the next sibling instead of the previous one.
     const unregLeft = editor.registerCommand(
       KEY_ARROW_LEFT_COMMAND,
       (event) => {
@@ -763,21 +784,36 @@ export function NLMarkerNavigationPlugin() {
         if (!$isRangeSelection(selection) || !selection.isCollapsed())
           return false
 
+        const isRTL = $isParentElementRTL(selection)
         const { anchor } = selection
         const node = anchor.getNode()
 
-        // Check if the previous sibling is non-editable
-        let prevNode: LexicalNode | null = null
-        if (anchor.type === 'text') {
-          if (anchor.offset > 0) return false
-          prevNode = node.getPreviousSibling()
+        // Check if the adjacent sibling (based on direction) is non-editable
+        let adjacentNode: LexicalNode | null = null
+        if (isRTL) {
+          // RTL: left arrow = forward = next sibling
+          if (anchor.type === 'text') {
+            if (anchor.offset < node.getTextContent().length) return false
+            adjacentNode = node.getNextSibling()
+          } else {
+            const children = (node as ElementNode).getChildren()
+            adjacentNode = children[anchor.offset] ?? null
+          }
         } else {
-          const children = (node as ElementNode).getChildren()
-          prevNode = children[anchor.offset - 1] ?? null
+          // LTR: left arrow = backward = previous sibling
+          if (anchor.type === 'text') {
+            if (anchor.offset > 0) return false
+            adjacentNode = node.getPreviousSibling()
+          } else {
+            const children = (node as ElementNode).getChildren()
+            adjacentNode = children[anchor.offset - 1] ?? null
+          }
         }
 
-        if (prevNode && $isNonEditableNode(prevNode)) {
-          const target = $findPrevEditable(prevNode)
+        if (adjacentNode && $isNonEditableNode(adjacentNode)) {
+          const target = isRTL
+            ? $findNextEditable(adjacentNode)
+            : $findPrevEditable(adjacentNode)
           if (target) {
             selection.anchor.set(target.key, target.offset, target.type)
             selection.focus.set(target.key, target.offset, target.type)
@@ -789,7 +825,9 @@ export function NLMarkerNavigationPlugin() {
 
         // Also handle: cursor is ON a non-editable node (e.g. after click)
         if ($isNonEditableNode(node)) {
-          const target = $findPrevEditable(node)
+          const target = isRTL
+            ? $findNextEditable(node)
+            : $findPrevEditable(node)
           if (target) {
             selection.anchor.set(target.key, target.offset, target.type)
             selection.focus.set(target.key, target.offset, target.type)

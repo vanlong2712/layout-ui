@@ -13,8 +13,10 @@
   },
   "include": [
     "src/index.ts",
+    "src/css.d.ts",
     "src/layout/**/*.ts",
     "src/layout/**/*.tsx",
+    "src/utils/**/*.ts",
     "src/lib/**/*.ts"
   ]
 }

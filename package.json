@@ -1,7 +1,7 @@
 {
   "name": "@longd/layout-ui",
   "version": "0.1.1",
-  "description": "A React component library featuring a powerful multi-select with virtualization, drag-and-drop sorting, and overflow chip management. Built with Tailwind CSS v4.",
+  "description": "A React component library featuring a powerful multi-select, a CAT (Computer-Assisted Translation) rich-text editor, and a quote-detection utility. Built with Tailwind CSS v4.",
   "repository": {
     "type": "git",
     "url": "https://github.com/vanlong2712/layout-ui.git"
@@ -34,6 +34,26 @@
         "types": "./dist/layout/select.d.cts",
         "default": "./dist/layout/select.cjs"
       }
+    },
+    "./layout/cat-editor": {
+      "import": {
+        "types": "./dist/layout/cat-editor.d.ts",
+        "default": "./dist/layout/cat-editor.js"
+      },
+      "require": {
+        "types": "./dist/layout/cat-editor.d.cts",
+        "default": "./dist/layout/cat-editor.cjs"
+      }
+    },
+    "./utils/detect-quotes": {
+      "import": {
+        "types": "./dist/utils/detect-quotes.d.ts",
+        "default": "./dist/utils/detect-quotes.js"
+      },
+      "require": {
+        "types": "./dist/utils/detect-quotes.d.cts",
+        "default": "./dist/utils/detect-quotes.cjs"
+      }
     }
   },
   "files": [
@@ -50,7 +70,15 @@
     "virtualized",
     "tailwindcss",
     "layout",
-    "component-library"
+    "component-library",
+    "cat-editor",
+    "rich-text-editor",
+    "lexical",
+    "spellcheck",
+    "highlight",
+    "mention",
+    "detect-quotes",
+    "quote-detection"
   ],
   "author": "longd",
   "license": "MIT",

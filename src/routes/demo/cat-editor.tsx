@@ -409,6 +409,9 @@ function CATEditorDemo() {
 
   // ── Editor options ───────────────────────────────────────────────────
   const [editorDir, setEditorDir] = useState<'ltr' | 'rtl' | 'auto'>('ltr')
+  const [popoverDir, setPopoverDir] = useState<
+    'ltr' | 'rtl' | 'auto' | 'inherit'
+  >('ltr')
   const [jpFont, setJpFont] = useState(false)
   const [editorEditable, setEditorEditable] = useState(true)
   const [readOnlySelectable, setReadOnlySelectable] = useState(false)
@@ -695,6 +698,7 @@ function CATEditorDemo() {
     setMentionSerializeFormat('@{id}')
     setSearchKeywords('')
     setEditorDir('ltr')
+    setPopoverDir('ltr')
     setJpFont(false)
     setEditorEditable(true)
     setReadOnlySelectable(false)
@@ -1385,6 +1389,29 @@ function CATEditorDemo() {
               </Select>
             </div>
 
+            {/* Popover Direction */}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">
+                Popover Direction
+              </Label>
+              <Select
+                value={popoverDir}
+                onValueChange={(v) =>
+                  setPopoverDir(v as 'ltr' | 'rtl' | 'auto' | 'inherit')
+                }
+              >
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ltr">LTR (default)</SelectItem>
+                  <SelectItem value="rtl">RTL</SelectItem>
+                  <SelectItem value="auto">Auto</SelectItem>
+                  <SelectItem value="inherit">Inherit from editor</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* JP Font */}
             <div className="flex items-center gap-3 sm:pt-5">
               <Switch checked={jpFont} onCheckedChange={setJpFont} />
@@ -1495,6 +1522,7 @@ function CATEditorDemo() {
             mentionPattern={mentionPattern}
             openLinksOnClick={openLinksOnClick}
             dir={editorDir}
+            popoverDir={popoverDir}
             jpFont={jpFont}
             editable={editorEditable}
             readOnlySelectable={readOnlySelectable}

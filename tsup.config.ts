@@ -16,6 +16,8 @@ export default defineConfig({
   entry: {
     index: 'src/index.ts',
     'layout/select': 'src/layout/select.tsx',
+    'layout/cat-editor': 'src/layout/cat-editor/index.ts',
+    'utils/detect-quotes': 'src/utils/detect-quotes.ts',
   },
 
   // Output both ESM (.js) and CJS (.cjs) so the library works everywhere.
@@ -46,6 +48,17 @@ export default defineConfig({
     'clsx',
     'tailwind-merge',
     'class-variance-authority',
+    'lexical',
+    '@lexical/react',
+    '@lexical/react/LexicalComposer',
+    '@lexical/react/LexicalComposerContext',
+    '@lexical/react/LexicalContentEditable',
+    '@lexical/react/LexicalErrorBoundary',
+    '@lexical/react/LexicalHistoryPlugin',
+    '@lexical/react/LexicalOnChangePlugin',
+    '@lexical/react/LexicalPlainTextPlugin',
+    '@lexical/utils',
+    '@popperjs/core',
   ],
 
   // Resolve the `@/*` path alias used throughout the source to `./src/*`.

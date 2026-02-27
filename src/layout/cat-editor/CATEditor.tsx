@@ -27,8 +27,7 @@ import { PlainTextPlugin } from '@lexical/react/LexicalPlainTextPlugin'
 
 import { NL_MARKER_PREFIX } from './constants'
 import { $isHighlightNode, HighlightNode } from './highlight-node'
-import { MentionNode } from './mention-node'
-import { setMentionNodeConfig } from './mention-node'
+import { MentionNode, setMentionNodeConfig } from './mention-node'
 import { MentionPlugin } from './mention-plugin'
 import {
   EditorRefPlugin,
@@ -42,6 +41,7 @@ import type { LexicalEditor } from 'lexical'
 
 import type {
   CATEditorRef,
+  IMentionRule,
   IMentionUser,
   MooRule,
   PopoverContentRenderer,
@@ -106,6 +106,12 @@ export interface CATEditorProps {
   className?: string
   /** Text direction.  `'ltr'` (default), `'rtl'`, or `'auto'`. */
   dir?: 'ltr' | 'rtl' | 'auto'
+  /** Text direction for the highlight popover.  Defaults to `'ltr'` so
+   *  that popover content stays left-to-right even when the editor is
+   *  RTL.  Set to `'rtl'` or `'auto'` if your popover content should
+   *  follow the editor direction, or pass `'inherit'` to use the same
+   *  direction as the editor (`dir` prop). */
+  popoverDir?: 'ltr' | 'rtl' | 'auto' | 'inherit'
   /** When `true`, applies a Japanese-optimised font stack to the editor. */
   jpFont?: boolean
   /** Whether the editor content is editable.  Default: `true`.
@@ -154,6 +160,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
       placeholder = 'Start typing or paste text here…',
       className,
       dir,
+      popoverDir: popoverDirProp = 'ltr',
       jpFont = false,
       editable: editableProp,
       readOnlySelectable = false,
@@ -647,12 +654,11 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
             {!isEditable && readOnlySelectable && <ReadOnlySelectablePlugin />}
             {/* Custom key-down handler */}
             {onKeyDownProp && <KeyDownPlugin onKeyDown={onKeyDownProp} />}
+            {/* Strip Lexical's per-paragraph dir when an explicit dir is set */}
+            {dir && dir !== 'auto' && <DirectionPlugin dir={dir} />}
             {/* Mention typeahead plugin — enabled when a mention rule is present */}
             {rules
-              .filter(
-                (r): r is import('./types').IMentionRule =>
-                  r.type === 'mention',
-              )
+              .filter((r): r is IMentionRule => r.type === 'mention')
               .map((mentionRule, i) => (
                 <MentionPlugin
                   key={`mention-${i}`}
@@ -678,6 +684,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
             cancelHide()
           }}
           renderPopoverContent={renderPopoverContent}
+          dir={popoverDirProp === 'inherit' ? dir : popoverDirProp}
         />
       </div>
     )
@@ -767,6 +774,27 @@ function KeyDownPlugin({
       COMMAND_PRIORITY_CRITICAL,
     )
   }, [editor, onKeyDown])
+
+  return null
+}
+
+/** Sets the Lexical root node's direction so that the reconciler stops
+ *  adding `dir="auto"` to paragraph elements.  When the root has a
+ *  direction, children inherit it naturally (no MutationObserver needed). */
+function DirectionPlugin({ dir }: { dir: 'ltr' | 'rtl' }) {
+  const [editor] = useLexicalComposerContext()
+
+  useEffect(() => {
+    editor.update(() => {
+      $getRoot().setDirection(dir)
+    })
+    return () => {
+      // Reset to null (auto) when unmounting or direction changes
+      editor.update(() => {
+        $getRoot().setDirection(null)
+      })
+    }
+  }, [editor, dir])
 
   return null
 }
