@@ -46,7 +46,7 @@ import {
   $pointToGlobalOffset,
 } from './selection-helpers'
 
-import type { LexicalEditor } from 'lexical'
+import type { EditorUpdateOptions, LexicalEditor } from 'lexical'
 
 import type {
   CATEditorRef,
@@ -131,6 +131,10 @@ export interface CATEditorProps {
    *  allows caret placement, range selection and copy — but rejects
    *  any content changes.  Default: `false`. */
   readOnlySelectable?: boolean
+  /** When `true`, the built-in Lexical `HistoryPlugin` (undo/redo) is
+   *  **not** rendered.  Use this when you want to manage history
+   *  externally (e.g. cross-editor undo/redo).  Default: `false`. */
+  disableHistory?: boolean
   /** Custom keydown handler.  Called before Lexical processes the event.
    *  Return `true` to prevent Lexical (and the browser) from handling
    *  the key.  Useful for intercepting Enter, Tab, Escape, etc.
@@ -174,6 +178,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
       editable: editableProp,
       readOnlySelectable = false,
       onKeyDown: onKeyDownProp,
+      disableHistory = false,
       readOnly: readOnlyLegacy = false,
     },
     ref,
@@ -225,28 +230,100 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
     }, [])
 
     /** Apply the `cat-highlight-flash` class to all Lexical DOM elements
-     *  whose global text offset overlaps the given range. */
+     *  whose global text offset overlaps the given range.
+     *
+     *  Uses the CSS Custom Highlight API (`CSS.highlights`) when available
+     *  for character-precise highlighting.  Falls back to the class-based
+     *  approach (whole-node) in older browsers. */
     const applyFlashRange = useCallback((start: number, end: number) => {
       const editor = editorRef.current
       const container = containerRef.current
       if (!editor || !container) return
 
-      // Remove previous flash classes
+      // Remove previous flash classes (fallback path)
       container
         .querySelectorAll('.cat-highlight-flash')
         .forEach((el) => el.classList.remove('cat-highlight-flash'))
 
-      // Walk Lexical tree to find overlapping node keys
-      editor.getEditorState().read(() => {
-        const keys = $getNodeKeysInRange(start, end)
-        for (const key of keys) {
-          const domEl = editor.getElementByKey(key)
-          if (domEl) {
-            domEl.classList.add('cat-highlight-flash')
+      // ── CSS Custom Highlight API (precise) ──────────────────────────
+      if (typeof CSS !== 'undefined' && 'highlights' in CSS) {
+        const cssHighlights = (CSS as any).highlights as Map<string, unknown>
+        cssHighlights.delete('cat-flash-range')
+
+        editor.getEditorState().read(() => {
+          const startPt = $globalOffsetToPoint(start)
+          const endPt = $globalOffsetToPoint(end)
+          if (!startPt || !endPt) return
+
+          const startDom = editor.getElementByKey(startPt.key)
+          const endDom = editor.getElementByKey(endPt.key)
+          if (!startDom || !endDom) return
+
+          // Resolve DOM text nodes for the Range API.
+          // Text-type positions: the Lexical element is a <span> wrapping
+          // a Text node child.  Element-type: use the element itself.
+          const resolveTextNode = (
+            el: HTMLElement,
+            offset: number,
+            type: 'text' | 'element',
+          ): { node: Node; offset: number } | null => {
+            if (type === 'text') {
+              // Walk childNodes to find the first Text node
+              for (const child of el.childNodes) {
+                if (child.nodeType === Node.TEXT_NODE) {
+                  return {
+                    node: child,
+                    offset: Math.min(offset, child.textContent?.length ?? 0),
+                  }
+                }
+              }
+              // Fallback: use the element itself
+              return { node: el, offset: 0 }
+            }
+            // Element-type position (e.g. paragraph boundary)
+            return { node: el, offset: Math.min(offset, el.childNodes.length) }
           }
-        }
-      })
+
+          const s = resolveTextNode(startDom, startPt.offset, startPt.type)
+          const e = resolveTextNode(endDom, endPt.offset, endPt.type)
+          if (!s || !e) return
+
+          try {
+            const range = new Range()
+            range.setStart(s.node, s.offset)
+            range.setEnd(e.node, e.offset)
+            const hl = new (globalThis as any).Highlight(range)
+            cssHighlights.set('cat-flash-range', hl)
+          } catch {
+            // Range construction can fail for edge cases — fall through
+            // to the class-based approach below.
+            applyFlashRangeFallback(start, end)
+          }
+        })
+        return
+      }
+
+      // ── Fallback: class-based (whole-node) ──────────────────────────
+      applyFlashRangeFallback(start, end)
     }, [])
+
+    /** Class-based flash range fallback (highlights entire overlapping nodes). */
+    const applyFlashRangeFallback = useCallback(
+      (start: number, end: number) => {
+        const editor = editorRef.current
+        if (!editor) return
+        editor.getEditorState().read(() => {
+          const keys = $getNodeKeysInRange(start, end)
+          for (const key of keys) {
+            const domEl = editor.getElementByKey(key)
+            if (domEl) {
+              domEl.classList.add('cat-highlight-flash')
+            }
+          }
+        })
+      },
+      [],
+    )
 
     /** Remove all flash highlight classes and clean up timers/listeners. */
     const clearFlashInner = useCallback(() => {
@@ -263,6 +340,11 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
       containerRef.current
         ?.querySelectorAll('.cat-highlight-flash')
         .forEach((el) => el.classList.remove('cat-highlight-flash'))
+
+      // Also clear CSS Custom Highlight API highlights
+      if (typeof CSS !== 'undefined' && 'highlights' in CSS) {
+        ;(CSS as any).highlights.delete('cat-flash-range')
+      }
     }, [])
 
     const [popoverState, setPopoverState] = useState<PopoverState>({
@@ -451,7 +533,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
         clearFlash: () => {
           clearFlashInner()
         },
-        setText: (text: string) => {
+        setText: (text: string, options?: EditorUpdateOptions) => {
           const editor = editorRef.current
           if (!editor) return
           editor.update(() => {
@@ -473,7 +555,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
               p.append($createTextNode(line))
               root.append(p)
             }
-          })
+          }, options)
         },
         getSelection: () => {
           const editor = editorRef.current
@@ -510,6 +592,22 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
           })
           editor.focus()
         },
+        setSelection: (anchor: number, focus: number) => {
+          const editor = editorRef.current
+          if (!editor) return
+          editor.update(() => {
+            const anchorPt = $globalOffsetToPoint(anchor)
+            const focusPt = $globalOffsetToPoint(focus)
+            if (anchorPt && focusPt) {
+              const sel = $createRangeSelection()
+              sel.anchor.set(anchorPt.key, anchorPt.offset, anchorPt.type)
+              sel.focus.set(focusPt.key, focusPt.offset, focusPt.type)
+              $setSelection(sel)
+            }
+          })
+          editor.focus()
+        },
+        getEditor: () => editorRef.current,
       }),
       [applyFlashClass, applyFlashRange, clearFlashInner],
     )
@@ -800,7 +898,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
               }
               ErrorBoundary={LexicalErrorBoundary}
             />
-            <HistoryPlugin />
+            {!disableHistory && <HistoryPlugin />}
             <OnChangePlugin onChange={handleChange} />
             <HighlightsPlugin
               rules={rules}

@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { memo, useCallback, useMemo, useRef, useState } from 'react'
 import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual'
-import { Zap } from 'lucide-react'
+import { Redo2, Undo2, Zap } from 'lucide-react'
 
 import type { DetectQuotesOptions } from '@/utils/detect-quotes'
 import type { Range } from '@tanstack/react-virtual'
@@ -20,6 +20,7 @@ import type {
 import { CATEditor } from '@/layout/cat-editor'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import {
   CATEditorLegend,
   CATEditorSnippetsAndFlash,
@@ -29,6 +30,304 @@ import {
 export const Route = createFileRoute('/demo/cat-editor-perf')({
   component: CATEditorPerfDemo,
 })
+
+// ─── Cross-editor history hook ───────────────────────────────────────────────
+
+/**
+ * Manages a global undo/redo stack across multiple virtualized Lexical editors.
+ *
+ * Instead of relying on Lexical's per-editor `HistoryState` (which dies when
+ * the virtualizer unmounts a row), we store **text + selection snapshots**
+ * directly in the undo/redo stacks.  This makes the history fully
+ * virtualization-safe — undo/redo works even for rows that are currently
+ * off-screen.
+ *
+ * When the target row is not mounted, we scroll to it, wait for the editor
+ * to appear, then apply the snapshot via `CATEditorRef.setText` /
+ * `CATEditorRef.setSelection`.
+ */
+
+interface HistoryEntry {
+  rowIndex: number
+  beforeText: string
+  beforeSelection: { anchor: number; focus: number } | null
+  afterText: string
+  afterSelection: { anchor: number; focus: number } | null
+  timestamp: number
+}
+
+interface CrossEditorHistoryDeps {
+  /** Scroll the virtualizer so the target row is visible and mounted. */
+  scrollToRow: (rowIndex: number) => void
+  /** Try to get the CATEditorRef for a row (may be `undefined` if not mounted). */
+  getEditorRef: (rowIndex: number) => CATEditorRef | undefined
+}
+
+/** Consecutive edits to the same row within this window are merged. */
+const HISTORY_MERGE_INTERVAL = 300
+
+function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
+  const depsRef = useRef(deps)
+  depsRef.current = deps
+
+  // Last known text + selection per row — survives unmount so we can
+  // compare "before vs after" when the row is re-mounted and edited.
+  const lastKnownRef = useRef<
+    Map<
+      number,
+      { text: string; selection: { anchor: number; focus: number } | null }
+    >
+  >(new Map())
+
+  // Per-row update-listener cleanup functions
+  const listenersRef = useRef<Map<number, () => void>>(new Map())
+
+  // Global undo / redo stacks
+  const undoStackRef = useRef<Array<HistoryEntry>>([])
+  const redoStackRef = useRef<Array<HistoryEntry>>([])
+
+  // Revision counter — drives `canUndo` / `canRedo` reactivity
+  const [revision, setRevision] = useState(0)
+  const bumpRevision = useCallback(() => setRevision((r) => r + 1), [])
+
+  // Pending scroll-then-apply timer
+  const pendingActionRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  /** Register a CATEditorRef (called from `registerEditorRef`). */
+  const registerEditor = useCallback(
+    (rowIndex: number, catRef: CATEditorRef) => {
+      const editor = catRef.getEditor()
+      if (!editor) return
+
+      // Clean up previous listener for this row
+      listenersRef.current.get(rowIndex)?.()
+
+      // Seed last-known state so the very first edit has a "before".
+      // Default selection to offset 0 when the editor has no focus yet,
+      // so `beforeSelection` in history entries is never null.
+      const currentText = catRef.getText()
+      const currentSel = catRef.getSelection()
+      lastKnownRef.current.set(rowIndex, {
+        text: currentText,
+        selection: currentSel ?? { anchor: 0, focus: 0 },
+      })
+
+      // Listen for user edits — skip internal / synthetic updates
+      const unregister = editor.registerUpdateListener(
+        ({ tags, dirtyElements, dirtyLeaves }) => {
+          if (tags.has('cross-history')) return
+          if (tags.has('cat-highlights')) return
+          if (tags.has('history-merge')) return
+          if (tags.has('historic')) return
+
+          const ref = depsRef.current.getEditorRef(rowIndex)
+          if (!ref) return
+
+          const newSel = ref.getSelection()
+          const before = lastKnownRef.current.get(rowIndex)
+
+          // Always keep lastKnown selection up-to-date so that
+          // clicks / arrow-key moves are captured as the "before"
+          // selection of the next text-changing edit.
+          if (newSel && before) {
+            before.selection = newSel
+          }
+
+          // Skip non-content updates (selection-only changes, etc.)
+          if (dirtyElements.size === 0 && dirtyLeaves.size === 0) return
+
+          const newText = ref.getText()
+
+          // Only record if text actually changed
+          if (before && before.text === newText) return
+
+          const now = Date.now()
+          const topIdx = undoStackRef.current.length - 1
+          const top = topIdx >= 0 ? undoStackRef.current[topIdx] : null
+
+          if (
+            top &&
+            top.rowIndex === rowIndex &&
+            now - top.timestamp < HISTORY_MERGE_INTERVAL
+          ) {
+            // Merge into the existing top entry (typing continuation)
+            top.afterText = newText
+            top.afterSelection = newSel
+            top.timestamp = now
+          } else {
+            undoStackRef.current.push({
+              rowIndex,
+              beforeText: before?.text ?? '',
+              beforeSelection: before?.selection ?? null,
+              afterText: newText,
+              afterSelection: newSel,
+              timestamp: now,
+            })
+          }
+
+          // New edit clears the redo stack
+          redoStackRef.current.length = 0
+
+          // Update last known
+          lastKnownRef.current.set(rowIndex, {
+            text: newText,
+            selection: newSel ?? { anchor: 0, focus: 0 },
+          })
+
+          bumpRevision()
+        },
+      )
+
+      listenersRef.current.set(rowIndex, unregister)
+    },
+    [bumpRevision],
+  )
+
+  /** Unregister when a row unmounts (virtualizer recycling). */
+  const unregisterEditor = useCallback((rowIndex: number) => {
+    listenersRef.current.get(rowIndex)?.()
+    listenersRef.current.delete(rowIndex)
+    // Keep lastKnownRef — we need it to survive unmount/remount
+  }, [])
+
+  /**
+   * Apply a snapshot to a (possibly unmounted) editor row.
+   * Scrolls to the row first if needed, then polls until the editor
+   * appears and applies the text + selection.
+   */
+  const applySnapshot = useCallback(
+    (
+      entry: HistoryEntry,
+      textKey: 'beforeText' | 'afterText',
+      selKey: 'beforeSelection' | 'afterSelection',
+      pushTo: Array<HistoryEntry>,
+    ) => {
+      // Cancel any previous pending action
+      if (pendingActionRef.current) {
+        clearTimeout(pendingActionRef.current)
+        pendingActionRef.current = null
+      }
+
+      const text = entry[textKey]
+      const selection = entry[selKey]
+
+      const tryApply = (attemptsLeft: number, wasUnmounted: boolean) => {
+        const ref = depsRef.current.getEditorRef(entry.rowIndex)
+
+        if (ref) {
+          // Default selection to offset 0 when null, clamp to text length.
+          const textLen = text.length
+          const sel = selection ?? { anchor: 0, focus: 0 }
+          const clampedSel = {
+            anchor: Math.min(sel.anchor, textLen),
+            focus: Math.min(sel.focus, textLen),
+          }
+
+          // Update last-known BEFORE setText so the text-comparison guard
+          // in the update listener sees "no change" even if the tag filter
+          // somehow misses.
+          lastKnownRef.current.set(entry.rowIndex, {
+            text,
+            selection: clampedSel,
+          })
+
+          // Use the 'cross-history' tag so the update listener skips this.
+          ref.setText(text, { tag: 'cross-history' })
+          ref.setSelection(clampedSel.anchor, clampedSel.focus)
+
+          pushTo.push(entry)
+          bumpRevision()
+
+          // If we had to scroll to an unmounted row, center the caret's
+          // DOM node in the scroll viewport after DOM reconciliation.
+          if (wasUnmounted) {
+            requestAnimationFrame(() => {
+              const nativeSel = window.getSelection()
+              if (nativeSel && nativeSel.rangeCount > 0) {
+                const range = nativeSel.getRangeAt(0)
+                const node = range.startContainer
+                const el = node instanceof Element ? node : node.parentElement
+                if (el) {
+                  el.scrollIntoView({ block: 'center' })
+                }
+              }
+            })
+          }
+          return
+        }
+
+        if (attemptsLeft > 0) {
+          pendingActionRef.current = setTimeout(
+            () => tryApply(attemptsLeft - 1, true),
+            60,
+          )
+        } else {
+          // Timed out — row never mounted
+          bumpRevision()
+        }
+      }
+
+      // If the editor is already mounted, apply synchronously.
+      // This is critical for redo to work: undo() must push to
+      // redoStack synchronously so that a subsequent redo() call
+      // (even in the same event / keydown) finds the entry.
+      const immediateRef = depsRef.current.getEditorRef(entry.rowIndex)
+      if (immediateRef) {
+        tryApply(0, false)
+        return
+      }
+
+      // Editor not mounted — scroll to the row and poll until it appears.
+      depsRef.current.scrollToRow(entry.rowIndex)
+      requestAnimationFrame(() => tryApply(30, true)) // 30 × 60ms ≈ 1.8s
+    },
+    [bumpRevision],
+  )
+
+  /** Undo the last cross-editor edit. */
+  const undo = useCallback(() => {
+    const entry = undoStackRef.current.pop()
+    if (!entry) return
+    applySnapshot(entry, 'beforeText', 'beforeSelection', redoStackRef.current)
+  }, [applySnapshot])
+
+  /** Redo the last undone cross-editor edit. */
+  const redo = useCallback(() => {
+    const entry = redoStackRef.current.pop()
+    if (!entry) return
+    applySnapshot(entry, 'afterText', 'afterSelection', undoStackRef.current)
+  }, [applySnapshot])
+
+  /** Reset all history (e.g. on full demo reset). */
+  const clearHistory = useCallback(() => {
+    if (pendingActionRef.current) {
+      clearTimeout(pendingActionRef.current)
+      pendingActionRef.current = null
+    }
+    undoStackRef.current.length = 0
+    redoStackRef.current.length = 0
+    for (const unreg of listenersRef.current.values()) unreg()
+    listenersRef.current.clear()
+    lastKnownRef.current.clear()
+    bumpRevision()
+  }, [bumpRevision])
+
+  const canUndo = undoStackRef.current.length > 0
+  const canRedo = redoStackRef.current.length > 0
+
+  // Consume `revision` so React doesn't prune it
+  void revision
+
+  return {
+    registerEditor,
+    unregisterEditor,
+    undo,
+    redo,
+    clearHistory,
+    canUndo,
+    canRedo,
+  }
+}
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -296,6 +595,7 @@ const EditorRow = memo(function EditorRow({
   editable,
   readOnlySelectable,
   openLinksOnClick,
+  disableHistory,
 }: {
   index: number
   text: string
@@ -309,6 +609,7 @@ const EditorRow = memo(function EditorRow({
   editable?: boolean
   readOnlySelectable?: boolean
   openLinksOnClick?: boolean
+  disableHistory?: boolean
 }) {
   const editorRefCallback = useCallback(
     (instance: CATEditorRef | null) => {
@@ -339,6 +640,7 @@ const EditorRow = memo(function EditorRow({
           readOnlySelectable={readOnlySelectable}
           openLinksOnClick={openLinksOnClick}
           onKeyDown={onKeyDown}
+          disableHistory={disableHistory}
         />
       </div>
     </div>
@@ -349,6 +651,23 @@ const EditorRow = memo(function EditorRow({
 
 function CATEditorPerfDemo() {
   const [resetKey, setResetKey] = useState(0)
+
+  // ── Refs that are set later but needed by cross-editor history ───
+  // (declared early so the stable callbacks below can close over them)
+  const editorRefsMap = useRef<Map<number, CATEditorRef>>(new Map())
+  const virtualizerRef = useRef<ReturnType<
+    typeof useVirtualizer<HTMLDivElement, Element>
+  > | null>(null)
+
+  // ── Cross-editor history ─────────────────────────────────────────
+  const crossHistory = useCrossEditorHistory({
+    scrollToRow: (rowIndex) => {
+      virtualizerRef.current?.scrollToIndex(rowIndex, { align: 'center' })
+    },
+    getEditorRef: (rowIndex) => {
+      return editorRefsMap.current.get(rowIndex)
+    },
+  })
 
   // ── Rule enable/disable toggles ──────────────────────────────────────
   const [spellcheckEnabled, setSpellcheckEnabled] = useState(true)
@@ -591,8 +910,9 @@ function CATEditorPerfDemo() {
     setReadOnlySelectable(false)
     setOpenLinksOnClick(true)
     setRowCount(TOTAL_ROWS)
+    crossHistory.clearHistory()
     setResetKey((k) => k + 1)
-  }, [])
+  }, [crossHistory])
 
   // ── Focus tracking ───────────────────────────────────────────────
   // Track the focused editor row index so we can pin it in the
@@ -607,16 +927,19 @@ function CATEditorPerfDemo() {
   // ── Per-row editor ref map ───────────────────────────────────────
   // Stores CATEditorRef instances keyed by row index so the global
   // Text Snippets / Flash Range sections can target the focused editor.
-  const editorRefsMap = useRef<Map<number, CATEditorRef>>(new Map())
+  // (editorRefsMap is declared earlier so cross-editor history can access it)
   const registerEditorRef = useCallback(
     (index: number, instance: CATEditorRef | null) => {
       if (instance) {
         editorRefsMap.current.set(index, instance)
+        // Register with cross-editor history
+        crossHistory.registerEditor(index, instance)
       } else {
         editorRefsMap.current.delete(index)
+        crossHistory.unregisterEditor(index)
       }
     },
-    [],
+    [crossHistory],
   )
 
   // ── Cross-editor caret navigation ────────────────────────────────
@@ -630,54 +953,73 @@ function CATEditorPerfDemo() {
   const rowCountRef = useRef(rowCount)
   rowCountRef.current = rowCount
 
-  const handleEditorKeyDown = useCallback((event: KeyboardEvent): boolean => {
-    const row = focusedRowRef.current
-    if (row === null) return false
+  const handleEditorKeyDown = useCallback(
+    (event: KeyboardEvent): boolean => {
+      const row = focusedRowRef.current
 
-    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-      const editorRef = editorRefsMap.current.get(row)
-      if (!editorRef) return false
-
-      const sel = editorRef.getSelection()
-      if (!sel || sel.anchor !== sel.focus) return false // only collapsed caret
-
-      const navigateTo = (targetRow: number, position: 'start' | 'end') => {
-        // Scroll the virtualizer so the target row is centered in the viewport
-        virtualizerRef.current.scrollToIndex(targetRow, { align: 'center' })
-        // Wait for the DOM to update, then focus
-        requestAnimationFrame(() => {
-          const targetRef = editorRefsMap.current.get(targetRow)
-          if (targetRef) {
-            if (position === 'end') {
-              targetRef.focusEnd()
-            } else {
-              targetRef.focusStart()
-            }
-          }
-        })
-      }
-
-      if (event.key === 'ArrowUp' && sel.anchor === 0) {
-        if (row > 0) {
-          navigateTo(row - 1, 'end')
+      // ── Cross-editor undo / redo ───────────────────────────────
+      const key = event.key.toLowerCase()
+      if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+        if (key === 'z' && !event.shiftKey) {
+          event.preventDefault()
+          crossHistory.undo()
+          return true
+        }
+        if (key === 'y' || (key === 'z' && event.shiftKey)) {
+          event.preventDefault()
+          crossHistory.redo()
           return true
         }
       }
 
-      if (event.key === 'ArrowDown') {
-        const text = editorRef.getText()
-        if (sel.anchor === text.length) {
-          const maxRow = rowCountRef.current - 1
-          if (row < maxRow) {
-            navigateTo(row + 1, 'start')
+      if (row === null) return false
+
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        const editorRef = editorRefsMap.current.get(row)
+        if (!editorRef) return false
+
+        const sel = editorRef.getSelection()
+        if (!sel || sel.anchor !== sel.focus) return false // only collapsed caret
+
+        const navigateTo = (targetRow: number, position: 'start' | 'end') => {
+          // Scroll the virtualizer so the target row is centered in the viewport
+          virtualizerRef.current?.scrollToIndex(targetRow, { align: 'center' })
+          // Wait for the DOM to update, then focus
+          requestAnimationFrame(() => {
+            const targetRef = editorRefsMap.current.get(targetRow)
+            if (targetRef) {
+              if (position === 'end') {
+                targetRef.focusEnd()
+              } else {
+                targetRef.focusStart()
+              }
+            }
+          })
+        }
+
+        if (event.key === 'ArrowUp' && sel.anchor === 0) {
+          if (row > 0) {
+            navigateTo(row - 1, 'end')
             return true
           }
         }
-      }
-    }
 
-    return false
-  }, [])
+        if (event.key === 'ArrowDown') {
+          const text = editorRef.getText()
+          if (sel.anchor === text.length) {
+            const maxRow = rowCountRef.current - 1
+            if (row < maxRow) {
+              navigateTo(row + 1, 'start')
+              return true
+            }
+          }
+        }
+      }
+
+      return false
+    },
+    [crossHistory],
+  )
 
   // ── Spellcheck helpers ───────────────────────────────────────────
   const updateSpellcheck = useCallback(
@@ -749,8 +1091,8 @@ function CATEditorPerfDemo() {
     measureElement: (el) => el.getBoundingClientRect().height,
     rangeExtractor,
   })
-  // Keep a ref to the virtualizer for the keydown handler
-  const virtualizerRef = useRef(virtualizer)
+  // Keep a ref to the virtualizer for the keydown handler & cross-history
+  // (virtualizerRef is declared earlier so cross-editor history can access it)
   virtualizerRef.current = virtualizer
 
   return (
@@ -887,6 +1229,33 @@ function CATEditorPerfDemo() {
         {/* ─── Legend ─────────────────────────────────────────────── */}
         <CATEditorLegend />
 
+        {/* ─── Cross-editor Undo / Redo ───────────────────────────── */}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!crossHistory.canUndo}
+            onClick={crossHistory.undo}
+            className="gap-1.5"
+          >
+            <Undo2 className="h-4 w-4" />
+            Undo
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!crossHistory.canRedo}
+            onClick={crossHistory.redo}
+            className="gap-1.5"
+          >
+            <Redo2 className="h-4 w-4" />
+            Redo
+          </Button>
+          <span className="text-xs text-muted-foreground ml-2">
+            Cross-editor history (Ctrl+Z / Ctrl+Y)
+          </span>
+        </div>
+
         {/* ─── Text Snippets & Flash Range ────────────────────────── */}
         <CATEditorSnippetsAndFlash
           snippets={TEXT_SNIPPETS}
@@ -950,6 +1319,7 @@ function CATEditorPerfDemo() {
                   editable={editorEditable}
                   readOnlySelectable={readOnlySelectable}
                   openLinksOnClick={openLinksOnClick}
+                  disableHistory
                 />
               </div>
             ))}

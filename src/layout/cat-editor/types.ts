@@ -1,6 +1,7 @@
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 import { z } from 'zod'
+import type { EditorUpdateOptions, LexicalEditor } from 'lexical'
 import type React from 'react'
 import { DetectQuotesOptionsSchema } from '@/utils/detect-quotes'
 
@@ -322,8 +323,10 @@ export interface CATEditorRef {
   flashRange: (start: number, end: number, durationMs?: number) => void
   /** Remove any active flash highlight immediately. */
   clearFlash: () => void
-  /** Replace all editor content with new text (supports newlines). */
-  setText: (text: string) => void
+  /** Replace all editor content with new text (supports newlines).
+   *  Pass `options` to forward Lexical `EditorUpdateOptions` (e.g. `{ tag: 'my-tag' }`).
+   */
+  setText: (text: string, options?: EditorUpdateOptions) => void
   /** Return the current caret / selection as global character offsets.
    *  Returns `null` when the editor has no selection. */
   getSelection: () => { anchor: number; focus: number } | null
@@ -331,4 +334,13 @@ export interface CATEditorRef {
   focusStart: () => void
   /** Focus the editor and place the caret at the very end of the content. */
   focusEnd: () => void
+  /** Set the selection using global character offsets.
+   *  Pass the same `anchor` and `focus` for a collapsed caret.
+   *  The editor is focused automatically. */
+  setSelection: (anchor: number, focus: number) => void
+  /** Return the underlying Lexical editor instance, or `null` if not yet
+   *  mounted.  Useful for advanced scenarios such as dispatching commands
+   *  (e.g. `UNDO_COMMAND` / `REDO_COMMAND`) or registering listeners
+   *  externally when the built-in history plugin is disabled. */
+  getEditor: () => LexicalEditor | null
 }

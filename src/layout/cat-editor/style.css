@@ -351,6 +351,10 @@
 
 /* ─── Flash highlight (temporary pink overlay) ─────────────────────────── */
 
+::highlight(cat-flash-range) {
+  background-color: oklch(0.78 0.16 350 / 0.35);
+}
+
 .cat-highlight-flash {
   background-color: oklch(0.78 0.16 350 / 0.35) !important;
   border-bottom-color: oklch(0.6 0.22 350) !important;
@@ -606,6 +610,10 @@
 }
 
 /* Flash highlight dark mode */
+.dark ::highlight(cat-flash-range) {
+  background-color: oklch(0.45 0.18 350 / 0.4);
+}
+
 .dark .cat-highlight-flash {
   background-color: oklch(0.45 0.18 350 / 0.4) !important;
   border-bottom-color: oklch(0.65 0.22 350) !important;
