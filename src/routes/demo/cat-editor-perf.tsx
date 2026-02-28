@@ -472,10 +472,19 @@ function generateSampleText(index: number): string {
   return text
 }
 
-// Pre-generate all sample texts
-const SAMPLE_TEXTS = Array.from({ length: TOTAL_ROWS }, (_, i) =>
-  generateSampleText(i),
-)
+// Pre-generate sample texts with memoised lazy expansion.
+// Starts at TOTAL_ROWS and grows on demand when rowCount increases.
+const sampleTextsCache: Array<string> = []
+function getSampleText(index: number): string {
+  if (index < sampleTextsCache.length) return sampleTextsCache[index]
+  // Expand cache up to the requested index
+  for (let i = sampleTextsCache.length; i <= index; i++) {
+    sampleTextsCache.push(generateSampleText(i))
+  }
+  return sampleTextsCache[index]
+}
+// Pre-warm the default batch
+for (let i = 0; i < TOTAL_ROWS; i++) getSampleText(i)
 
 // ─── Default rule data ───────────────────────────────────────────────────────
 
@@ -680,6 +689,7 @@ function CATEditorPerfDemo() {
   const [searchInput, setSearchInput] = useState('')
   const [searchKeywords, setSearchKeywords] = useState('')
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(null)
+  const [searchFilterRows, setSearchFilterRows] = useState(false)
 
   // ── Editor options ───────────────────────────────────────────────────
   const [editorDir, setEditorDir] = useState<'ltr' | 'rtl' | 'auto'>('ltr')
@@ -887,6 +897,7 @@ function CATEditorPerfDemo() {
     setLinkEnabled(true)
     setSearchInput('')
     setSearchKeywords('')
+    setSearchFilterRows(false)
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
     setLexiqaEntries(DEFAULT_LEXIQA_ENTRIES)
     setTbEntries(DEFAULT_TB_ENTRIES)
@@ -1081,10 +1092,41 @@ function CATEditorPerfDemo() {
     [focusedRow],
   )
 
+  // ── Filtered row indices (when search filter is active) ─────────
+  // Maps visible virtualizer index → original row index.
+  const filteredRowIndices = useMemo(() => {
+    if (!searchFilterRows || !searchKeywords.trim()) return null
+    const terms = searchKeywords
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+    if (terms.length === 0) return null
+    const indices: Array<number> = []
+    for (let i = 0; i < rowCount; i++) {
+      const text = getSampleText(i).toLowerCase()
+      if (terms.some((t) => text.includes(t))) {
+        indices.push(i)
+      }
+    }
+    return indices
+  }, [searchFilterRows, searchKeywords, rowCount])
+
+  const effectiveRowCount = filteredRowIndices
+    ? filteredRowIndices.length
+    : rowCount
+
+  /** Map a virtualizer index to the original row index. */
+  const toOriginalIndex = useCallback(
+    (visibleIndex: number) =>
+      filteredRowIndices ? filteredRowIndices[visibleIndex] : visibleIndex,
+    [filteredRowIndices],
+  )
+
   // ── Virtualizer (dynamic row height) ──────────────────────────────
   const parentRef = useRef<HTMLDivElement>(null)
   const virtualizer = useVirtualizer({
-    count: rowCount,
+    count: effectiveRowCount,
+    getItemKey: toOriginalIndex,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: 5,
@@ -1220,9 +1262,24 @@ function CATEditorPerfDemo() {
             searchTimerRef.current = setTimeout(() => setSearchKeywords(v), 300)
           }}
           afterSearch={
-            <span className="text-[10px] text-muted-foreground ml-auto tabular-nums">
-              {rowCount.toLocaleString()} rows
-            </span>
+            <>
+              <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground cursor-pointer select-none whitespace-nowrap">
+                <input
+                  type="checkbox"
+                  checked={searchFilterRows}
+                  onChange={(e) => setSearchFilterRows(e.target.checked)}
+                  className="h-3 w-3 rounded border-border"
+                />
+                Filter rows
+              </label>
+              <span className="text-[10px] text-muted-foreground ml-auto tabular-nums">
+                {effectiveRowCount.toLocaleString()}
+                {filteredRowIndices
+                  ? ` / ${rowCount.toLocaleString()}`
+                  : ''}{' '}
+                rows
+              </span>
+            </>
           }
         />
 
@@ -1292,37 +1349,40 @@ function CATEditorPerfDemo() {
               position: 'relative',
             }}
           >
-            {virtualizer.getVirtualItems().map((virtualRow) => (
-              <div
-                key={virtualRow.key}
-                data-index={virtualRow.index}
-                ref={virtualizer.measureElement}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  transform: `translateY(${virtualRow.start}px)`,
-                }}
-                className="border-b border-border/50"
-              >
-                <EditorRow
-                  index={virtualRow.index}
-                  text={SAMPLE_TEXTS[virtualRow.index] ?? ''}
-                  rules={rules}
-                  onFocus={handleFocusRow}
-                  onKeyDown={handleEditorKeyDown}
-                  registerRef={registerEditorRef}
-                  dir={editorDir}
-                  popoverDir={popoverDir}
-                  jpFont={jpFont}
-                  editable={editorEditable}
-                  readOnlySelectable={readOnlySelectable}
-                  openLinksOnClick={openLinksOnClick}
-                  disableHistory
-                />
-              </div>
-            ))}
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const originalIndex = toOriginalIndex(virtualRow.index)
+              return (
+                <div
+                  key={virtualRow.key}
+                  data-index={virtualRow.index}
+                  ref={virtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                  className="border-b border-border/50"
+                >
+                  <EditorRow
+                    index={originalIndex}
+                    text={getSampleText(originalIndex)}
+                    rules={rules}
+                    onFocus={handleFocusRow}
+                    onKeyDown={handleEditorKeyDown}
+                    registerRef={registerEditorRef}
+                    dir={editorDir}
+                    popoverDir={popoverDir}
+                    jpFont={jpFont}
+                    editable={editorEditable}
+                    readOnlySelectable={readOnlySelectable}
+                    openLinksOnClick={openLinksOnClick}
+                    disableHistory
+                  />
+                </div>
+              )
+            })}
           </div>
         </div>
       </div>

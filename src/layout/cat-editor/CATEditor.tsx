@@ -570,6 +570,9 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
               }
             }
           })
+          // `result` is assigned synchronously inside `.read()` but TS
+          // narrows it to `null` because it can't see through the callback.
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
           return result ?? savedSelectionRef.current
         },
         focusStart: () => {
