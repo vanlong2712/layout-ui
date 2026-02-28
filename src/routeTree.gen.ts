@@ -12,6 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DemoLayoutSelectRouteImport } from './routes/demo/layout-select'
 import { Route as DemoDetectQuotesRouteImport } from './routes/demo/detect-quotes'
+import { Route as DemoCatEditorV2PerfRouteImport } from './routes/demo/cat-editor-v2-perf'
+import { Route as DemoCatEditorV2RouteImport } from './routes/demo/cat-editor-v2'
 import { Route as DemoCatEditorPerfRouteImport } from './routes/demo/cat-editor-perf'
 import { Route as DemoCatEditorRouteImport } from './routes/demo/cat-editor'
 
@@ -30,6 +32,16 @@ const DemoDetectQuotesRoute = DemoDetectQuotesRouteImport.update({
   path: '/demo/detect-quotes',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DemoCatEditorV2PerfRoute = DemoCatEditorV2PerfRouteImport.update({
+  id: '/demo/cat-editor-v2-perf',
+  path: '/demo/cat-editor-v2-perf',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoCatEditorV2Route = DemoCatEditorV2RouteImport.update({
+  id: '/demo/cat-editor-v2',
+  path: '/demo/cat-editor-v2',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DemoCatEditorPerfRoute = DemoCatEditorPerfRouteImport.update({
   id: '/demo/cat-editor-perf',
   path: '/demo/cat-editor-perf',
@@ -45,6 +57,8 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/demo/cat-editor': typeof DemoCatEditorRoute
   '/demo/cat-editor-perf': typeof DemoCatEditorPerfRoute
+  '/demo/cat-editor-v2': typeof DemoCatEditorV2Route
+  '/demo/cat-editor-v2-perf': typeof DemoCatEditorV2PerfRoute
   '/demo/detect-quotes': typeof DemoDetectQuotesRoute
   '/demo/layout-select': typeof DemoLayoutSelectRoute
 }
@@ -52,6 +66,8 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/demo/cat-editor': typeof DemoCatEditorRoute
   '/demo/cat-editor-perf': typeof DemoCatEditorPerfRoute
+  '/demo/cat-editor-v2': typeof DemoCatEditorV2Route
+  '/demo/cat-editor-v2-perf': typeof DemoCatEditorV2PerfRoute
   '/demo/detect-quotes': typeof DemoDetectQuotesRoute
   '/demo/layout-select': typeof DemoLayoutSelectRoute
 }
@@ -60,6 +76,8 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/demo/cat-editor': typeof DemoCatEditorRoute
   '/demo/cat-editor-perf': typeof DemoCatEditorPerfRoute
+  '/demo/cat-editor-v2': typeof DemoCatEditorV2Route
+  '/demo/cat-editor-v2-perf': typeof DemoCatEditorV2PerfRoute
   '/demo/detect-quotes': typeof DemoDetectQuotesRoute
   '/demo/layout-select': typeof DemoLayoutSelectRoute
 }
@@ -69,6 +87,8 @@ export interface FileRouteTypes {
     | '/'
     | '/demo/cat-editor'
     | '/demo/cat-editor-perf'
+    | '/demo/cat-editor-v2'
+    | '/demo/cat-editor-v2-perf'
     | '/demo/detect-quotes'
     | '/demo/layout-select'
   fileRoutesByTo: FileRoutesByTo
@@ -76,6 +96,8 @@ export interface FileRouteTypes {
     | '/'
     | '/demo/cat-editor'
     | '/demo/cat-editor-perf'
+    | '/demo/cat-editor-v2'
+    | '/demo/cat-editor-v2-perf'
     | '/demo/detect-quotes'
     | '/demo/layout-select'
   id:
@@ -83,6 +105,8 @@ export interface FileRouteTypes {
     | '/'
     | '/demo/cat-editor'
     | '/demo/cat-editor-perf'
+    | '/demo/cat-editor-v2'
+    | '/demo/cat-editor-v2-perf'
     | '/demo/detect-quotes'
     | '/demo/layout-select'
   fileRoutesById: FileRoutesById
@@ -91,6 +115,8 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DemoCatEditorRoute: typeof DemoCatEditorRoute
   DemoCatEditorPerfRoute: typeof DemoCatEditorPerfRoute
+  DemoCatEditorV2Route: typeof DemoCatEditorV2Route
+  DemoCatEditorV2PerfRoute: typeof DemoCatEditorV2PerfRoute
   DemoDetectQuotesRoute: typeof DemoDetectQuotesRoute
   DemoLayoutSelectRoute: typeof DemoLayoutSelectRoute
 }
@@ -118,6 +144,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DemoDetectQuotesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/demo/cat-editor-v2-perf': {
+      id: '/demo/cat-editor-v2-perf'
+      path: '/demo/cat-editor-v2-perf'
+      fullPath: '/demo/cat-editor-v2-perf'
+      preLoaderRoute: typeof DemoCatEditorV2PerfRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/demo/cat-editor-v2': {
+      id: '/demo/cat-editor-v2'
+      path: '/demo/cat-editor-v2'
+      fullPath: '/demo/cat-editor-v2'
+      preLoaderRoute: typeof DemoCatEditorV2RouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/demo/cat-editor-perf': {
       id: '/demo/cat-editor-perf'
       path: '/demo/cat-editor-perf'
@@ -139,6 +179,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DemoCatEditorRoute: DemoCatEditorRoute,
   DemoCatEditorPerfRoute: DemoCatEditorPerfRoute,
+  DemoCatEditorV2Route: DemoCatEditorV2Route,
+  DemoCatEditorV2PerfRoute: DemoCatEditorV2PerfRoute,
   DemoDetectQuotesRoute: DemoDetectQuotesRoute,
   DemoLayoutSelectRoute: DemoLayoutSelectRoute,
 }
