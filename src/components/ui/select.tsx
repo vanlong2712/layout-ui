@@ -122,7 +122,7 @@ function SelectContent({
         data-slot="select-content"
         sideOffset={4}
         alignItemWithTrigger={position === 'item-aligned'}
-        className={cn('z-50 outline-none')}
+        className="z-50 outline-none"
       >
         <BaseSelect.Popup
           className={cn(

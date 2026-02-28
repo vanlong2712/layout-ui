@@ -60,9 +60,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <Header />
         {children}
         <Analytics />
-        <TanStackDevtools
+        {/* <TanStackDevtools
           config={{
             position: 'bottom-right',
+            openHotkey: [],
           }}
           plugins={[
             {
@@ -71,7 +72,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             },
             TanStackQueryDevtools,
           ]}
-        />
+        /> */}
         <SpeedInsights />
         <Scripts />
       </body>
