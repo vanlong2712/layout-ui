@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo, useRef, useState } from 'react'
 import { defaultRangeExtractor } from '@tanstack/react-virtual'
-import { Redo2, Undo2, Zap } from 'lucide-react'
+import { ArrowDownToLine, Redo2, Undo2, Zap } from 'lucide-react'
 
 import type { DetectQuotesOptions } from '@/utils/detect-quotes'
 import type { Range } from '@tanstack/react-virtual'
@@ -1216,6 +1216,8 @@ export function CATEditorPerfDemo() {
     [filteredRowIndices],
   )
 
+  const [scrollToInput, setScrollToInput] = useState('')
+
   return (
     <div className="min-h-screen bg-linear-to-br from-background via-background to-muted/30 px-4 py-8 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl space-y-6">
@@ -1401,6 +1403,45 @@ export function CATEditorPerfDemo() {
           <span className="text-xs text-muted-foreground ml-2">
             Cross-editor history (Ctrl+Z / Ctrl+Y)
           </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Label className="text-xs text-muted-foreground whitespace-nowrap">
+            Scroll to row
+          </Label>
+          <Input
+            className="h-7 text-xs w-28"
+            type="number"
+            min={1}
+            max={rowCount}
+            placeholder={`1–${rowCount.toLocaleString()}`}
+            value={scrollToInput}
+            onChange={(e) => setScrollToInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                const idx = parseInt(scrollToInput) - 1
+                if (idx >= 0 && idx < rowCount) {
+                  scrollToRow(idx)
+                  setFocusedRow(idx)
+                }
+              }
+            }}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => {
+              const idx = parseInt(scrollToInput) - 1
+              if (idx >= 0 && idx < rowCount) {
+                scrollToRow(idx)
+                setFocusedRow(idx)
+              }
+            }}
+          >
+            <ArrowDownToLine className="h-4 w-4" />
+            Go
+          </Button>
         </div>
 
         <CATEditorSnippetsAndFlash
