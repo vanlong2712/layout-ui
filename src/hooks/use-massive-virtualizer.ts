@@ -192,29 +192,64 @@ export function useMassiveVirtualizer(
       const align = opts?.align ?? 'center'
 
       if (ts <= md) {
+        // Normal mode — delegate to TanStack's retry-based scrollToIndex.
         v.scrollToIndex(rowIndex, { align })
         return
       }
 
-      // Stretching mode — compute physical position directly.
+      // ── Stretching mode ──────────────────────────────────────────────
+      //
+      // We CANNOT use `scrollToIndex` or `getOffsetForIndex` here.
+      //
+      // 1. `scrollToIndex` has a retry loop checking
+      //    `approxEqual(target, current) < 1.01px`.  The stretching
+      //    virtual↔physical round-trip amplifies `el.scrollTop` integer
+      //    rounding by the stretch ratio (~4.67×), so retries never
+      //    converge and the scroll lands at a random position.
+      //
+      // 2. `getOffsetForIndex` internally calls `getOffsetForAlignment`
+      //    which clamps to `getMaxScrollOffset()` — but that returns
+      //    the PHYSICAL max (`scrollHeight - clientHeight ≈ 30M`) while
+      //    item offsets are in VIRTUAL coordinates (up to ~140M).  So
+      //    any row past ~21% of the list gets clamped to the same value.
+      //
+      // Fix: read `start`/`size` directly from `measurementsCache`
+      // (public property) and compute the virtual target ourselves,
+      // then convert to physical and set `el.scrollTop` directly.
+      // ────────────────────────────────────────────────────────────────
+
       const el = v.scrollElement as HTMLElement | null
       if (!el) return
 
       const vh = el.clientHeight
-      const capped = md
-      const maxPhys = Math.max(1, capped - vh)
+      const maxPhys = Math.max(1, md - vh)
       const maxVirt = Math.max(1, ts - vh)
-      const estSize = estimateSizeRef.current(rowIndex)
+
+      // Read the measurement-accurate item position from the cache.
+      const clampedIndex = Math.max(0, Math.min(rowIndex, v.options.count - 1))
+      const item = v.measurementsCache[clampedIndex]
 
       let virtualTarget: number
-      if (align === 'start') {
-        virtualTarget = rowIndex * estSize
-      } else if (align === 'end') {
-        virtualTarget = rowIndex * estSize + estSize - vh
+      if (item) {
+        // Use the accurate, measurement-aware offset.
+        if (align === 'start') {
+          virtualTarget = item.start
+        } else if (align === 'end') {
+          virtualTarget = item.end - vh
+        } else {
+          // center: place the item's midpoint at the viewport's midpoint
+          virtualTarget = item.start + item.size / 2 - vh / 2
+        }
       } else {
-        // center
-        const virtualCenter = rowIndex * estSize + estSize / 2
-        virtualTarget = virtualCenter - vh / 2
+        // Fallback: naive estimate (only if measurementsCache is empty).
+        const estSize = estimateSizeRef.current(rowIndex)
+        if (align === 'start') {
+          virtualTarget = rowIndex * estSize
+        } else if (align === 'end') {
+          virtualTarget = rowIndex * estSize + estSize - vh
+        } else {
+          virtualTarget = rowIndex * estSize + estSize / 2 - vh / 2
+        }
       }
       virtualTarget = Math.max(0, Math.min(maxVirt, virtualTarget))
 

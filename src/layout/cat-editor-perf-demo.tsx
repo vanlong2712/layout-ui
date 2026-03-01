@@ -40,9 +40,8 @@ import {
  * virtualization-safe — undo/redo works even for rows that are currently
  * off-screen.
  *
- * When the target row is not mounted, we scroll to it, wait for the editor
- * to appear, then apply the snapshot via `CATEditorRef.setText` /
- * `CATEditorRef.setSelection`.
+ * When the target row is not mounted, we scroll to it via `scrollToRow`,
+ * poll until the editor appears, then apply the snapshot.
  */
 
 interface HistoryEntry {
@@ -55,14 +54,22 @@ interface HistoryEntry {
 }
 
 interface CrossEditorHistoryDeps {
-  /** Scroll the virtualizer so the target row is visible and mounted. */
-  scrollToRow: (rowIndex: number) => void
+  /**
+   * Scroll to a row index.  Must handle stretching mode internally
+   * (i.e. use `useMassiveVirtualizer.scrollToRow` which bypasses
+   * TanStack's retry-based `scrollToIndex`).
+   */
+  scrollToRow: (
+    rowIndex: number,
+    opts?: { align?: 'center' | 'start' | 'end' },
+  ) => void
   /** Try to get the CATEditorRef for a row (may be `undefined` if not mounted). */
   getEditorRef: (rowIndex: number) => CATEditorRef | undefined
-  /** Return the current total number of rows so retry attempts can scale. */
-  getRowCount: () => number
-  /** Return the scroll container so we can center the caret without affecting body scroll. */
-  getScrollElement: () => HTMLElement | null
+  /**
+   * Optional callback fired after a snapshot is applied.
+   * Use this for caret centering, scroll fine-tuning, etc.
+   */
+  onAfterApply?: (rowIndex: number, wasScrolled: boolean) => void
 }
 
 /** Consecutive edits to the same row within this window are merged. */
@@ -72,8 +79,7 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
   const depsRef = useRef(deps)
   depsRef.current = deps
 
-  // Last known text + selection per row — survives unmount so we can
-  // compare "before vs after" when the row is re-mounted and edited.
+  // Last known text + selection per row — survives unmount.
   const lastKnownRef = useRef<
     Map<
       number,
@@ -92,25 +98,16 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
   const [revision, setRevision] = useState(0)
   const bumpRevision = useCallback(() => setRevision((r) => r + 1), [])
 
-  // Pending scroll-then-apply timer
-  const pendingActionRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // Centering: token-based cancellation so stale centering callbacks
-  // (from a previous undo/redo) never fire for the wrong row.
-  // All centering-related timers and rAF handles are tracked so they
-  // can be cancelled.
-  const centerTokenRef = useRef(0)
-  const centerRafRef = useRef<number | null>(null)
-
-  /** Cancel all pending centering animation frames. */
-  const clearAllCenterTimers = () => {
-    if (centerRafRef.current !== null) {
-      cancelAnimationFrame(centerRafRef.current)
-      centerRafRef.current = null
+  // Pending poll timer — one at a time, cancellable
+  const pendingRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cancelPending = () => {
+    if (pendingRef.current !== null) {
+      clearTimeout(pendingRef.current)
+      pendingRef.current = null
     }
   }
 
-  /** Register a CATEditorRef (called from `registerEditorRef`). */
+  /** Register a CATEditorRef (called when a row mounts). */
   const registerEditor = useCallback(
     (rowIndex: number, catRef: CATEditorRef) => {
       const editor = catRef.getEditor()
@@ -120,8 +117,6 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
       listenersRef.current.get(rowIndex)?.()
 
       // Seed last-known state so the very first edit has a "before".
-      // Default selection to offset 0 when the editor has no focus yet,
-      // so `beforeSelection` in history entries is never null.
       const currentText = catRef.getText()
       const currentSel = catRef.getSelection()
       lastKnownRef.current.set(rowIndex, {
@@ -143,37 +138,30 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
           const newSel = ref.getSelection()
           const before = lastKnownRef.current.get(rowIndex)
 
-          // Skip non-content updates (selection-only changes, etc.)
-          // Update lastKnown selection so it tracks clicks/arrow-key
-          // moves as the "before" selection of the NEXT text edit.
+          // Selection-only update — track it for next edit's "before"
           if (dirtyElements.size === 0 && dirtyLeaves.size === 0) {
-            if (newSel && before) {
-              before.selection = newSel
-            }
+            if (newSel && before) before.selection = newSel
             return
           }
 
           const newText = ref.getText()
 
-          // Only record if text actually changed
+          // Text unchanged — just track selection
           if (before && before.text === newText) {
-            // Text unchanged but selection may have shifted — track it.
-            if (newSel && before) {
-              before.selection = newSel
-            }
+            if (newSel && before) before.selection = newSel
             return
           }
 
+          // ── Record the edit ──
           const now = Date.now()
-          const topIdx = undoStackRef.current.length - 1
-          const top = topIdx >= 0 ? undoStackRef.current[topIdx] : null
+          const top = undoStackRef.current.at(-1)
 
           if (
             top &&
             top.rowIndex === rowIndex &&
             now - top.timestamp < HISTORY_MERGE_INTERVAL
           ) {
-            // Merge into the existing top entry (typing continuation)
+            // Merge into existing top entry (typing continuation)
             top.afterText = newText
             top.afterSelection = newSel
             top.timestamp = now
@@ -210,13 +198,20 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
   const unregisterEditor = useCallback((rowIndex: number) => {
     listenersRef.current.get(rowIndex)?.()
     listenersRef.current.delete(rowIndex)
-    // Keep lastKnownRef — we need it to survive unmount/remount
+    // Keep lastKnownRef — survives unmount/remount
   }, [])
 
   /**
-   * Apply a snapshot to a (possibly unmounted) editor row.
-   * Scrolls to the row first if needed, then polls until the editor
-   * appears and applies the text + selection.
+   * Apply a text + selection snapshot to a (possibly unmounted) editor row.
+   *
+   * Strategy:
+   * 1. If the editor is mounted → apply immediately (synchronous).
+   * 2. Otherwise → `scrollToRow` then poll until mounted.
+   *
+   * Works identically for fixed/dynamic heights and stretching/non-stretching.
+   * `scrollToRow` reads `measurementsCache` directly for accurate offsets
+   * and sets `el.scrollTop` directly, bypassing TanStack's retry mechanism
+   * that fails to converge in stretching mode.
    */
   const applySnapshot = useCallback(
     (
@@ -225,261 +220,85 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
       selKey: 'beforeSelection' | 'afterSelection',
       pushTo: Array<HistoryEntry>,
     ) => {
-      // Cancel any previous pending action + centering timers
-      if (pendingActionRef.current) {
-        clearTimeout(pendingActionRef.current)
-        pendingActionRef.current = null
-      }
-      clearAllCenterTimers()
-      centerTokenRef.current++
+      cancelPending()
 
       const text = entry[textKey]
       const selection = entry[selKey]
 
-      // Scale retry attempts based on total row count so that
-      // massive lists (100k+ rows) give the virtualizer enough
-      // time to settle.
-      const POLL_MS = 60
-      const rowCount = depsRef.current.getRowCount()
-      const maxAttempts = Math.min(
-        200,
-        Math.max(30, Math.ceil(Math.sqrt(rowCount) / 4)),
-      )
-
-      const tryApply = (attemptsLeft: number, wasUnmounted: boolean) => {
-        const ref = depsRef.current.getEditorRef(entry.rowIndex)
-
-        if (ref) {
-          // Default selection to offset 0 when null, clamp to text length.
-          const textLen = text.length
-          const sel = selection ?? { anchor: 0, focus: 0 }
-          const clampedSel = {
-            anchor: Math.min(sel.anchor, textLen),
-            focus: Math.min(sel.focus, textLen),
-          }
-
-          // Update last-known BEFORE setText so the text-comparison guard
-          // in the update listener sees "no change" even if the tag filter
-          // somehow misses.
-          lastKnownRef.current.set(entry.rowIndex, {
-            text,
-            selection: clampedSel,
-          })
-
-          // Use the 'cross-history' tag so the update listener skips this.
-          ref.setText(text, { tag: 'cross-history' })
-          ref.setSelection(clampedSel.anchor, clampedSel.focus)
-
-          pushTo.push(entry)
-          bumpRevision()
-
-          // If we had to scroll to an unmounted row, newly mounted
-          // editors recompute rules asynchronously (highlights, tags,
-          // spellcheck) which changes row heights.  We wait a generous
-          // delay for rule computation + virtualizer re-measurement to
-          // settle, then do ONE final scroll + scrollIntoView.
-          //
-          // A token guard ensures that if the user fires another
-          // undo/redo before the timer fires, the stale callback is
-          // discarded — preventing jumps to the wrong row.
-          if (wasUnmounted) {
-            const token = centerTokenRef.current
-            const capturedSel = { ...clampedSel }
-
-            /**
-             * Get the row container DOM element for the target row.
-             * Returns null if the editor is not mounted.
-             */
-            const getRowElement = (): HTMLElement | null => {
-              const edRef = depsRef.current.getEditorRef(entry.rowIndex)
-              const editor = edRef?.getEditor()
-              const rootEl = editor?.getRootElement()
-              if (!rootEl) return null
-              return rootEl.closest<HTMLElement>('[data-index]')
-            }
-
-            /**
-             * Center using the actual DOM position of the row element,
-             * completely bypassing virtualizer offset estimates.
-             */
-            const centerRowByDOM = (): number => {
-              const scrollEl = depsRef.current.getScrollElement()
-              const rowEl = getRowElement()
-              if (!scrollEl || !rowEl) return 0
-
-              const rowRect = rowEl.getBoundingClientRect()
-              const containerRect = scrollEl.getBoundingClientRect()
-              const rowCenter = rowRect.top + rowRect.height / 2
-              const containerCenter =
-                containerRect.top + containerRect.height / 2
-              const delta = rowCenter - containerCenter
-
-              if (Math.abs(delta) > 1) {
-                scrollEl.scrollTop += delta
-                return Math.abs(delta)
-              }
-              return 0
-            }
-
-            /**
-             * Fine-tune centering based on the caret position.
-             * Falls back to row-based centering if the caret rect
-             * is not available (Lexical may not have flushed yet).
-             */
-            const centerCaretByDOM = () => {
-              const scrollEl = depsRef.current.getScrollElement()
-              if (!scrollEl) return
-
-              const containerRect = scrollEl.getBoundingClientRect()
-              const containerCenter =
-                containerRect.top + containerRect.height / 2
-
-              const nativeSel = window.getSelection()
-              if (nativeSel && nativeSel.rangeCount > 0) {
-                const range = nativeSel.getRangeAt(0)
-                const caretRect = range.getBoundingClientRect()
-                if (
-                  caretRect.height > 0 &&
-                  caretRect.bottom > containerRect.top &&
-                  caretRect.top < containerRect.bottom
-                ) {
-                  const caretCenter = caretRect.top + caretRect.height / 2
-                  const delta = caretCenter - containerCenter
-                  if (Math.abs(delta) > 1) {
-                    scrollEl.scrollTop += delta
-                  }
-                  return
-                }
-              }
-
-              // Fallback to row centering
-              centerRowByDOM()
-            }
-
-            // Adaptive polling using the row's actual DOM position
-            // (getBoundingClientRect) instead of relying on the
-            // virtualizer's offset estimates.  Each frame, check
-            // whether the row is centered.  If it drifted (because
-            // rule computation changed neighbouring row heights and
-            // the virtualizer repositioned items), re-center.
-            // After the position is stable AND enough time has
-            // elapsed for rules to compute, do a final caret-level
-            // centering and stop.
-            let stableFrames = 0
-            const STABLE_THRESHOLD = 10
-            const MIN_POLL_MS = 300
-            const MAX_POLL_MS = 3000
-            const startTime = performance.now()
-
-            const poll = () => {
-              if (centerTokenRef.current !== token) return
-
-              const elapsed = performance.now() - startTime
-              if (elapsed > MAX_POLL_MS) {
-                // Safety cap — do one final centering then stop
-                const edRef = depsRef.current.getEditorRef(entry.rowIndex)
-                if (edRef) {
-                  edRef.setSelection(capturedSel.anchor, capturedSel.focus)
-                }
-                centerRafRef.current = requestAnimationFrame(() => {
-                  if (centerTokenRef.current !== token) return
-                  centerCaretByDOM()
-                  centerRafRef.current = null
-                })
-                return
-              }
-
-              const scrollEl = depsRef.current.getScrollElement()
-              const rowEl = getRowElement()
-              if (!scrollEl || !rowEl) {
-                centerRafRef.current = null
-                return
-              }
-
-              const rowRect = rowEl.getBoundingClientRect()
-              const containerRect = scrollEl.getBoundingClientRect()
-              const rowCenter = rowRect.top + rowRect.height / 2
-              const containerCenter =
-                containerRect.top + containerRect.height / 2
-              const offset = Math.abs(rowCenter - containerCenter)
-
-              if (offset > 2) {
-                // Row has drifted — re-center
-                scrollEl.scrollTop += rowCenter - containerCenter
-                stableFrames = 0
-              } else {
-                stableFrames++
-              }
-
-              if (stableFrames >= STABLE_THRESHOLD && elapsed >= MIN_POLL_MS) {
-                // Position is stable — final caret-level centering
-                const edRef = depsRef.current.getEditorRef(entry.rowIndex)
-                if (edRef) {
-                  edRef.setSelection(capturedSel.anchor, capturedSel.focus)
-                }
-                centerRafRef.current = requestAnimationFrame(() => {
-                  if (centerTokenRef.current !== token) return
-                  centerCaretByDOM()
-                  centerRafRef.current = null
-                })
-                return
-              }
-
-              centerRafRef.current = requestAnimationFrame(poll)
-            }
-
-            // Initial DOM-based center then start polling
-            centerRowByDOM()
-            centerRafRef.current = requestAnimationFrame(poll)
-          }
-          return
+      /** Write text + selection to a mounted editor. */
+      const apply = (ref: CATEditorRef) => {
+        const textLen = text.length
+        const sel = selection ?? { anchor: 0, focus: 0 }
+        const clamped = {
+          anchor: Math.min(sel.anchor, textLen),
+          focus: Math.min(sel.focus, textLen),
         }
 
-        if (attemptsLeft > 0) {
-          // Re-scroll periodically.  With large row counts (100k+),
-          // scrollToIndex relies on estimated sizes for thousands of
-          // unmeasured distant rows — the cumulative error can put us
-          // thousands of pixels from the target.  Each re-scroll is
-          // more accurate because newly visible rows near the
-          // previous scroll position get measured, reducing the error.
-          if (attemptsLeft % 5 === 0) {
-            depsRef.current.scrollToRow(entry.rowIndex)
-          }
-          pendingActionRef.current = setTimeout(
-            () => tryApply(attemptsLeft - 1, true),
-            POLL_MS,
+        // Update lastKnown BEFORE setText so the update listener's
+        // text-comparison guard sees "no change".
+        lastKnownRef.current.set(entry.rowIndex, {
+          text,
+          selection: clamped,
+        })
+
+        ref.setText(text, { tag: 'cross-history' })
+        ref.setSelection(clamped.anchor, clamped.focus)
+
+        pushTo.push(entry)
+        bumpRevision()
+      }
+
+      // ── Fast path: editor already mounted ──
+      const immediate = depsRef.current.getEditorRef(entry.rowIndex)
+      if (immediate) {
+        apply(immediate)
+        depsRef.current.onAfterApply?.(entry.rowIndex, false)
+        return
+      }
+
+      // ── Slow path: scroll then poll ──
+      depsRef.current.scrollToRow(entry.rowIndex, { align: 'center' })
+
+      const POLL_MS = 30
+      const MAX_ATTEMPTS = 40 // 30ms × 40 = 1.2s max wait
+      let attempts = 0
+
+      const poll = () => {
+        const ref = depsRef.current.getEditorRef(entry.rowIndex)
+        if (ref) {
+          apply(ref)
+          // Re-scroll after apply to ensure centering (text change may
+          // have shifted things in dynamic-height mode).
+          requestAnimationFrame(() =>
+            depsRef.current.scrollToRow(entry.rowIndex, { align: 'center' }),
           )
+          depsRef.current.onAfterApply?.(entry.rowIndex, true)
+          return
+        }
+        if (++attempts < MAX_ATTEMPTS) {
+          // Re-scroll every few attempts — progressive correction for
+          // large lists where estimate drift may place us far from target.
+          if (attempts % 5 === 0) {
+            depsRef.current.scrollToRow(entry.rowIndex, { align: 'center' })
+          }
+          pendingRef.current = setTimeout(poll, POLL_MS)
         } else {
           // Timed out — row never mounted
           bumpRevision()
         }
       }
 
-      // If the editor is already mounted, apply synchronously.
-      // This is critical for redo to work: undo() must push to
-      // redoStack synchronously so that a subsequent redo() call
-      // (even in the same event / keydown) finds the entry.
-      const immediateRef = depsRef.current.getEditorRef(entry.rowIndex)
-      if (immediateRef) {
-        tryApply(0, false)
-        return
-      }
-
-      // Editor not mounted — scroll to the row and poll until it appears.
-      depsRef.current.scrollToRow(entry.rowIndex)
-      requestAnimationFrame(() => tryApply(maxAttempts, true))
+      requestAnimationFrame(poll)
     },
     [bumpRevision],
   )
 
-  /** Undo the last cross-editor edit. */
   const undo = useCallback(() => {
     const entry = undoStackRef.current.pop()
     if (!entry) return
     applySnapshot(entry, 'beforeText', 'beforeSelection', redoStackRef.current)
   }, [applySnapshot])
 
-  /** Redo the last undone cross-editor edit. */
   const redo = useCallback(() => {
     const entry = redoStackRef.current.pop()
     if (!entry) return
@@ -488,12 +307,7 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
 
   /** Reset all history (e.g. on full demo reset). */
   const clearHistory = useCallback(() => {
-    if (pendingActionRef.current) {
-      clearTimeout(pendingActionRef.current)
-      pendingActionRef.current = null
-    }
-    clearAllCenterTimers()
-    centerTokenRef.current++
+    cancelPending()
     undoStackRef.current.length = 0
     redoStackRef.current.length = 0
     for (const unreg of listenersRef.current.values()) unreg()
@@ -835,7 +649,7 @@ const VirtualizedEditorList = memo(function VirtualizedEditorList({
   resetKey,
   effectiveRowCount,
   toOriginalIndex,
-  focusedRowRef,
+  focusedRow,
   rules,
   onFocusRow,
   onKeyDown,
@@ -847,11 +661,12 @@ const VirtualizedEditorList = memo(function VirtualizedEditorList({
   readOnlySelectable,
   openLinksOnClick,
   virtualizerRef,
+  fixedHeight,
 }: {
   resetKey: number
   effectiveRowCount: number
   toOriginalIndex: (index: number) => number
-  focusedRowRef: { current: number | null }
+  focusedRow: number | null
   rules: Array<MooRule>
   onFocusRow: (index: number) => void
   onKeyDown: (event: KeyboardEvent) => boolean
@@ -865,20 +680,21 @@ const VirtualizedEditorList = memo(function VirtualizedEditorList({
   virtualizerRef: {
     current: MassiveVirtualizerResult | null
   }
+  fixedHeight?: boolean
 }) {
   const parentRef = useRef<HTMLDivElement>(null)
 
   const rangeExtractor = useCallback(
     (range: Range) => {
       const result = defaultRangeExtractor(range)
-      const focused = focusedRowRef.current
+      const focused = focusedRow
       if (focused !== null && !result.includes(focused)) {
         result.push(focused)
         result.sort((a, b) => a - b)
       }
       return result
     },
-    [focusedRowRef],
+    [focusedRow],
   )
 
   const { virtualizer, containerHeight, rowOffset, scrollToRow } =
@@ -888,7 +704,11 @@ const VirtualizedEditorList = memo(function VirtualizedEditorList({
       getScrollElement: () => parentRef.current,
       estimateSize: () => ROW_HEIGHT,
       overscan: 5,
-      measureElement: (el) => el.getBoundingClientRect().height,
+      ...(fixedHeight
+        ? {}
+        : {
+            measureElement: (el: Element) => el.getBoundingClientRect().height,
+          }),
       rangeExtractor,
     })
 
@@ -931,13 +751,16 @@ const VirtualizedEditorList = memo(function VirtualizedEditorList({
             <div
               key={virtualRow.key}
               data-index={virtualRow.index}
-              ref={virtualizer.measureElement}
+              ref={fixedHeight ? undefined : virtualizer.measureElement}
               style={{
                 position: 'absolute',
                 top: 0,
                 left: 0,
                 width: '100%',
                 transform: `translateY(${virtualRow.start - rowOffset}px)`,
+                ...(fixedHeight
+                  ? { height: `${ROW_HEIGHT}px`, overflow: 'hidden' }
+                  : {}),
               }}
               className="border-b border-border/50"
             >
@@ -970,6 +793,7 @@ export function CATEditorPerfDemo() {
   const [resetKey, setResetKey] = useState(0)
   const editorRefsMap = useRef<Map<number, CATEditorRef>>(new Map())
   const virtualizerRef = useRef<MassiveVirtualizerResult | null>(null)
+  const [fixedHeight, setFixedHeight] = useState(false)
 
   /**
    * Scroll to a row, centering it in the viewport.
@@ -981,12 +805,10 @@ export function CATEditorPerfDemo() {
   }, [])
 
   const crossHistory = useCrossEditorHistory({
-    scrollToRow,
+    scrollToRow: (rowIndex, opts) =>
+      virtualizerRef.current?.scrollToRow(rowIndex, opts),
     getEditorRef: (rowIndex) => editorRefsMap.current.get(rowIndex),
-    getRowCount: () => rowCountRef.current,
-    getScrollElement: () =>
-      (virtualizerRef.current?.virtualizer
-        .scrollElement as HTMLElement | null) ?? null,
+    onAfterApply: (rowIndex) => setFocusedRow(rowIndex),
   })
 
   const crossHistoryRef = useRef(crossHistory)
@@ -1224,7 +1046,18 @@ export function CATEditorPerfDemo() {
     setReadOnlySelectable(false)
     setOpenLinksOnClick(true)
     setRowCount(TOTAL_ROWS)
+    setFixedHeight(false)
+    setFocusedRow(null)
     crossHistoryRef.current.clearHistory()
+    setResetKey((k) => k + 1)
+  }, [])
+
+  const handleFixedHeightToggle = useCallback((checked: boolean) => {
+    setFixedHeight(checked)
+    setFocusedRow(null)
+    crossHistoryRef.current.clearHistory()
+    editorRefsMap.current.clear()
+    virtualizerRef.current = null
     setResetKey((k) => k + 1)
   }, [])
 
@@ -1380,7 +1213,8 @@ export function CATEditorPerfDemo() {
           </h1>
           <p className="text-sm text-muted-foreground leading-relaxed max-w-2xl">
             Stress-test with <strong>{rowCount.toLocaleString()}</strong>{' '}
-            virtualized rows &middot; dynamic height &middot;{' '}
+            virtualized rows &middot; {fixedHeight ? 'fixed' : 'dynamic'} height
+            &middot;{' '}
             <code className="text-xs bg-muted px-1 rounded">
               @tanstack/react-virtual
             </code>{' '}
@@ -1467,23 +1301,36 @@ export function CATEditorPerfDemo() {
           readOnlySelectable={readOnlySelectable}
           onReadOnlySelectableChange={setReadOnlySelectable}
           settingsExtra={
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Row count</Label>
-              <Input
-                className="h-7 text-xs"
-                type="number"
-                min={1}
-                max={10000}
-                value={rowCount}
-                onChange={(e) =>
-                  setRowCount(
-                    Math.max(
-                      1,
-                      Math.min(1000000, parseInt(e.target.value) || 1),
-                    ),
-                  )
-                }
-              />
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">
+                  Row count
+                </Label>
+                <Input
+                  className="h-7 text-xs"
+                  type="number"
+                  min={1}
+                  max={10000}
+                  value={rowCount}
+                  onChange={(e) =>
+                    setRowCount(
+                      Math.max(
+                        1,
+                        Math.min(1000000, parseInt(e.target.value) || 1),
+                      ),
+                    )
+                  }
+                />
+              </div>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={fixedHeight}
+                  onChange={(e) => handleFixedHeightToggle(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-border"
+                />
+                Fixed row height ({ROW_HEIGHT}px)
+              </label>
             </div>
           }
           searchValue={searchInput}
@@ -1568,7 +1415,7 @@ export function CATEditorPerfDemo() {
           resetKey={resetKey}
           effectiveRowCount={effectiveRowCount}
           toOriginalIndex={toOriginalIndex}
-          focusedRowRef={focusedRowRef}
+          focusedRow={focusedRow}
           rules={rules}
           onFocusRow={handleFocusRow}
           onKeyDown={handleEditorKeyDown}
@@ -1580,6 +1427,7 @@ export function CATEditorPerfDemo() {
           readOnlySelectable={readOnlySelectable}
           openLinksOnClick={openLinksOnClick}
           virtualizerRef={virtualizerRef}
+          fixedHeight={fixedHeight}
         />
       </div>
     </div>
