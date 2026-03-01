@@ -10,8 +10,8 @@ import {
   SELECTION_CHANGE_COMMAND,
 } from 'lexical'
 
-import { NL_MARKER_PREFIX } from '../../cat-editor/constants'
-import { $isHighlightNode } from '../../cat-editor/highlight-node'
+import { NL_MARKER_PREFIX } from '../constants'
+import { $isHighlightNode } from '../highlight-node'
 
 import type { ElementNode, LexicalNode, PointType } from 'lexical'
 

@@ -1,5 +1,5 @@
 // Shared layout demo definitions for use in navbar and routes
-import { FileText, Layers, Quote, SquareFunction, Zap } from 'lucide-react'
+import { FileText, Quote, SquareFunction, Zap } from 'lucide-react'
 
 export const layoutDemos = [
   {
@@ -44,7 +44,7 @@ export const layoutDemos = [
   {
     name: 'CAT Editor',
     description:
-      'A Lexical-powered Computer-Assisted Translation editor with rule-based highlighting for spellcheck errors and LexiQA quality assurance terms.',
+      'A Lexical-powered Computer-Assisted Translation editor with modular plugins, rule-based highlighting, and composable hooks.',
     to: '/demo/cat-editor',
     icon: (
       <FileText className="w-8 h-8 text-cyan-400" aria-label="CAT Editor" />
@@ -53,28 +53,10 @@ export const layoutDemos = [
   {
     name: 'CAT Editor Perf',
     description:
-      'Stress-test: 1000 virtualized CAT editor rows with shared rule configuration and @tanstack/react-virtual.',
+      'Performance stress-test: 1000+ virtualized CAT editor rows with massive-row support and cross-editor undo/redo.',
     to: '/demo/cat-editor-perf',
     icon: (
       <Zap className="w-8 h-8 text-amber-400" aria-label="CAT Editor Perf" />
-    ),
-  },
-  {
-    name: 'CAT Editor v2',
-    description:
-      'Modular CATEditor v2 — same functionality, refactored architecture with composable plugins and hooks.',
-    to: '/demo/cat-editor-v2',
-    icon: (
-      <Layers className="w-8 h-8 text-cyan-400" aria-label="CAT Editor v2" />
-    ),
-  },
-  {
-    name: 'CAT Editor v2 Perf',
-    description:
-      'Performance stress-test using CATEditor v2 modular architecture with 1000 virtualized rows.',
-    to: '/demo/cat-editor-v2-perf',
-    icon: (
-      <Zap className="w-8 h-8 text-amber-400" aria-label="CAT Editor v2 Perf" />
     ),
   },
   {

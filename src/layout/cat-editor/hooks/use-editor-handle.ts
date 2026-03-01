@@ -10,15 +10,15 @@ import {
   $setSelection,
 } from 'lexical'
 
-import { $isHighlightNode } from '../../cat-editor/highlight-node'
+import { $isHighlightNode } from '../highlight-node'
 import {
   $getPlainText,
   $globalOffsetToPoint,
   $pointToGlobalOffset,
-} from '../../cat-editor/selection-helpers'
+} from '../selection-helpers'
 
 import type { EditorUpdateOptions, LexicalEditor } from 'lexical'
-import type { CATEditorRef } from '../../cat-editor/types'
+import type { CATEditorRef } from '../types'
 import type { FlashControls } from './use-flash'
 
 // ─── useEditorHandle ─────────────────────────────────────────────────────────

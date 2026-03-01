@@ -17,8 +17,8 @@ import type {
   ISpellCheckValidation,
   ITagRule,
   MooRule,
-} from '@/layout/cat-editor-v2'
-import { CATEditor } from '@/layout/cat-editor-v2'
+} from '@/layout/cat-editor'
+import { CATEditor } from '@/layout/cat-editor'
 import { useMassiveVirtualizer } from '@/hooks/use-massive-virtualizer'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -143,20 +143,26 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
           const newSel = ref.getSelection()
           const before = lastKnownRef.current.get(rowIndex)
 
-          // Always keep lastKnown selection up-to-date so that
-          // clicks / arrow-key moves are captured as the "before"
-          // selection of the next text-changing edit.
-          if (newSel && before) {
-            before.selection = newSel
-          }
-
           // Skip non-content updates (selection-only changes, etc.)
-          if (dirtyElements.size === 0 && dirtyLeaves.size === 0) return
+          // Update lastKnown selection so it tracks clicks/arrow-key
+          // moves as the "before" selection of the NEXT text edit.
+          if (dirtyElements.size === 0 && dirtyLeaves.size === 0) {
+            if (newSel && before) {
+              before.selection = newSel
+            }
+            return
+          }
 
           const newText = ref.getText()
 
           // Only record if text actually changed
-          if (before && before.text === newText) return
+          if (before && before.text === newText) {
+            // Text unchanged but selection may have shifted — track it.
+            if (newSel && before) {
+              before.selection = newSel
+            }
+            return
+          }
 
           const now = Date.now()
           const topIdx = undoStackRef.current.length - 1
@@ -723,6 +729,12 @@ const DEFAULT_SPECIAL_CHARS: Array<IKeywordsEntry> = [
     displaySymbol: '\u00B7',
   },
   { pattern: ' ', description: 'Space', atomic: true },
+  {
+    pattern: '\\n',
+    description: 'Line Break',
+    atomic: true,
+    displaySymbol: '\u23CE',
+  },
 ]
 
 // ─── Text snippet & flash-range presets ──────────────────────────────────────
@@ -954,7 +966,7 @@ const VirtualizedEditorList = memo(function VirtualizedEditorList({
 
 // ─── Main demo component ─────────────────────────────────────────────────────
 
-export function CATEditorV2PerfDemo() {
+export function CATEditorPerfDemo() {
   const [resetKey, setResetKey] = useState(0)
   const editorRefsMap = useRef<Map<number, CATEditorRef>>(new Map())
   const virtualizerRef = useRef<MassiveVirtualizerResult | null>(null)

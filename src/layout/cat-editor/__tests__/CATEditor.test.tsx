@@ -1,5 +1,5 @@
 import { createRef } from 'react'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -184,14 +184,6 @@ describe('CATEditor', () => {
       const editable = document.querySelector('.cat-editor-editable')
       expect(editable).toHaveClass('cat-editor-readonly-selectable')
       expect(editable).not.toHaveClass('cat-editor-readonly')
-    })
-
-    it('supports legacy readOnly prop', async () => {
-      render(<CATEditor readOnly />)
-      await waitForEditor()
-
-      const editable = document.querySelector('.cat-editor-editable')
-      expect(editable).toHaveClass('cat-editor-readonly')
     })
   })
 

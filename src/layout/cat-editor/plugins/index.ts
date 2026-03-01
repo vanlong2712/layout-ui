@@ -11,6 +11,6 @@ export {
   ReadOnlySelectablePlugin,
 } from './utility-plugins'
 
-// Re-export mention plugin from v1 (stable, no changes needed)
-export { MentionPlugin } from '../../cat-editor/mention-plugin'
-export type { MentionPluginProps } from '../../cat-editor/mention-plugin'
+// Re-export mention plugin
+export { MentionPlugin } from '../mention-plugin'
+export type { MentionPluginProps } from '../mention-plugin'

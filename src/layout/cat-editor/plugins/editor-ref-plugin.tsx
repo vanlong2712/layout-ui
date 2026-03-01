@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
 import { $getSelection, $isRangeSelection } from 'lexical'
 
-import { $pointToGlobalOffset } from '../../cat-editor/selection-helpers'
+import { $pointToGlobalOffset } from '../selection-helpers'
 
 import type { LexicalEditor } from 'lexical'
 

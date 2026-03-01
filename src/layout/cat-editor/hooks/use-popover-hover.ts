@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { NL_MARKER_PREFIX } from '../../cat-editor/constants'
+import { NL_MARKER_PREFIX } from '../constants'
 
-import type { PopoverState, RuleAnnotation } from '../../cat-editor/types'
+import type { PopoverState, RuleAnnotation } from '../types'
 
 // ─── usePopoverHover ─────────────────────────────────────────────────────────
 // Encapsulates the popover show/hide logic, mouse event tracking, and

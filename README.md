@@ -5,7 +5,7 @@ A React component library featuring a powerful select component, a CAT (Computer
 ## Features
 
 - **Virtualized Select** — LayoutSelect with drag-and-drop, virtualization, and custom rendering.
-- **CAT Editor** — Lexical-based rich-text editor with spell-check, glossary/keyword highlighting, tag collapsing, quote detection, link detection, and @mention support.
+- **CAT Editor** — Lexical-based rich-text editor with modular plugins, rule-based highlighting (spell-check, keywords, tags, quotes, links), and @mention support. Composable hooks for custom builds.
 - **Detect Quotes** — Standalone utility for scanning text and returning all single/double quote ranges with contraction-aware escaping.
 - **Massive Virtualizer** — Drop-in `useVirtualizer` wrapper that transparently handles row counts exceeding the browser's maximum element height (~33 M px Chrome, ~17.9 M px Firefox) using AG Grid's "Stretching" technique. Zero overhead when not stretching.
 
@@ -14,6 +14,7 @@ A React component library featuring a powerful select component, a CAT (Computer
 - **Full demo site**: https://layout-ui-seven.vercel.app
 - **LayoutSelect component**: https://layout-ui-seven.vercel.app/demo/layout-select
 - **CAT Editor**: https://layout-ui-seven.vercel.app/demo/cat-editor
+- **CAT Editor Perf**: https://layout-ui-seven.vercel.app/demo/cat-editor-perf
 - **Detect Quotes**: https://layout-ui-seven.vercel.app/demo/detect-quotes
 
 ## LayoutSelect Features
@@ -163,6 +164,14 @@ import { CATEditor, MooRuleSchema } from '@longd/layout-ui/layout/cat-editor'
 import type {
   CATEditorProps,
   MooRule,
+} from '@longd/layout-ui/layout/cat-editor'
+
+// CATEditor — Plugins & Hooks (advanced)
+import {
+  HighlightsPlugin,
+  EditorRefPlugin,
+  useFlash,
+  usePopoverHover,
 } from '@longd/layout-ui/layout/cat-editor'
 
 // Detect Quotes
@@ -372,7 +381,7 @@ const [options, setOptions] = useState<IOption[]>(initialOptions)
 
 ## CATEditor
 
-A Lexical-based rich-text editor designed for Computer-Assisted Translation workflows. Supports rule-based highlighting with popovers, tag collapsing, smart quote replacement, link detection, and @mention typeahead.
+A Lexical-based rich-text editor designed for Computer-Assisted Translation workflows. Features a **modular plugin architecture** with composable hooks for custom editor builds. Supports rule-based highlighting with popovers, tag collapsing, smart quote replacement, link detection, and @mention typeahead.
 
 ### Quick start
 
@@ -547,6 +556,45 @@ const rules: MooRule[] = [
     ],
   },
 ]
+```
+
+### Plugins (advanced composition)
+
+CATEditor's functionality is split into focused plugins that you can import individually for custom editor builds:
+
+| Plugin                     | Description                                                        |
+| -------------------------- | ------------------------------------------------------------------ |
+| `EditorRefPlugin`          | Tracks the Lexical editor instance and persists selection offsets. |
+| `HighlightsPlugin`         | Applies rule-based highlighting segments to the editor content.    |
+| `NLMarkerNavigationPlugin` | Handles arrow-key navigation around non-editable markers.          |
+| `DirectionPlugin`          | Sets `dir` attribute on the editor root.                           |
+| `KeyDownPlugin`            | Custom keydown handler integration.                                |
+| `PasteCleanupPlugin`       | Cleans pasted content to plain text.                               |
+| `ReadOnlySelectablePlugin` | Allows caret/selection in read-only mode.                          |
+| `MentionPlugin`            | @mention typeahead with virtualized user list.                     |
+
+```tsx
+import {
+  HighlightsPlugin,
+  EditorRefPlugin,
+  MentionPlugin,
+} from '@longd/layout-ui/layout/cat-editor'
+```
+
+### Hooks (custom editor builds)
+
+| Hook              | Description                                                         |
+| ----------------- | ------------------------------------------------------------------- |
+| `useFlash`        | Flash-highlight elements by annotation ID with configurable timing. |
+| `usePopoverHover` | Popover show/hide logic with mouse tracking and click handling.     |
+| `useEditorHandle` | Builds the imperative `CATEditorRef` via `useImperativeHandle`.     |
+
+```tsx
+import {
+  useFlash,
+  usePopoverHover,
+  useEditorHandle,
+} from '@longd/layout-ui/layout/cat-editor'
 ```
 
 ---

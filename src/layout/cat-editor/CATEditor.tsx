@@ -1,66 +1,44 @@
-import {
-  forwardRef,
-  useCallback,
-  useEffect,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
-import {
-  $createParagraphNode,
-  $createRangeSelection,
-  $createTextNode,
-  $getNodeByKey,
-  $getRoot,
-  $getSelection,
-  $isParagraphNode,
-  $isRangeSelection,
-  $setSelection,
-  COMMAND_PRIORITY_CRITICAL,
-  KEY_DOWN_COMMAND,
-  PASTE_COMMAND,
-} from 'lexical'
+import { forwardRef, useCallback, useEffect, useMemo, useRef } from 'react'
+import { $createParagraphNode, $createTextNode, $getRoot } from 'lexical'
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
-import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
 import { ContentEditable } from '@lexical/react/LexicalContentEditable'
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary'
 import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin'
 import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin'
 import { PlainTextPlugin } from '@lexical/react/LexicalPlainTextPlugin'
 
-import { NL_MARKER_PREFIX } from './constants'
-import { $isHighlightNode, HighlightNode } from './highlight-node'
+import { HighlightNode } from './highlight-node'
 import { MentionNode, setMentionNodeConfig } from './mention-node'
 import { MentionPlugin } from './mention-plugin'
-import {
-  EditorRefPlugin,
-  HighlightsPlugin,
-  NLMarkerNavigationPlugin,
-} from './plugins'
 import { HighlightPopover } from './popover'
+import { $getPlainText, $pointToGlobalOffset } from './selection-helpers'
+
 import {
-  $getNodeKeysInRange,
-  $getPlainText,
-  $globalOffsetToPoint,
-  $pointToGlobalOffset,
-} from './selection-helpers'
+  DirectionPlugin,
+  KeyDownPlugin,
+  PasteCleanupPlugin,
+  ReadOnlySelectablePlugin,
+} from './plugins/utility-plugins'
+import { EditorRefPlugin } from './plugins/editor-ref-plugin'
+import { HighlightsPlugin } from './plugins/highlights-plugin'
+import { NLMarkerNavigationPlugin } from './plugins/navigation-plugin'
 
-import type { EditorUpdateOptions, LexicalEditor } from 'lexical'
+import { useEditorHandle } from './hooks/use-editor-handle'
+import { useFlash } from './hooks/use-flash'
+import { usePopoverHover } from './hooks/use-popover-hover'
 
+import type { LexicalEditor } from 'lexical'
 import type {
   CATEditorRef,
   IMentionRule,
-  IMentionUser,
   MooRule,
   PopoverContentRenderer,
-  PopoverState,
   RuleAnnotation,
 } from './types'
 import type { MentionDOMRenderer } from './mention-node'
 import { cn } from '@/lib/utils'
 
-// ─── Main CATEditor Component ────────────────────────────────────────────────
+// ─── Props ───────────────────────────────────────────────────────────────────
 
 export interface CATEditorProps {
   /** Initial text content for the editor */
@@ -69,90 +47,53 @@ export interface CATEditorProps {
   rules?: Array<MooRule>
   /** Called when editor content changes */
   onChange?: (text: string) => void
-  /** Called when a suggestion is applied.
-   *  Provides the ruleId, the replacement text, the original text
-   *  span (start / end / content), and the ruleType so consumers
-   *  can identify which rule triggered the replacement. */
+  /** Called when a suggestion is applied. */
   onSuggestionApply?: (
     ruleId: string,
     suggestion: string,
     range: { start: number; end: number; content: string },
     ruleType: RuleAnnotation['type'],
   ) => void
-  /** Custom code-point → display symbol map.  Merged on top of the
-   *  built-in `CODEPOINT_DISPLAY_MAP`.  Pass `{ 0x00a0: '⍽' }` to
-   *  override the symbol shown for non-breaking spaces, etc. */
+  /** Custom code-point → display symbol map. */
   codepointDisplayMap?: Record<number, string>
-  /** Custom renderer for popover content per annotation.
-   *  Return `null`/`undefined` to use the built-in default. */
+  /** Custom renderer for popover content per annotation. */
   renderPopoverContent?: PopoverContentRenderer
-  /** Called when a link highlight is clicked.  If not provided, links
-   *  open in a new browser tab via `window.open`. */
+  /** Called when a link highlight is clicked. */
   onLinkClick?: (url: string) => void
-  /** Whether clicking a link highlight should open the URL.
-   *  When `false`, link clicks are ignored (the click positions the
-   *  cursor in the editor text instead).  Default: `true`. */
+  /** Whether clicking a link highlight should open the URL. Default: `true`. */
   openLinksOnClick?: boolean
   /** Called when a mention node is clicked. */
   onMentionClick?: (userId: string, userName: string) => void
   /** Called when a mention is inserted via the typeahead. */
-  onMentionInsert?: (user: IMentionUser) => void
-  /** Converts a mention ID to model text.
-   *  Default: `` id => `@{${id}}` `` producing `@{5}`, `@{user_abc}`, etc. */
+  onMentionInsert?: (user: { id: string; name: string }) => void
+  /** Converts a mention ID to model text. Default: `` id => `@{${id}}` `` */
   mentionSerialize?: (id: string) => string
-  /** RegExp to detect mention patterns in pasted / imported text.
-   *  Must have one capture group for the ID and use the `g` flag.
-   *  Default: `/@\{([^}]+)\}/g` */
+  /** RegExp to detect mention patterns in pasted / imported text. */
   mentionPattern?: RegExp
-  /** Custom DOM renderer for mention nodes.
-   *  Receives the `<span>` host element, the mentionId and the
-   *  display name.  Return `true` to take over rendering;
-   *  return `false`/`undefined` to use the default `@name` label. */
+  /** Custom DOM renderer for mention nodes. */
   renderMentionDOM?: MentionDOMRenderer
   /** Placeholder text */
   placeholder?: string
   /** Additional class name for the editor container */
   className?: string
-  /** Text direction.  `'ltr'` (default), `'rtl'`, or `'auto'`. */
+  /** Text direction. `'ltr'` (default), `'rtl'`, or `'auto'`. */
   dir?: 'ltr' | 'rtl' | 'auto'
-  /** Text direction for the highlight popover.  Defaults to `'ltr'` so
-   *  that popover content stays left-to-right even when the editor is
-   *  RTL.  Set to `'rtl'` or `'auto'` if your popover content should
-   *  follow the editor direction, or pass `'inherit'` to use the same
-   *  direction as the editor (`dir` prop). */
+  /** Text direction for the highlight popover. */
   popoverDir?: 'ltr' | 'rtl' | 'auto' | 'inherit'
-  /** When `true`, applies a Japanese-optimised font stack to the editor. */
+  /** Japanese-optimised font stack. */
   jpFont?: boolean
-  /** Whether the editor content is editable.  Default: `true`.
-   *  When `false`, all text mutations are blocked.
-   *  @see readOnlySelectable */
+  /** Whether the editor content is editable. Default: `true`. */
   editable?: boolean
-  /** When `editable` is `false` and this is `true`, the editor still
-   *  allows caret placement, range selection and copy — but rejects
-   *  any content changes.  Default: `false`. */
+  /** Allow selection in read-only mode. Default: `false`. */
   readOnlySelectable?: boolean
-  /** When `true`, the built-in Lexical `HistoryPlugin` (undo/redo) is
-   *  **not** rendered.  Use this when you want to manage history
-   *  externally (e.g. cross-editor undo/redo).  Default: `false`. */
+  /** Disable built-in Lexical HistoryPlugin. Default: `false`. */
   disableHistory?: boolean
-  /** Custom keydown handler.  Called before Lexical processes the event.
-   *  Return `true` to prevent Lexical (and the browser) from handling
-   *  the key.  Useful for intercepting Enter, Tab, Escape, etc.
-   *  @example
-   *  ```tsx
-   *  onKeyDown={(e) => {
-   *    if (e.key === 'Enter' && !e.shiftKey) {
-   *      e.preventDefault()
-   *      handleSubmit()
-   *      return true
-   *    }
-   *    return false
-   *  }}
-   *  ``` */
+  /** Custom keydown handler. Return `true` to consume the event. */
   onKeyDown?: (event: KeyboardEvent) => boolean
-  /** @deprecated Use `editable` instead. */
-  readOnly?: boolean
 }
+
+// ─── CATEditor ───────────────────────────────────────────────────────────────
+// Thin composition shell. All logic is delegated to hooks and plugins.
 
 export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
   function CATEditor(
@@ -175,28 +116,23 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
       dir,
       popoverDir: popoverDirProp = 'ltr',
       jpFont = false,
-      editable: editableProp,
+      editable: editableProp = true,
       readOnlySelectable = false,
-      onKeyDown: onKeyDownProp,
       disableHistory = false,
-      readOnly: readOnlyLegacy = false,
+      onKeyDown: onKeyDownProp,
     },
     ref,
   ) {
-    // Resolve effective editable: new `editable` prop takes precedence,
-    // falling back to the legacy `readOnly` prop (inverted).
-    const isEditable =
-      editableProp !== undefined ? editableProp : !readOnlyLegacy
-    const annotationMapRef = useRef(new Map<string, RuleAnnotation>())
+    const isEditable = editableProp
+    const containerRef = useRef<HTMLDivElement>(null)
     const editorRef = useRef<LexicalEditor | null>(null)
     const savedSelectionRef = useRef<{
       anchor: number
       focus: number
     } | null>(null)
-    const containerRef = useRef<HTMLDivElement>(null)
-    const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const annotationMapRef = useRef(new Map<string, RuleAnnotation>())
 
-    // ── Sync MentionNode global config whenever props change ──────────────
+    // ── Mention config sync ────────────────────────────────────────
     useEffect(() => {
       setMentionNodeConfig({
         renderDOM: renderMentionDOM,
@@ -205,418 +141,67 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
       })
     }, [renderMentionDOM, mentionSerialize, mentionPattern])
 
-    // ── Flash highlight state ──────────────────────────────────────────────
-    const flashIdRef = useRef<string | null>(null)
-    const flashRangeRef = useRef<{ start: number; end: number } | null>(null)
-    const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const flashEditUnregRef = useRef<(() => void) | null>(null)
+    // ── Hooks ──────────────────────────────────────────────────────
+    const flash = useFlash(editorRef, containerRef)
 
-    /** Apply the `cat-highlight-flash` class to all DOM elements whose
-     *  `data-rule-ids` contain the given annotation ID. */
-    const applyFlashClass = useCallback((annotationId: string) => {
-      const container = containerRef.current
-      if (!container) return
-      // Remove previous flash classes
-      container
-        .querySelectorAll('.cat-highlight-flash')
-        .forEach((el) => el.classList.remove('cat-highlight-flash'))
-      // Add to matching elements
-      container.querySelectorAll('.cat-highlight').forEach((el) => {
-        const ids = el.getAttribute('data-rule-ids')
-        if (ids && ids.split(',').includes(annotationId)) {
-          el.classList.add('cat-highlight-flash')
-        }
+    const { popoverState, scheduleHide, cancelHide, isOverPopoverRef } =
+      usePopoverHover(containerRef, {
+        annotationMapRef,
+        openLinksOnClick,
+        onLinkClick,
+        onMentionClick,
       })
-    }, [])
 
-    /** Apply the `cat-highlight-flash` class to all Lexical DOM elements
-     *  whose global text offset overlaps the given range.
-     *
-     *  Uses the CSS Custom Highlight API (`CSS.highlights`) when available
-     *  for character-precise highlighting.  Falls back to the class-based
-     *  approach (whole-node) in older browsers. */
-    const applyFlashRange = useCallback((start: number, end: number) => {
-      const editor = editorRef.current
-      const container = containerRef.current
-      if (!editor || !container) return
+    useEditorHandle(ref, { editorRef, savedSelectionRef, flash })
 
-      // Remove previous flash classes (fallback path)
-      container
-        .querySelectorAll('.cat-highlight-flash')
-        .forEach((el) => el.classList.remove('cat-highlight-flash'))
-
-      // ── CSS Custom Highlight API (precise) ──────────────────────────
-      if (typeof CSS !== 'undefined' && 'highlights' in CSS) {
-        const cssHighlights = (CSS as any).highlights as Map<string, unknown>
-        cssHighlights.delete('cat-flash-range')
-
-        editor.getEditorState().read(() => {
-          const startPt = $globalOffsetToPoint(start)
-          const endPt = $globalOffsetToPoint(end)
-          if (!startPt || !endPt) return
-
-          const startDom = editor.getElementByKey(startPt.key)
-          const endDom = editor.getElementByKey(endPt.key)
-          if (!startDom || !endDom) return
-
-          // Resolve DOM text nodes for the Range API.
-          // Text-type positions: the Lexical element is a <span> wrapping
-          // a Text node child.  Element-type: use the element itself.
-          const resolveTextNode = (
-            el: HTMLElement,
-            offset: number,
-            type: 'text' | 'element',
-          ): { node: Node; offset: number } | null => {
-            if (type === 'text') {
-              // Walk childNodes to find the first Text node
-              for (const child of el.childNodes) {
-                if (child.nodeType === Node.TEXT_NODE) {
-                  return {
-                    node: child,
-                    offset: Math.min(offset, child.textContent?.length ?? 0),
-                  }
-                }
-              }
-              // Fallback: use the element itself
-              return { node: el, offset: 0 }
-            }
-            // Element-type position (e.g. paragraph boundary)
-            return { node: el, offset: Math.min(offset, el.childNodes.length) }
-          }
-
-          const s = resolveTextNode(startDom, startPt.offset, startPt.type)
-          const e = resolveTextNode(endDom, endPt.offset, endPt.type)
-          if (!s || !e) return
-
-          try {
-            const range = new Range()
-            range.setStart(s.node, s.offset)
-            range.setEnd(e.node, e.offset)
-            const hl = new (globalThis as any).Highlight(range)
-            cssHighlights.set('cat-flash-range', hl)
-          } catch {
-            // Range construction can fail for edge cases — fall through
-            // to the class-based approach below.
-            applyFlashRangeFallback(start, end)
-          }
-        })
-        return
-      }
-
-      // ── Fallback: class-based (whole-node) ──────────────────────────
-      applyFlashRangeFallback(start, end)
-    }, [])
-
-    /** Class-based flash range fallback (highlights entire overlapping nodes). */
-    const applyFlashRangeFallback = useCallback(
-      (start: number, end: number) => {
+    // ── Suggestion click (replace highlighted text) ────────────────
+    const handleSuggestionClick = useCallback(
+      (suggestion: string, ruleId: string) => {
         const editor = editorRef.current
         if (!editor) return
-        editor.getEditorState().read(() => {
-          const keys = $getNodeKeysInRange(start, end)
-          for (const key of keys) {
-            const domEl = editor.getElementByKey(key)
-            if (domEl) {
-              domEl.classList.add('cat-highlight-flash')
+
+        let replacedRange:
+          | { start: number; end: number; content: string }
+          | undefined
+
+        editor.update(() => {
+          const root = $getRoot()
+          const allNodes = root.getAllTextNodes()
+          for (const node of allNodes) {
+            if (
+              (node as any).__ruleIds &&
+              (node as any).__ruleIds.split(',').includes(ruleId)
+            ) {
+              const globalOffset = $pointToGlobalOffset(node.getKey(), 0)
+              const originalContent = node.getTextContent()
+              replacedRange = {
+                start: globalOffset,
+                end: globalOffset + originalContent.length,
+                content: originalContent,
+              }
+              const textNode = $createTextNode(suggestion)
+              node.replace(textNode)
+              break
             }
           }
         })
+
+        if (replacedRange !== undefined) {
+          const annotation = annotationMapRef.current.get(ruleId)
+          if (annotation) {
+            onSuggestionApply?.(
+              ruleId,
+              suggestion,
+              replacedRange,
+              annotation.type,
+            )
+          }
+        }
       },
-      [],
+      [onSuggestionApply],
     )
 
-    /** Remove all flash highlight classes and clean up timers/listeners. */
-    const clearFlashInner = useCallback(() => {
-      flashIdRef.current = null
-      flashRangeRef.current = null
-      if (flashTimerRef.current) {
-        clearTimeout(flashTimerRef.current)
-        flashTimerRef.current = null
-      }
-      if (flashEditUnregRef.current) {
-        flashEditUnregRef.current()
-        flashEditUnregRef.current = null
-      }
-      containerRef.current
-        ?.querySelectorAll('.cat-highlight-flash')
-        .forEach((el) => el.classList.remove('cat-highlight-flash'))
-
-      // Also clear CSS Custom Highlight API highlights
-      if (typeof CSS !== 'undefined' && 'highlights' in CSS) {
-        ;(CSS as any).highlights.delete('cat-flash-range')
-      }
-    }, [])
-
-    const [popoverState, setPopoverState] = useState<PopoverState>({
-      visible: false,
-      x: 0,
-      y: 0,
-      ruleIds: [],
-    })
-
-    // ── Imperative API ─────────────────────────────────────────────────────
-    useImperativeHandle(
-      ref,
-      () => ({
-        insertText: (text: string) => {
-          const editor = editorRef.current
-          if (!editor) return
-
-          editor.update(() => {
-            const saved = savedSelectionRef.current
-            if (saved) {
-              // Restore selection at the saved global offset
-              const anchorPt = $globalOffsetToPoint(saved.anchor)
-              const focusPt = $globalOffsetToPoint(saved.focus)
-              if (anchorPt && focusPt) {
-                // Token-mode nodes (tags, atomic keywords) are atomic — calling
-                // sel.insertText on them replaces the entire node. Instead,
-                // insert a new text node before or after the token.
-                const anchorNode = $getNodeByKey(anchorPt.key)
-                if (
-                  anchorNode &&
-                  $isHighlightNode(anchorNode) &&
-                  anchorNode.getMode() === 'token' &&
-                  saved.anchor === saved.focus
-                ) {
-                  const newText = $createTextNode(text)
-                  if (
-                    anchorPt.offset === 0 ||
-                    anchorPt.offset < anchorNode.getTextContentSize()
-                  ) {
-                    anchorNode.insertBefore(newText)
-                  } else {
-                    anchorNode.insertAfter(newText)
-                  }
-                  newText.selectEnd()
-                  return
-                }
-
-                const sel = $createRangeSelection()
-                sel.anchor.set(anchorPt.key, anchorPt.offset, anchorPt.type)
-                sel.focus.set(focusPt.key, focusPt.offset, focusPt.type)
-                $setSelection(sel)
-                sel.insertText(text)
-                return
-              }
-            }
-            // Fallback: append at the end of the last paragraph
-            const root = $getRoot()
-            const lastChild = root.getLastChild()
-            if (lastChild) {
-              lastChild.selectEnd()
-            }
-            const sel = $createRangeSelection()
-            $setSelection(sel)
-            sel.insertText(text)
-          })
-
-          // Re-focus the editor
-          editor.focus()
-        },
-        focus: () => {
-          editorRef.current?.focus()
-        },
-        getText: () => {
-          let text = ''
-          editorRef.current?.getEditorState().read(() => {
-            text = $getPlainText()
-          })
-          return text
-        },
-        flashHighlight: (annotationId: string, durationMs = 5000) => {
-          // Clear any existing flash first
-          clearFlashInner()
-
-          flashIdRef.current = annotationId
-          // Apply class to current DOM
-          applyFlashClass(annotationId)
-
-          // Auto-remove after timeout
-          flashTimerRef.current = setTimeout(() => {
-            clearFlashInner()
-          }, durationMs)
-
-          // Remove on first user edit (not our own highlight rebuilds).
-          // The `applyHighlights` plugin tags its updates with 'cat-highlights'.
-          const editor = editorRef.current
-          if (editor) {
-            flashEditUnregRef.current = editor.registerUpdateListener(
-              ({ tags }) => {
-                if (tags.has('cat-highlights')) {
-                  // Highlight rebuild — re-apply flash class to new DOM elements
-                  if (flashIdRef.current) {
-                    requestAnimationFrame(() =>
-                      applyFlashClass(flashIdRef.current!),
-                    )
-                  }
-                  if (flashRangeRef.current) {
-                    const { start, end } = flashRangeRef.current
-                    requestAnimationFrame(() => applyFlashRange(start, end))
-                  }
-                  return
-                }
-                // User edit — clear flash
-                clearFlashInner()
-              },
-            )
-          }
-        },
-        flashRange: (start: number, end: number, durationMs = 5000) => {
-          // Clear any existing flash first
-          clearFlashInner()
-
-          flashRangeRef.current = { start, end }
-          // Apply class to current DOM
-          applyFlashRange(start, end)
-
-          // Auto-remove after timeout
-          flashTimerRef.current = setTimeout(() => {
-            clearFlashInner()
-          }, durationMs)
-
-          // Remove on first user edit (not our own highlight rebuilds).
-          const editor = editorRef.current
-          if (editor) {
-            flashEditUnregRef.current = editor.registerUpdateListener(
-              ({ tags }) => {
-                if (tags.has('cat-highlights')) {
-                  // Highlight rebuild — re-apply flash class to new DOM elements
-                  if (flashRangeRef.current) {
-                    const { start: s, end: e } = flashRangeRef.current
-                    requestAnimationFrame(() => applyFlashRange(s, e))
-                  }
-                  return
-                }
-                // User edit — clear flash
-                clearFlashInner()
-              },
-            )
-          }
-        },
-        replaceAll: (search: string, replacement: string): number => {
-          const editor = editorRef.current
-          if (!editor || !search) return 0
-
-          let count = 0
-          editor.update(() => {
-            const root = $getRoot()
-            const fullText = $getPlainText()
-
-            // Count occurrences
-            let idx = 0
-            while ((idx = fullText.indexOf(search, idx)) !== -1) {
-              count++
-              idx += search.length
-            }
-
-            if (count === 0) return
-
-            // Rebuild the content with all replacements applied
-            const newText = fullText.split(search).join(replacement)
-            root.clear()
-            const lines = newText.split('\n')
-            // Drop trailing empty segment so texts ending with \n
-            // don't produce an extra empty paragraph.
-            if (lines.length > 1 && lines[lines.length - 1] === '') {
-              lines.pop()
-            }
-            for (const line of lines) {
-              const p = $createParagraphNode()
-              p.append($createTextNode(line))
-              root.append(p)
-            }
-          })
-
-          return count
-        },
-        clearFlash: () => {
-          clearFlashInner()
-        },
-        setText: (text: string, options?: EditorUpdateOptions) => {
-          const editor = editorRef.current
-          if (!editor) return
-          editor.update(() => {
-            const root = $getRoot()
-            root.clear()
-            if (!text) {
-              // Empty text: create one empty paragraph (standard empty state)
-              root.append($createParagraphNode())
-              return
-            }
-            const lines = text.split('\n')
-            // Drop trailing empty segment so e.g. "hello\n" doesn't
-            // produce an extra empty paragraph.
-            if (lines.length > 1 && lines[lines.length - 1] === '') {
-              lines.pop()
-            }
-            for (const line of lines) {
-              const p = $createParagraphNode()
-              p.append($createTextNode(line))
-              root.append(p)
-            }
-          }, options)
-        },
-        getSelection: () => {
-          const editor = editorRef.current
-          if (!editor) return null
-          let result: { anchor: number; focus: number } | null = null
-          editor.getEditorState().read(() => {
-            const sel = $getSelection()
-            if ($isRangeSelection(sel)) {
-              result = {
-                anchor: $pointToGlobalOffset(sel.anchor.key, sel.anchor.offset),
-                focus: $pointToGlobalOffset(sel.focus.key, sel.focus.offset),
-              }
-            }
-          })
-          // `result` is assigned synchronously inside `.read()` but TS
-          // narrows it to `null` because it can't see through the callback.
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-          return result ?? savedSelectionRef.current
-        },
-        focusStart: () => {
-          const editor = editorRef.current
-          if (!editor) return
-          editor.update(() => {
-            const root = $getRoot()
-            const first = root.getFirstChild()
-            if (first) first.selectStart()
-          })
-          editor.focus()
-        },
-        focusEnd: () => {
-          const editor = editorRef.current
-          if (!editor) return
-          editor.update(() => {
-            const root = $getRoot()
-            const last = root.getLastChild()
-            if (last) last.selectEnd()
-          })
-          editor.focus()
-        },
-        setSelection: (anchor: number, focus: number) => {
-          const editor = editorRef.current
-          if (!editor) return
-          editor.update(() => {
-            const anchorPt = $globalOffsetToPoint(anchor)
-            const focusPt = $globalOffsetToPoint(focus)
-            if (anchorPt && focusPt) {
-              const sel = $createRangeSelection()
-              sel.anchor.set(anchorPt.key, anchorPt.offset, anchorPt.type)
-              sel.focus.set(focusPt.key, focusPt.offset, focusPt.type)
-              $setSelection(sel)
-            }
-          })
-          editor.focus()
-        },
-        getEditor: () => editorRef.current,
-      }),
-      [applyFlashClass, applyFlashRange, clearFlashInner],
-    )
-
-    // Build the effective codepoint display map: atomic keyword entry
-    // displaySymbol overrides + caller's codepointDisplayMap on top.
+    // ── Effective codepoint display map ────────────────────────────
     const effectiveCodepointMap = useMemo(() => {
       let merged: Record<number, string> | undefined
       for (const rule of rules) {
@@ -643,27 +228,23 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
       return merged
     }, [rules, codepointDisplayMap])
 
+    // ── Lexical config ─────────────────────────────────────────────
     const initialConfig = useMemo(
       () => ({
         namespace: 'CATEditor',
         theme: {
           root: 'cat-editor-root',
           paragraph: 'cat-editor-paragraph',
-          text: {
-            base: 'cat-editor-text',
-          },
+          text: { base: 'cat-editor-text' },
         },
         nodes: [HighlightNode, MentionNode],
-        // When readOnlySelectable, Lexical must be editable so the caret
-        // and selection work — we block mutations via KEY_DOWN_COMMAND.
         editable: isEditable || readOnlySelectable,
         onError: (error: Error) => {
           console.error('CATEditor Lexical error:', error)
         },
         editorState: () => {
           const root = $getRoot()
-          const lines = initialText.split('\n')
-          for (const line of lines) {
+          for (const line of initialText.split('\n')) {
             const p = $createParagraphNode()
             p.append($createTextNode(line))
             root.append(p)
@@ -673,195 +254,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
       [], // intentional: initialConfig should not change
     )
 
-    // ── Popover hover logic ────────────────────────────────────────────────
-    const isOverHighlightRef = useRef(false)
-    const isOverPopoverRef = useRef(false)
-
-    const scheduleHide = useCallback(() => {
-      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current)
-      dismissTimerRef.current = setTimeout(() => {
-        if (!isOverHighlightRef.current && !isOverPopoverRef.current) {
-          setPopoverState((prev) => ({ ...prev, visible: false }))
-        }
-      }, 400)
-    }, [])
-
-    const cancelHide = useCallback(() => {
-      if (dismissTimerRef.current) {
-        clearTimeout(dismissTimerRef.current)
-        dismissTimerRef.current = null
-      }
-    }, [])
-
-    // Handle hover over highlighted DOM elements
-    useEffect(() => {
-      const container = containerRef.current
-      if (!container) return
-
-      const handleMouseOver = (e: MouseEvent) => {
-        const target = (e.target as HTMLElement).closest('.cat-highlight')
-        if (!target) {
-          if (isOverHighlightRef.current) {
-            isOverHighlightRef.current = false
-            scheduleHide()
-          }
-          return
-        }
-
-        const ruleIdsAttr = target.getAttribute('data-rule-ids')
-        if (!ruleIdsAttr) return
-
-        const ruleIds = [
-          ...new Set(
-            ruleIdsAttr
-              .split(',')
-              .map((id) =>
-                id.startsWith(NL_MARKER_PREFIX)
-                  ? id.slice(NL_MARKER_PREFIX.length)
-                  : id,
-              ),
-          ),
-        ]
-
-        isOverHighlightRef.current = true
-        cancelHide()
-
-        const rect = target.getBoundingClientRect()
-        setPopoverState({
-          visible: true,
-          x: rect.left,
-          y: rect.bottom,
-          anchorRect: {
-            top: rect.top,
-            left: rect.left,
-            bottom: rect.bottom,
-            right: rect.right,
-            width: rect.width,
-            height: rect.height,
-          },
-          ruleIds,
-        })
-      }
-
-      const handleMouseOut = (e: MouseEvent) => {
-        const related = e.relatedTarget as HTMLElement | null
-        if (related?.closest('.cat-highlight')) return
-        isOverHighlightRef.current = false
-        scheduleHide()
-      }
-
-      container.addEventListener('mouseover', handleMouseOver)
-      container.addEventListener('mouseout', handleMouseOut)
-
-      return () => {
-        container.removeEventListener('mouseover', handleMouseOver)
-        container.removeEventListener('mouseout', handleMouseOut)
-        if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current)
-      }
-    }, [scheduleHide, cancelHide])
-
-    // Handle click on link / mention highlights
-    useEffect(() => {
-      const container = containerRef.current
-      if (!container) return
-
-      const handleClick = (e: MouseEvent) => {
-        // Check for link highlights
-        if (openLinksOnClick) {
-          const highlightTarget = (e.target as HTMLElement).closest(
-            '.cat-highlight',
-          )
-          if (highlightTarget) {
-            const ruleIdsAttr = highlightTarget.getAttribute('data-rule-ids')
-            if (ruleIdsAttr) {
-              const ids = ruleIdsAttr.split(',')
-              for (const id of ids) {
-                const ann = annotationMapRef.current.get(id)
-                if (!ann) continue
-
-                if (ann.type === 'link') {
-                  e.preventDefault()
-                  if (onLinkClick) {
-                    onLinkClick(ann.data.url)
-                  } else {
-                    window.open(ann.data.url, '_blank', 'noopener,noreferrer')
-                  }
-                  return
-                }
-              }
-            }
-          }
-        }
-
-        // Check for mention nodes
-        const mentionTarget = (e.target as HTMLElement).closest(
-          '.cat-mention-node',
-        )
-        if (mentionTarget) {
-          const mentionId = mentionTarget.getAttribute('data-mention-id')
-          const mentionName = mentionTarget.getAttribute('data-mention-name')
-          if (mentionId && mentionName) {
-            e.preventDefault()
-            onMentionClick?.(mentionId, mentionName)
-            return
-          }
-        }
-      }
-
-      container.addEventListener('click', handleClick)
-      return () => {
-        container.removeEventListener('click', handleClick)
-      }
-    }, [onLinkClick, openLinksOnClick, onMentionClick])
-
-    // Handle suggestion click -> replace the highlighted text
-    const handleSuggestionClick = useCallback(
-      (suggestion: string, ruleId: string) => {
-        const editor = editorRef.current
-        if (!editor) return
-
-        let replacedRange:
-          | { start: number; end: number; content: string }
-          | undefined
-
-        editor.update(() => {
-          const root = $getRoot()
-          const allNodes = root.getAllTextNodes()
-          for (const node of allNodes) {
-            if (
-              $isHighlightNode(node) &&
-              node.__ruleIds.split(',').includes(ruleId)
-            ) {
-              const globalOffset = $pointToGlobalOffset(node.getKey(), 0)
-              const originalContent = node.getTextContent()
-              replacedRange = {
-                start: globalOffset,
-                end: globalOffset + originalContent.length,
-                content: originalContent,
-              }
-              const textNode = $createTextNode(suggestion)
-              node.replace(textNode)
-              break
-            }
-          }
-        })
-
-        setPopoverState((prev) => ({ ...prev, visible: false }))
-        if (replacedRange !== undefined) {
-          const annotation = annotationMapRef.current.get(ruleId)
-          if (annotation) {
-            onSuggestionApply?.(
-              ruleId,
-              suggestion,
-              replacedRange,
-              annotation.type,
-            )
-          }
-        }
-      },
-      [onSuggestionApply],
-    )
-
+    // ── onChange handler ────────────────────────────────────────────
     const handleChange = useCallback(
       (editorState: { read: (fn: () => void) => void }) => {
         if (!onChange) return
@@ -872,6 +265,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
       [onChange],
     )
 
+    // ── Render ─────────────────────────────────────────────────────
     return (
       <div
         ref={containerRef}
@@ -901,6 +295,8 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
               }
               ErrorBoundary={LexicalErrorBoundary}
             />
+
+            {/* ── Plugins ── */}
             {!disableHistory && <HistoryPlugin />}
             <OnChangePlugin onChange={handleChange} />
             <HighlightsPlugin
@@ -913,16 +309,10 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
               savedSelectionRef={savedSelectionRef}
             />
             <NLMarkerNavigationPlugin />
-            {/* Block mutations when read-only but selectable */}
             {!isEditable && readOnlySelectable && <ReadOnlySelectablePlugin />}
-            {/* Custom key-down handler */}
             {onKeyDownProp && <KeyDownPlugin onKeyDown={onKeyDownProp} />}
-            {/* Strip Lexical's per-paragraph dir when an explicit dir is set */}
             {dir && dir !== 'auto' && <DirectionPlugin dir={dir} />}
-            {/* Remove trailing empty paragraph that Lexical sometimes
-                creates after paste into a cleared editor */}
             <PasteCleanupPlugin />
-            {/* Mention typeahead plugin — enabled when a mention rule is present */}
             {rules
               .filter((r): r is IMentionRule => r.type === 'mention')
               .map((mentionRule, i) => (
@@ -959,155 +349,3 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
 )
 
 export default CATEditor
-
-// ─── Internal Plugins ─────────────────────────────────────────────────────────
-
-/** Blocks all content-mutating key presses while keeping caret & selection
- *  functional.  Registered at CRITICAL priority so it fires before Lexical's
- *  own handlers. */
-function ReadOnlySelectablePlugin() {
-  const [editor] = useLexicalComposerContext()
-
-  useEffect(() => {
-    return editor.registerCommand(
-      KEY_DOWN_COMMAND,
-      (event: KeyboardEvent) => {
-        // Allow navigation, selection, copy/paste-select, etc.
-        if (
-          event.key.startsWith('Arrow') ||
-          event.key === 'Home' ||
-          event.key === 'End' ||
-          event.key === 'PageUp' ||
-          event.key === 'PageDown' ||
-          event.key === 'Shift' ||
-          event.key === 'Control' ||
-          event.key === 'Alt' ||
-          event.key === 'Meta' ||
-          event.key === 'Tab' ||
-          event.key === 'Escape' ||
-          event.key === 'F5' ||
-          event.key === 'F12' ||
-          // Ctrl/Cmd shortcuts that don't mutate: copy, select-all, find
-          ((event.ctrlKey || event.metaKey) &&
-            (event.key === 'c' ||
-              event.key === 'a' ||
-              event.key === 'f' ||
-              event.key === 'g'))
-        ) {
-          return false // let it through
-        }
-        // Block everything else (typing, Enter, Backspace, Delete, paste, cut…)
-        event.preventDefault()
-        return true
-      },
-      COMMAND_PRIORITY_CRITICAL,
-    )
-  }, [editor])
-
-  // Also block paste and cut at the DOM level
-  useEffect(() => {
-    const root = editor.getRootElement()
-    if (!root) return
-    const block = (e: Event) => e.preventDefault()
-    root.addEventListener('paste', block)
-    root.addEventListener('cut', block)
-    root.addEventListener('drop', block)
-    return () => {
-      root.removeEventListener('paste', block)
-      root.removeEventListener('cut', block)
-      root.removeEventListener('drop', block)
-    }
-  }, [editor])
-
-  return null
-}
-
-/** Fires the consumer's `onKeyDown` before Lexical processes the event.
- *  If the callback returns `true`, the event is consumed (preventDefault +
- *  stop Lexical propagation). */
-function KeyDownPlugin({
-  onKeyDown,
-}: {
-  onKeyDown: (event: KeyboardEvent) => boolean
-}) {
-  const [editor] = useLexicalComposerContext()
-
-  useEffect(() => {
-    return editor.registerCommand(
-      KEY_DOWN_COMMAND,
-      (event: KeyboardEvent) => {
-        return onKeyDown(event)
-      },
-      COMMAND_PRIORITY_CRITICAL,
-    )
-  }, [editor, onKeyDown])
-
-  return null
-}
-
-/** Sets the Lexical root node's direction so that the reconciler stops
- *  adding `dir="auto"` to paragraph elements.  When the root has a
- *  direction, children inherit it naturally (no MutationObserver needed). */
-function DirectionPlugin({ dir }: { dir: 'ltr' | 'rtl' }) {
-  const [editor] = useLexicalComposerContext()
-
-  useEffect(() => {
-    editor.update(() => {
-      $getRoot().setDirection(dir)
-    })
-    return () => {
-      // Reset to null (auto) when unmounting or direction changes
-      editor.update(() => {
-        $getRoot().setDirection(null)
-      })
-    }
-  }, [editor, dir])
-
-  return null
-}
-
-/** Removes the trailing empty paragraph that Lexical sometimes creates
- *  when pasting into a cleared editor (Ctrl+A → Backspace → Ctrl+V).
- *  Uses a flag set in the PASTE_COMMAND handler, then cleans up in the
- *  next update listener tick after Lexical finishes processing the paste. */
-function PasteCleanupPlugin() {
-  const [editor] = useLexicalComposerContext()
-  const isPastingRef = useRef(false)
-
-  useEffect(() => {
-    const unregCommand = editor.registerCommand(
-      PASTE_COMMAND,
-      () => {
-        isPastingRef.current = true
-        return false // let Lexical handle the paste normally
-      },
-      COMMAND_PRIORITY_CRITICAL,
-    )
-
-    const unregUpdate = editor.registerUpdateListener(() => {
-      if (!isPastingRef.current) return
-      isPastingRef.current = false
-
-      editor.update(
-        () => {
-          const root = $getRoot()
-          const children = root.getChildren()
-          if (children.length > 1) {
-            const last = children[children.length - 1]
-            if ($isParagraphNode(last) && last.getTextContentSize() === 0) {
-              last.remove()
-            }
-          }
-        },
-        { tag: 'history-merge' },
-      )
-    })
-
-    return () => {
-      unregCommand()
-      unregUpdate()
-    }
-  }, [editor])
-
-  return null
-}

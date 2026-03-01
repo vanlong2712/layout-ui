@@ -26,7 +26,6 @@ export type {
   MooRule,
   ISpellCheckRule,
   IKeywordsRule,
-  ISpecialCharRule,
   ITagRule,
   IQuoteRule,
   ILinkRule,
@@ -35,6 +34,20 @@ export type {
   RuleAnnotation,
   PopoverContentRenderer,
   PopoverContentRendererProps,
+} from './layout/cat-editor'
+
+// Layout — CATEditor Plugins & Hooks (advanced composition)
+export {
+  EditorRefPlugin,
+  HighlightsPlugin,
+  NLMarkerNavigationPlugin,
+  DirectionPlugin,
+  KeyDownPlugin,
+  PasteCleanupPlugin,
+  ReadOnlySelectablePlugin,
+  useFlash,
+  usePopoverHover,
+  useEditorHandle,
 } from './layout/cat-editor'
 
 // Utils — Detect Quotes

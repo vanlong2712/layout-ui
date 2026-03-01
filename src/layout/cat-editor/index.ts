@@ -1,11 +1,15 @@
-// ─── Public API ──────────────────────────────────────────────────────────────
+// ─── CATEditor — Public API ──────────────────────────────────────────────────
+// Modular architecture: plugins, hooks, and composition.
 
 import './style.css'
 
 export { CATEditor, default } from './CATEditor'
 export type { CATEditorProps } from './CATEditor'
 
+// Constants
 export { CODEPOINT_DISPLAY_MAP, getEffectiveCodepointMap } from './constants'
+
+// Mention node
 export {
   MentionNode,
   $createMentionNode,
@@ -19,12 +23,13 @@ export type {
   MentionDOMRenderer,
   MentionNodeConfig,
 } from './mention-node'
+
+// Mention plugin
 export { MentionPlugin } from './mention-plugin'
 export type { MentionPluginProps } from './mention-plugin'
 
+// Types & Zod schemas
 export {
-  GlossaryEntrySchema,
-  GlossaryRuleSchema,
   HighlightSegmentSchema,
   KeywordsAnnotationSchema,
   KeywordsEntrySchema,
@@ -40,9 +45,6 @@ export {
   QuoteRuleSchema,
   RawRangeSchema,
   RuleAnnotationSchema,
-  SpecialCharAnnotationSchema,
-  SpecialCharEntrySchema,
-  SpecialCharRuleSchema,
   SpellCheckAnnotationSchema,
   SpellCheckRuleSchema,
   SpellCheckValidationSchema,
@@ -53,10 +55,7 @@ export {
 
 export type {
   CATEditorRef,
-  GlossaryAnnotation,
   HighlightSegment,
-  IGlossaryEntry,
-  IGlossaryRule,
   IKeywordsEntry,
   IKeywordsRule,
   ILinkRule,
@@ -64,8 +63,6 @@ export type {
   IMentionUser,
   IQuoteRule,
   IQuoteRuleMapping,
-  ISpecialCharEntry,
-  ISpecialCharRule,
   ISpellCheckRule,
   ISpellCheckValidation,
   ISuggestion,
@@ -80,6 +77,26 @@ export type {
   RawRange,
   RuleAnnotation,
   SpellCheckAnnotation,
-  SpecialCharAnnotation,
   TagAnnotation,
 } from './types'
+
+// Plugins (available for advanced composition)
+export {
+  EditorRefPlugin,
+  HighlightsPlugin,
+  NLMarkerNavigationPlugin,
+  DirectionPlugin,
+  KeyDownPlugin,
+  PasteCleanupPlugin,
+  ReadOnlySelectablePlugin,
+} from './plugins'
+
+// Hooks (available for custom editor builds)
+export { useFlash } from './hooks/use-flash'
+export type { FlashControls } from './hooks/use-flash'
+export { usePopoverHover } from './hooks/use-popover-hover'
+export type {
+  PopoverHoverOptions,
+  PopoverHoverReturn,
+} from './hooks/use-popover-hover'
+export { useEditorHandle } from './hooks/use-editor-handle'

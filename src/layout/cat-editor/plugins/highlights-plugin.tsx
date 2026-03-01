@@ -13,25 +13,22 @@ import {
 } from 'lexical'
 import { useCallback, useEffect, useRef } from 'react'
 
-import { computeHighlightSegments } from '../../cat-editor/compute-segments'
-import {
-  CODEPOINT_DISPLAY_MAP,
-  NL_MARKER_PREFIX,
-} from '../../cat-editor/constants'
+import { computeHighlightSegments } from '../compute-segments'
+import { CODEPOINT_DISPLAY_MAP, NL_MARKER_PREFIX } from '../constants'
 import {
   $createHighlightNode,
   $isHighlightNode,
   HighlightNode,
-} from '../../cat-editor/highlight-node'
+} from '../highlight-node'
 import {
   $createMentionNode,
   $isMentionNode,
   getMentionPattern,
-} from '../../cat-editor/mention-node'
+} from '../mention-node'
 import {
   $globalOffsetToPoint,
   $pointToGlobalOffset,
-} from '../../cat-editor/selection-helpers'
+} from '../selection-helpers'
 
 import type { ElementNode, LexicalNode } from 'lexical'
 import type {
@@ -40,7 +37,7 @@ import type {
   ITagRule,
   MooRule,
   RuleAnnotation,
-} from '../../cat-editor/types'
+} from '../types'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

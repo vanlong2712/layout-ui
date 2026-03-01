@@ -40,7 +40,7 @@ export const Route = createFileRoute('/demo/cat-editor')({
 // ─── Default sample data ─────────────────────────────────────────────────────
 
 const SAMPLE_TEXT =
-  'The quick brown fox jumps over the layz dog. This sentance contains severl speling errors and some technical terms like API endpoint and HTTP request.\nTom & Jerry\u00A0say\u2009hello\u2003world\u200Bhidden\u2060join\u200Ahair.\tTabbed here.\n<a href="https://example.com">Click <b>here</b> for more</a> info <br/> end.\nHello {{userName}}, your order ${orderId} is ready. Total: $amount — use code %PROMO to save.\nShe said "run away" and he replied \'OK fine\' before leaving.\nVisit https://github.com/lexical or www.example.com for details. Type @ to mention a user.'
+  "The quick brown fox jumps over the layz dog. This sentance contains severl speling errors and some technical terms like API endpoint and HTTP request.\nTom & Jerry\u00A0say\u2009hello\u2003world\u200Bhidden\u2060join\u200Ahair.\tTabbed here.\n<a href='https://example.com'>Click <b>here</b> for more</a> info <br/> end.\nHello {{userName}}, your order ${orderId} is ready. Total: $amount — use code %PROMO to save.\nShe said 'run away' and he replied \'OK fine\\' before leaving.\nVisit https://github.com/lexical or www.example.com for details. Type @ to mention a user."
 
 const DEFAULT_SPELLCHECK: Array<ISpellCheckValidation> = [
   {
@@ -48,7 +48,7 @@ const DEFAULT_SPELLCHECK: Array<ISpellCheckValidation> = [
     start: 35,
     end: 39,
     content: 'layz',
-    message: 'Possible spelling mistake found. Did you mean "lazy"?',
+    message: "Possible spelling mistake found. Did you mean 'lazy'?",
     shortMessage: 'Typo',
     suggestions: [{ value: 'lazy' }, { value: 'lays' }, { value: 'laze' }],
     dictionaries: ['en-US'],
@@ -58,7 +58,7 @@ const DEFAULT_SPELLCHECK: Array<ISpellCheckValidation> = [
     start: 50,
     end: 58,
     content: 'sentance',
-    message: 'Possible spelling mistake found. Did you mean "sentence"?',
+    message: "Possible spelling mistake found. Did you mean 'sentence'?",
     shortMessage: 'Typo',
     suggestions: [{ value: 'sentence' }, { value: 'sentience' }],
     dictionaries: ['en-US'],
@@ -68,7 +68,7 @@ const DEFAULT_SPELLCHECK: Array<ISpellCheckValidation> = [
     start: 68,
     end: 74,
     content: 'severl',
-    message: 'Possible spelling mistake found. Did you mean "several"?',
+    message: "Possible spelling mistake found. Did you mean 'several'?",
     shortMessage: 'Typo',
     suggestions: [
       { value: 'several' },
@@ -82,7 +82,7 @@ const DEFAULT_SPELLCHECK: Array<ISpellCheckValidation> = [
     start: 75,
     end: 82,
     content: 'speling',
-    message: 'Possible spelling mistake found. Did you mean "spelling"?',
+    message: "Possible spelling mistake found. Did you mean 'spelling'?",
     shortMessage: 'Typo',
     suggestions: [{ value: 'spelling' }, { value: 'spieling' }],
     dictionaries: ['en-US'],
@@ -90,7 +90,7 @@ const DEFAULT_SPELLCHECK: Array<ISpellCheckValidation> = [
 ]
 
 const DEFAULT_TAG_PATTERN =
-  '<[^>]+>|(\\{\\{[^{}]*\\}\\})|(\\{[^{}]*\\})|(["\']?\\{[^{}]*\\}["\']?)|(["\']?\\$\\{[^{}]*\\}["\']?)|(["\']?\\$[A-Za-z0-9_]+["\']?)|(["\']?%[A-Za-z0-9]+["\']?)'
+  "<[^>]+>|(\\{\\{[^{}]*\\}\\})|(\\{[^{}]*\\})|(['\\\\']?\\{[^{}]*\\}['\\\\']?)|(['\\\\']?\\$\\{[^{}]*\\}['\\\\']?)|(['\\\\']?\\$[A-Za-z0-9_]+['\\\\']?)|(['\\\\']?%[A-Za-z0-9]+['\\\\']?)"
 
 const DEFAULT_LEXIQA_ENTRIES: Array<IKeywordsEntry> = [
   { pattern: 'API endpoint' },
@@ -101,12 +101,12 @@ const DEFAULT_TB_ENTRIES: Array<IKeywordsEntry> = [
   {
     pattern: 'endpoint',
     description:
-      'Preferred terminology: use "API endpoint" instead of "endpoint" alone.',
+      "Preferred terminology: use 'API endpoint' instead of 'endpoint' alone.",
   },
   {
     pattern: 'fox',
     description:
-      'Term Base: "fox" should be translated as "zorro" in the Spanish target.',
+      "Term Base: 'fox' should be translated as 'zorro' in the Spanish target.",
   },
 ]
 
@@ -393,10 +393,10 @@ const TEXT_SNIPPETS = [
 // ─── Flash-range presets ─────────────────────────────────────────────────────
 
 const FLASH_RANGES = [
-  { label: '"layz"', start: 35, end: 39 },
-  { label: '"sentance"', start: 50, end: 58 },
-  { label: '"severl"', start: 68, end: 74 },
-  { label: '"speling"', start: 75, end: 82 },
+  { label: "'layz'", start: 35, end: 39 },
+  { label: "'sentance'", start: 50, end: 58 },
+  { label: "'severl'", start: 68, end: 74 },
+  { label: "'speling'", start: 75, end: 82 },
   { label: 'First 10 chars', start: 0, end: 10 },
   { label: 'Chars 100–120', start: 100, end: 120 },
 ]
@@ -438,18 +438,13 @@ function CATEditorDemo() {
   const [keyDownLog, setKeyDownLog] = useState<Array<string>>([])
 
   // ── Editable rule data ───────────────────────────────────────────────
-  // Spellcheck validations
   const [spellcheckData, setSpellcheckData] =
     useState<Array<ISpellCheckValidation>>(DEFAULT_SPELLCHECK)
-
-  // Keywords entries
   const [lexiqaEntries, setLexiqaEntries] = useState<Array<IKeywordsEntry>>(
     DEFAULT_LEXIQA_ENTRIES,
   )
   const [tbEntries, setTbEntries] =
     useState<Array<IKeywordsEntry>>(DEFAULT_TB_ENTRIES)
-
-  // Special-char entries (now keyword entries with atomic: true)
   const [specialCharEntries, setSpecialCharEntries] = useState<
     Array<IKeywordsEntry>
   >(DEFAULT_SPECIAL_CHARS)
@@ -481,13 +476,11 @@ function CATEditorDemo() {
   /** Flash a spellcheck annotation and clear the pill after timeout. */
   const handleFlashSpellcheck = useCallback(
     (annId: string, durationMs = 5000) => {
-      // Clear previous demo timer
       if (flashDemoTimerRef.current) {
         clearTimeout(flashDemoTimerRef.current)
       }
       setFlashedSpellcheckId(annId)
       editorRef.current?.flashHighlight(annId, durationMs)
-      // Sync demo state with flash timeout
       flashDemoTimerRef.current = setTimeout(() => {
         setFlashedSpellcheckId(null)
       }, durationMs)
@@ -526,14 +519,13 @@ function CATEditorDemo() {
   // ── Derive mentionSerialize / mentionPattern from format template ───
   const mentionSerialize = useMemo(() => {
     const fmt = mentionSerializeFormat.trim()
-    if (!fmt || fmt === '@{id}') return undefined // use default
+    if (!fmt || fmt === '@{id}') return undefined
     return (id: string) => fmt.replace(/\bid\b/g, id)
   }, [mentionSerializeFormat])
 
   const mentionPattern = useMemo(() => {
     const fmt = mentionSerializeFormat.trim()
-    if (!fmt || fmt === '@{id}') return undefined // use default
-    // Escape all regex-special chars, then replace the literal `id` with a capture group
+    if (!fmt || fmt === '@{id}') return undefined
     const escaped = fmt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const withCapture = escaped.replace(/\\b?id\\b?|id/g, '([^\\s]+)')
     try {
@@ -724,7 +716,7 @@ function CATEditorDemo() {
             ...prev,
           ].slice(0, 8),
         )
-        return true // block Lexical
+        return true
       }
       return false
     },
@@ -787,11 +779,11 @@ function CATEditorDemo() {
         {/* Header */}
         <div className="space-y-3">
           <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-            {demoMeta?.name ?? 'CAT Editor'}
+            {demoMeta?.name ?? 'CAT Editor v2'}
           </h1>
           <p className="text-lg text-muted-foreground leading-relaxed max-w-2xl">
             {demoMeta?.description ??
-              'A Lexical-powered editor with rule-based highlighting for spellcheck and LexiQA quality assurance.'}
+              'Modular CATEditor v2 — same functionality, refactored architecture with composable plugins and hooks.'}
           </p>
         </div>
 
@@ -972,7 +964,7 @@ function CATEditorDemo() {
               <span className="h-3 w-3 rounded-full bg-green-400/70" />
             </div>
             <span className="ml-2 text-xs text-muted-foreground font-medium">
-              CAT Editor — Lexical
+              CAT Editor v2 — Lexical (modular architecture)
             </span>
           </div>
           <CATEditor
