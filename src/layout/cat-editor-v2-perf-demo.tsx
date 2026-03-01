@@ -56,6 +56,10 @@ interface CrossEditorHistoryDeps {
   scrollToRow: (rowIndex: number) => void
   /** Try to get the CATEditorRef for a row (may be `undefined` if not mounted). */
   getEditorRef: (rowIndex: number) => CATEditorRef | undefined
+  /** Return the current total number of rows so retry attempts can scale. */
+  getRowCount: () => number
+  /** Return the scroll container so we can center the caret without affecting body scroll. */
+  getScrollElement: () => HTMLElement | null
 }
 
 /** Consecutive edits to the same row within this window are merged. */
@@ -87,6 +91,21 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
 
   // Pending scroll-then-apply timer
   const pendingActionRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Centering: token-based cancellation so stale centering callbacks
+  // (from a previous undo/redo) never fire for the wrong row.
+  // All centering-related timers and rAF handles are tracked so they
+  // can be cancelled.
+  const centerTokenRef = useRef(0)
+  const centerRafRef = useRef<number | null>(null)
+
+  /** Cancel all pending centering animation frames. */
+  const clearAllCenterTimers = () => {
+    if (centerRafRef.current !== null) {
+      cancelAnimationFrame(centerRafRef.current)
+      centerRafRef.current = null
+    }
+  }
 
   /** Register a CATEditorRef (called from `registerEditorRef`). */
   const registerEditor = useCallback(
@@ -197,14 +216,26 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
       selKey: 'beforeSelection' | 'afterSelection',
       pushTo: Array<HistoryEntry>,
     ) => {
-      // Cancel any previous pending action
+      // Cancel any previous pending action + centering timers
       if (pendingActionRef.current) {
         clearTimeout(pendingActionRef.current)
         pendingActionRef.current = null
       }
+      clearAllCenterTimers()
+      centerTokenRef.current++
 
       const text = entry[textKey]
       const selection = entry[selKey]
+
+      // Scale retry attempts based on total row count so that
+      // massive lists (100k+ rows) give the virtualizer enough
+      // time to settle.
+      const POLL_MS = 60
+      const rowCount = depsRef.current.getRowCount()
+      const maxAttempts = Math.min(
+        200,
+        Math.max(30, Math.ceil(Math.sqrt(rowCount) / 4)),
+      )
 
       const tryApply = (attemptsLeft: number, wasUnmounted: boolean) => {
         const ref = depsRef.current.getEditorRef(entry.rowIndex)
@@ -233,28 +264,181 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
           pushTo.push(entry)
           bumpRevision()
 
-          // If we had to scroll to an unmounted row, center the caret's
-          // DOM node in the scroll viewport after DOM reconciliation.
+          // If we had to scroll to an unmounted row, newly mounted
+          // editors recompute rules asynchronously (highlights, tags,
+          // spellcheck) which changes row heights.  We wait a generous
+          // delay for rule computation + virtualizer re-measurement to
+          // settle, then do ONE final scroll + scrollIntoView.
+          //
+          // A token guard ensures that if the user fires another
+          // undo/redo before the timer fires, the stale callback is
+          // discarded — preventing jumps to the wrong row.
           if (wasUnmounted) {
-            requestAnimationFrame(() => {
+            const token = centerTokenRef.current
+            const capturedSel = { ...clampedSel }
+
+            /**
+             * Get the row container DOM element for the target row.
+             * Returns null if the editor is not mounted.
+             */
+            const getRowElement = (): HTMLElement | null => {
+              const edRef = depsRef.current.getEditorRef(entry.rowIndex)
+              const editor = edRef?.getEditor()
+              const rootEl = editor?.getRootElement()
+              if (!rootEl) return null
+              return rootEl.closest<HTMLElement>('[data-index]')
+            }
+
+            /**
+             * Center using the actual DOM position of the row element,
+             * completely bypassing virtualizer offset estimates.
+             */
+            const centerRowByDOM = (): number => {
+              const scrollEl = depsRef.current.getScrollElement()
+              const rowEl = getRowElement()
+              if (!scrollEl || !rowEl) return 0
+
+              const rowRect = rowEl.getBoundingClientRect()
+              const containerRect = scrollEl.getBoundingClientRect()
+              const rowCenter = rowRect.top + rowRect.height / 2
+              const containerCenter =
+                containerRect.top + containerRect.height / 2
+              const delta = rowCenter - containerCenter
+
+              if (Math.abs(delta) > 1) {
+                scrollEl.scrollTop += delta
+                return Math.abs(delta)
+              }
+              return 0
+            }
+
+            /**
+             * Fine-tune centering based on the caret position.
+             * Falls back to row-based centering if the caret rect
+             * is not available (Lexical may not have flushed yet).
+             */
+            const centerCaretByDOM = () => {
+              const scrollEl = depsRef.current.getScrollElement()
+              if (!scrollEl) return
+
+              const containerRect = scrollEl.getBoundingClientRect()
+              const containerCenter =
+                containerRect.top + containerRect.height / 2
+
               const nativeSel = window.getSelection()
               if (nativeSel && nativeSel.rangeCount > 0) {
                 const range = nativeSel.getRangeAt(0)
-                const node = range.startContainer
-                const el = node instanceof Element ? node : node.parentElement
-                if (el) {
-                  el.scrollIntoView({ block: 'center' })
+                const caretRect = range.getBoundingClientRect()
+                if (
+                  caretRect.height > 0 &&
+                  caretRect.bottom > containerRect.top &&
+                  caretRect.top < containerRect.bottom
+                ) {
+                  const caretCenter = caretRect.top + caretRect.height / 2
+                  const delta = caretCenter - containerCenter
+                  if (Math.abs(delta) > 1) {
+                    scrollEl.scrollTop += delta
+                  }
+                  return
                 }
               }
-            })
+
+              // Fallback to row centering
+              centerRowByDOM()
+            }
+
+            // Adaptive polling using the row's actual DOM position
+            // (getBoundingClientRect) instead of relying on the
+            // virtualizer's offset estimates.  Each frame, check
+            // whether the row is centered.  If it drifted (because
+            // rule computation changed neighbouring row heights and
+            // the virtualizer repositioned items), re-center.
+            // After the position is stable AND enough time has
+            // elapsed for rules to compute, do a final caret-level
+            // centering and stop.
+            let stableFrames = 0
+            const STABLE_THRESHOLD = 10
+            const MIN_POLL_MS = 300
+            const MAX_POLL_MS = 3000
+            const startTime = performance.now()
+
+            const poll = () => {
+              if (centerTokenRef.current !== token) return
+
+              const elapsed = performance.now() - startTime
+              if (elapsed > MAX_POLL_MS) {
+                // Safety cap — do one final centering then stop
+                const edRef = depsRef.current.getEditorRef(entry.rowIndex)
+                if (edRef) {
+                  edRef.setSelection(capturedSel.anchor, capturedSel.focus)
+                }
+                centerRafRef.current = requestAnimationFrame(() => {
+                  if (centerTokenRef.current !== token) return
+                  centerCaretByDOM()
+                  centerRafRef.current = null
+                })
+                return
+              }
+
+              const scrollEl = depsRef.current.getScrollElement()
+              const rowEl = getRowElement()
+              if (!scrollEl || !rowEl) {
+                centerRafRef.current = null
+                return
+              }
+
+              const rowRect = rowEl.getBoundingClientRect()
+              const containerRect = scrollEl.getBoundingClientRect()
+              const rowCenter = rowRect.top + rowRect.height / 2
+              const containerCenter =
+                containerRect.top + containerRect.height / 2
+              const offset = Math.abs(rowCenter - containerCenter)
+
+              if (offset > 2) {
+                // Row has drifted — re-center
+                scrollEl.scrollTop += rowCenter - containerCenter
+                stableFrames = 0
+              } else {
+                stableFrames++
+              }
+
+              if (stableFrames >= STABLE_THRESHOLD && elapsed >= MIN_POLL_MS) {
+                // Position is stable — final caret-level centering
+                const edRef = depsRef.current.getEditorRef(entry.rowIndex)
+                if (edRef) {
+                  edRef.setSelection(capturedSel.anchor, capturedSel.focus)
+                }
+                centerRafRef.current = requestAnimationFrame(() => {
+                  if (centerTokenRef.current !== token) return
+                  centerCaretByDOM()
+                  centerRafRef.current = null
+                })
+                return
+              }
+
+              centerRafRef.current = requestAnimationFrame(poll)
+            }
+
+            // Initial DOM-based center then start polling
+            centerRowByDOM()
+            centerRafRef.current = requestAnimationFrame(poll)
           }
           return
         }
 
         if (attemptsLeft > 0) {
+          // Re-scroll periodically.  With large row counts (100k+),
+          // scrollToIndex relies on estimated sizes for thousands of
+          // unmeasured distant rows — the cumulative error can put us
+          // thousands of pixels from the target.  Each re-scroll is
+          // more accurate because newly visible rows near the
+          // previous scroll position get measured, reducing the error.
+          if (attemptsLeft % 5 === 0) {
+            depsRef.current.scrollToRow(entry.rowIndex)
+          }
           pendingActionRef.current = setTimeout(
             () => tryApply(attemptsLeft - 1, true),
-            60,
+            POLL_MS,
           )
         } else {
           // Timed out — row never mounted
@@ -274,7 +458,7 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
 
       // Editor not mounted — scroll to the row and poll until it appears.
       depsRef.current.scrollToRow(entry.rowIndex)
-      requestAnimationFrame(() => tryApply(30, true)) // 30 × 60ms ≈ 1.8s
+      requestAnimationFrame(() => tryApply(maxAttempts, true))
     },
     [bumpRevision],
   )
@@ -299,6 +483,8 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
       clearTimeout(pendingActionRef.current)
       pendingActionRef.current = null
     }
+    clearAllCenterTimers()
+    centerTokenRef.current++
     undoStackRef.current.length = 0
     redoStackRef.current.length = 0
     for (const unreg of listenersRef.current.values()) unreg()
@@ -760,6 +946,9 @@ export function CATEditorV2PerfDemo() {
       virtualizerRef.current?.scrollToIndex(rowIndex, { align: 'center' })
     },
     getEditorRef: (rowIndex) => editorRefsMap.current.get(rowIndex),
+    getRowCount: () => rowCountRef.current,
+    getScrollElement: () =>
+      (virtualizerRef.current?.scrollElement as HTMLElement | null) ?? null,
   })
 
   const crossHistoryRef = useRef(crossHistory)
