@@ -628,6 +628,124 @@ const EditorRow = memo(function EditorRow({
   )
 })
 
+// ─── Virtualized editor list (isolated from toolbar state) ──────────────────
+
+const VirtualizedEditorList = memo(function VirtualizedEditorList({
+  resetKey,
+  effectiveRowCount,
+  toOriginalIndex,
+  focusedRowRef,
+  rules,
+  onFocusRow,
+  onKeyDown,
+  registerRef,
+  dir,
+  popoverDir,
+  jpFont,
+  editable,
+  readOnlySelectable,
+  openLinksOnClick,
+  virtualizerRef,
+}: {
+  resetKey: number
+  effectiveRowCount: number
+  toOriginalIndex: (index: number) => number
+  focusedRowRef: { current: number | null }
+  rules: Array<MooRule>
+  onFocusRow: (index: number) => void
+  onKeyDown: (event: KeyboardEvent) => boolean
+  registerRef: (index: number, instance: CATEditorRef | null) => void
+  dir?: 'ltr' | 'rtl' | 'auto'
+  popoverDir?: 'ltr' | 'rtl' | 'auto' | 'inherit'
+  jpFont?: boolean
+  editable?: boolean
+  readOnlySelectable?: boolean
+  openLinksOnClick?: boolean
+  virtualizerRef: {
+    current: ReturnType<typeof useVirtualizer<HTMLDivElement, Element>> | null
+  }
+}) {
+  const parentRef = useRef<HTMLDivElement>(null)
+
+  const rangeExtractor = useCallback(
+    (range: Range) => {
+      const result = defaultRangeExtractor(range)
+      const focused = focusedRowRef.current
+      if (focused !== null && !result.includes(focused)) {
+        result.push(focused)
+        result.sort((a, b) => a - b)
+      }
+      return result
+    },
+    [focusedRowRef],
+  )
+
+  const virtualizer = useVirtualizer({
+    count: effectiveRowCount,
+    getItemKey: toOriginalIndex,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 5,
+    measureElement: (el) => el.getBoundingClientRect().height,
+    rangeExtractor,
+  })
+
+  // Keep parent ref in sync (synchronous — no re-render)
+  virtualizerRef.current = virtualizer
+
+  return (
+    <div
+      key={resetKey}
+      ref={parentRef}
+      className="rounded-xl border border-border bg-card shadow-sm overflow-auto"
+      style={{ height: '75vh' }}
+    >
+      <div
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          width: '100%',
+          position: 'relative',
+        }}
+      >
+        {virtualizer.getVirtualItems().map((virtualRow) => {
+          const originalIndex = toOriginalIndex(virtualRow.index)
+          return (
+            <div
+              key={virtualRow.key}
+              data-index={virtualRow.index}
+              ref={virtualizer.measureElement}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualRow.start}px)`,
+              }}
+              className="border-b border-border/50"
+            >
+              <EditorRow
+                index={originalIndex}
+                text={getSampleText(originalIndex)}
+                rules={rules}
+                onFocus={onFocusRow}
+                onKeyDown={onKeyDown}
+                registerRef={registerRef}
+                dir={dir}
+                popoverDir={popoverDir}
+                jpFont={jpFont}
+                editable={editable}
+                readOnlySelectable={readOnlySelectable}
+                openLinksOnClick={openLinksOnClick}
+                disableHistory
+              />
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+})
+
 // ─── Main demo component ─────────────────────────────────────────────────────
 
 export function CATEditorV2PerfDemo() {
@@ -643,6 +761,9 @@ export function CATEditorV2PerfDemo() {
     },
     getEditorRef: (rowIndex) => editorRefsMap.current.get(rowIndex),
   })
+
+  const crossHistoryRef = useRef(crossHistory)
+  crossHistoryRef.current = crossHistory
 
   const [spellcheckEnabled, setSpellcheckEnabled] = useState(true)
   const [lexiqaEnabled, setLexiqaEnabled] = useState(true)
@@ -876,9 +997,9 @@ export function CATEditorV2PerfDemo() {
     setReadOnlySelectable(false)
     setOpenLinksOnClick(true)
     setRowCount(TOTAL_ROWS)
-    crossHistory.clearHistory()
+    crossHistoryRef.current.clearHistory()
     setResetKey((k) => k + 1)
-  }, [crossHistory])
+  }, [])
 
   const [focusedRow, setFocusedRow] = useState<number | null>(null)
   const handleFocusRow = useCallback((index: number) => {
@@ -889,13 +1010,13 @@ export function CATEditorV2PerfDemo() {
     (index: number, instance: CATEditorRef | null) => {
       if (instance) {
         editorRefsMap.current.set(index, instance)
-        crossHistory.registerEditor(index, instance)
+        crossHistoryRef.current.registerEditor(index, instance)
       } else {
         editorRefsMap.current.delete(index)
-        crossHistory.unregisterEditor(index)
+        crossHistoryRef.current.unregisterEditor(index)
       }
     },
-    [crossHistory],
+    [],
   )
 
   const focusedRowRef = useRef(focusedRow)
@@ -903,59 +1024,56 @@ export function CATEditorV2PerfDemo() {
   const rowCountRef = useRef(rowCount)
   rowCountRef.current = rowCount
 
-  const handleEditorKeyDown = useCallback(
-    (event: KeyboardEvent): boolean => {
-      const row = focusedRowRef.current
-      const key = event.key.toLowerCase()
-      if ((event.ctrlKey || event.metaKey) && !event.altKey) {
-        if (key === 'z' && !event.shiftKey) {
-          event.preventDefault()
-          crossHistory.undo()
-          return true
-        }
-        if (key === 'y' || (key === 'z' && event.shiftKey)) {
-          event.preventDefault()
-          crossHistory.redo()
+  const handleEditorKeyDown = useCallback((event: KeyboardEvent): boolean => {
+    const row = focusedRowRef.current
+    const key = event.key.toLowerCase()
+    if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+      if (key === 'z' && !event.shiftKey) {
+        event.preventDefault()
+        crossHistoryRef.current.undo()
+        return true
+      }
+      if (key === 'y' || (key === 'z' && event.shiftKey)) {
+        event.preventDefault()
+        crossHistoryRef.current.redo()
+        return true
+      }
+    }
+    if (row === null) return false
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      const editorRef = editorRefsMap.current.get(row)
+      if (!editorRef) return false
+      const sel = editorRef.getSelection()
+      if (!sel || sel.anchor !== sel.focus) return false
+      const navigateTo = (targetRow: number, position: 'start' | 'end') => {
+        virtualizerRef.current?.scrollToIndex(targetRow, { align: 'center' })
+        requestAnimationFrame(() => {
+          const targetRef = editorRefsMap.current.get(targetRow)
+          if (targetRef) {
+            if (position === 'end') targetRef.focusEnd()
+            else targetRef.focusStart()
+          }
+        })
+      }
+      if (event.key === 'ArrowUp' && sel.anchor === 0) {
+        if (row > 0) {
+          navigateTo(row - 1, 'end')
           return true
         }
       }
-      if (row === null) return false
-      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-        const editorRef = editorRefsMap.current.get(row)
-        if (!editorRef) return false
-        const sel = editorRef.getSelection()
-        if (!sel || sel.anchor !== sel.focus) return false
-        const navigateTo = (targetRow: number, position: 'start' | 'end') => {
-          virtualizerRef.current?.scrollToIndex(targetRow, { align: 'center' })
-          requestAnimationFrame(() => {
-            const targetRef = editorRefsMap.current.get(targetRow)
-            if (targetRef) {
-              if (position === 'end') targetRef.focusEnd()
-              else targetRef.focusStart()
-            }
-          })
-        }
-        if (event.key === 'ArrowUp' && sel.anchor === 0) {
-          if (row > 0) {
-            navigateTo(row - 1, 'end')
+      if (event.key === 'ArrowDown') {
+        const text = editorRef.getText()
+        if (sel.anchor === text.length) {
+          const maxRow = rowCountRef.current - 1
+          if (row < maxRow) {
+            navigateTo(row + 1, 'start')
             return true
           }
         }
-        if (event.key === 'ArrowDown') {
-          const text = editorRef.getText()
-          if (sel.anchor === text.length) {
-            const maxRow = rowCountRef.current - 1
-            if (row < maxRow) {
-              navigateTo(row + 1, 'start')
-              return true
-            }
-          }
-        }
       }
-      return false
-    },
-    [crossHistory],
-  )
+    }
+    return false
+  }, [])
 
   const updateSpellcheck = useCallback(
     (idx: number, patch: Partial<ISpellCheckValidation>) =>
@@ -1000,18 +1118,6 @@ export function CATEditorV2PerfDemo() {
     [focusedRow],
   )
 
-  const rangeExtractor = useCallback(
-    (range: Range) => {
-      const result = defaultRangeExtractor(range)
-      if (focusedRow !== null && !result.includes(focusedRow)) {
-        result.push(focusedRow)
-        result.sort((a, b) => a - b)
-      }
-      return result
-    },
-    [focusedRow],
-  )
-
   const filteredRowIndices = useMemo(() => {
     if (!searchFilterRows || !searchKeywords.trim()) return null
     const terms = searchKeywords
@@ -1036,18 +1142,6 @@ export function CATEditorV2PerfDemo() {
       filteredRowIndices ? filteredRowIndices[visibleIndex] : visibleIndex,
     [filteredRowIndices],
   )
-
-  const parentRef = useRef<HTMLDivElement>(null)
-  const virtualizer = useVirtualizer({
-    count: effectiveRowCount,
-    getItemKey: toOriginalIndex,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => ROW_HEIGHT,
-    overscan: 5,
-    measureElement: (el) => el.getBoundingClientRect().height,
-    rangeExtractor,
-  })
-  virtualizerRef.current = virtualizer
 
   return (
     <div className="min-h-screen bg-linear-to-br from-background via-background to-muted/30 px-4 py-8 sm:px-6 lg:px-8">
@@ -1243,55 +1337,23 @@ export function CATEditorV2PerfDemo() {
           }}
         />
 
-        <div
-          key={resetKey}
-          ref={parentRef}
-          className="rounded-xl border border-border bg-card shadow-sm overflow-auto"
-          style={{ height: '75vh' }}
-        >
-          <div
-            style={{
-              height: `${virtualizer.getTotalSize()}px`,
-              width: '100%',
-              position: 'relative',
-            }}
-          >
-            {virtualizer.getVirtualItems().map((virtualRow) => {
-              const originalIndex = toOriginalIndex(virtualRow.index)
-              return (
-                <div
-                  key={virtualRow.key}
-                  data-index={virtualRow.index}
-                  ref={virtualizer.measureElement}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
-                  className="border-b border-border/50"
-                >
-                  <EditorRow
-                    index={originalIndex}
-                    text={getSampleText(originalIndex)}
-                    rules={rules}
-                    onFocus={handleFocusRow}
-                    onKeyDown={handleEditorKeyDown}
-                    registerRef={registerEditorRef}
-                    dir={editorDir}
-                    popoverDir={popoverDir}
-                    jpFont={jpFont}
-                    editable={editorEditable}
-                    readOnlySelectable={readOnlySelectable}
-                    openLinksOnClick={openLinksOnClick}
-                    disableHistory
-                  />
-                </div>
-              )
-            })}
-          </div>
-        </div>
+        <VirtualizedEditorList
+          resetKey={resetKey}
+          effectiveRowCount={effectiveRowCount}
+          toOriginalIndex={toOriginalIndex}
+          focusedRowRef={focusedRowRef}
+          rules={rules}
+          onFocusRow={handleFocusRow}
+          onKeyDown={handleEditorKeyDown}
+          registerRef={registerEditorRef}
+          dir={editorDir}
+          popoverDir={popoverDir}
+          jpFont={jpFont}
+          editable={editorEditable}
+          readOnlySelectable={readOnlySelectable}
+          openLinksOnClick={openLinksOnClick}
+          virtualizerRef={virtualizerRef}
+        />
       </div>
     </div>
   )
