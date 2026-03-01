@@ -514,6 +514,32 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
 const TOTAL_ROWS = 1000
 const ROW_HEIGHT = 140
 
+// ─── Massive-row stretching (AG Grid technique) ─────────────────────────────
+//
+// Browsers cap the max CSS height of a <div> (Chrome ~33 M px, Firefox ~17.9 M).
+// When the virtualizer's total size exceeds this limit the scrollbar can't reach
+// all rows.  We detect the browser's limit once, cap the container height, and
+// apply a linear scroll-position amplification so every row remains reachable.
+// When totalSize is below the limit this code is completely inert — zero overhead.
+
+let _detectedMaxDivHeight: number | null = null
+
+/** Detect (and cache) the browser's maximum element height. */
+function getMaxDivHeight(): number {
+  if (_detectedMaxDivHeight !== null) return _detectedMaxDivHeight
+  if (typeof document === 'undefined')
+    return (_detectedMaxDivHeight = 15_000_000)
+  const el = document.createElement('div')
+  el.style.cssText = 'position:absolute;visibility:hidden;height:1000000000px'
+  document.body.appendChild(el)
+  const detected = el.clientHeight
+  document.body.removeChild(el)
+  // 90 % safety margin so we never flirt with the actual browser ceiling
+  _detectedMaxDivHeight =
+    detected > 1_000_000 ? Math.floor(detected * 0.9) : 15_000_000
+  return _detectedMaxDivHeight
+}
+
 // ─── Sample text generation ──────────────────────────────────────────────────
 
 const SENTENCE_POOL = [
@@ -853,6 +879,20 @@ const VirtualizedEditorList = memo(function VirtualizedEditorList({
 }) {
   const parentRef = useRef<HTMLDivElement>(null)
 
+  // ─── Massive-row stretch state ────────────────────────────────────
+  // Refs let the observeElementOffset / scrollToFn callbacks (created once)
+  // always read the latest stretch parameters without re-creating the
+  // virtualizer.  Updated synchronously every render.
+  const stretchRef = useRef({
+    active: false,
+    /** Extra virtual pixels that don't fit in the capped container. */
+    additionalPx: 0,
+    /** Max physical scrollTop (= cappedHeight − viewportHeight). */
+    maxPhysicalScroll: 1,
+  })
+  /** Last physical scrollTop — written by the scroll handler. */
+  const physicalScrollRef = useRef(0)
+
   const rangeExtractor = useCallback(
     (range: Range) => {
       const result = defaultRangeExtractor(range)
@@ -874,7 +914,73 @@ const VirtualizedEditorList = memo(function VirtualizedEditorList({
     overscan: 5,
     measureElement: (el) => el.getBoundingClientRect().height,
     rangeExtractor,
+
+    // ── Stretch overrides ─────────────────────────────────────────────
+    // When stretching is *inactive* these behave identically to the
+    // built-in defaults, so normal-count scrolling is unaffected.
+
+    observeElementOffset: (instance, cb) => {
+      const el = instance.scrollElement
+      if (!el) return
+      const handler = (event?: Event) => {
+        const physical = el.scrollTop
+        physicalScrollRef.current = physical
+        const s = stretchRef.current
+        if (s.active && s.maxPhysicalScroll > 0) {
+          const pct = Math.min(1, physical / s.maxPhysicalScroll)
+          cb(physical + pct * s.additionalPx, event?.isTrusted ?? false)
+        } else {
+          cb(physical, event?.isTrusted ?? false)
+        }
+      }
+      handler() // report initial offset (isScrolling = false)
+      el.addEventListener('scroll', handler as EventListener, {
+        passive: true,
+      })
+      return () => el.removeEventListener('scroll', handler as EventListener)
+    },
+
+    scrollToFn: (offset, { adjustments, behavior }, instance) => {
+      const el = instance.scrollElement
+      if (!el) return
+      const total = offset + (adjustments ?? 0)
+      const s = stretchRef.current
+      let physical: number
+      if (s.active && s.maxPhysicalScroll > 0) {
+        // Reverse the amplification: virtual → physical
+        const ratio = 1 + s.additionalPx / s.maxPhysicalScroll
+        physical = total / ratio
+      } else {
+        physical = total
+      }
+      if (behavior === 'smooth') {
+        el.scrollTo({ top: physical, behavior: 'smooth' })
+      } else {
+        el.scrollTop = physical
+      }
+    },
   })
+
+  // ── Update stretch parameters (synchronous, every render) ─────────
+  const totalSize = virtualizer.getTotalSize()
+  const maxDiv = getMaxDivHeight()
+  const isStretching = totalSize > maxDiv
+  const cappedHeight = isStretching ? maxDiv : totalSize
+  const viewportH = parentRef.current?.clientHeight ?? 0
+
+  stretchRef.current = {
+    active: isStretching,
+    additionalPx: isStretching ? totalSize - maxDiv : 0,
+    maxPhysicalScroll: Math.max(1, cappedHeight - viewportH),
+  }
+
+  // Row offset for the current frame
+  const rowOffset = isStretching
+    ? Math.min(
+        1,
+        physicalScrollRef.current / stretchRef.current.maxPhysicalScroll,
+      ) * stretchRef.current.additionalPx
+    : 0
 
   // Keep parent ref in sync (synchronous — no re-render)
   virtualizerRef.current = virtualizer
@@ -888,7 +994,7 @@ const VirtualizedEditorList = memo(function VirtualizedEditorList({
     >
       <div
         style={{
-          height: `${virtualizer.getTotalSize()}px`,
+          height: `${cappedHeight}px`,
           width: '100%',
           position: 'relative',
         }}
@@ -905,7 +1011,7 @@ const VirtualizedEditorList = memo(function VirtualizedEditorList({
                 top: 0,
                 left: 0,
                 width: '100%',
-                transform: `translateY(${virtualRow.start}px)`,
+                transform: `translateY(${virtualRow.start - rowOffset}px)`,
               }}
               className="border-b border-border/50"
             >
@@ -941,10 +1047,49 @@ export function CATEditorV2PerfDemo() {
     typeof useVirtualizer<HTMLDivElement, Element>
   > | null>(null)
 
+  /**
+   * Scroll to a row, centering it in the viewport.
+   *
+   * When the virtualizer's total size exceeds the browser's max div height
+   * (stretching mode), tanstack-virtual's `scrollToIndex` gives up after 10
+   * internal retries because measured-vs-estimated drift prevents convergence.
+   * In that case we compute the physical scroll position directly.
+   */
+  const scrollToRow = useCallback((rowIndex: number) => {
+    const v = virtualizerRef.current
+    if (!v) return
+
+    const totalSize = v.getTotalSize()
+    const maxDiv = getMaxDivHeight()
+
+    if (totalSize <= maxDiv) {
+      // Normal mode — scrollToIndex converges fine
+      v.scrollToIndex(rowIndex, { align: 'center' })
+      return
+    }
+
+    // Stretching mode — bypass scrollToIndex entirely.
+    const scrollEl = v.scrollElement as HTMLElement | null
+    if (!scrollEl) return
+
+    const viewportH = scrollEl.clientHeight
+    const cappedHeight = maxDiv
+    const maxPhysicalScroll = Math.max(1, cappedHeight - viewportH)
+    const maxVirtualScroll = Math.max(1, totalSize - viewportH)
+
+    // Estimated virtual offset that would center the row:
+    const virtualCenter = rowIndex * ROW_HEIGHT + ROW_HEIGHT / 2
+    const virtualTarget = Math.max(
+      0,
+      Math.min(maxVirtualScroll, virtualCenter - viewportH / 2),
+    )
+
+    // Map virtual → physical
+    scrollEl.scrollTop = (virtualTarget / maxVirtualScroll) * maxPhysicalScroll
+  }, [])
+
   const crossHistory = useCrossEditorHistory({
-    scrollToRow: (rowIndex) => {
-      virtualizerRef.current?.scrollToIndex(rowIndex, { align: 'center' })
-    },
+    scrollToRow,
     getEditorRef: (rowIndex) => editorRefsMap.current.get(rowIndex),
     getRowCount: () => rowCountRef.current,
     getScrollElement: () =>
@@ -1235,7 +1380,7 @@ export function CATEditorV2PerfDemo() {
       const sel = editorRef.getSelection()
       if (!sel || sel.anchor !== sel.focus) return false
       const navigateTo = (targetRow: number, position: 'start' | 'end') => {
-        virtualizerRef.current?.scrollToIndex(targetRow, { align: 'center' })
+        scrollToRow(targetRow)
         requestAnimationFrame(() => {
           const targetRef = editorRefsMap.current.get(targetRow)
           if (targetRef) {
