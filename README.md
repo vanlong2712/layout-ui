@@ -7,6 +7,7 @@ A React component library featuring a powerful select component, a CAT (Computer
 - **Virtualized Select** — LayoutSelect with drag-and-drop, virtualization, and custom rendering.
 - **CAT Editor** — Lexical-based rich-text editor with spell-check, glossary/keyword highlighting, tag collapsing, quote detection, link detection, and @mention support.
 - **Detect Quotes** — Standalone utility for scanning text and returning all single/double quote ranges with contraction-aware escaping.
+- **Massive Virtualizer** — Drop-in `useVirtualizer` wrapper that transparently handles row counts exceeding the browser's maximum element height (~33 M px Chrome, ~17.9 M px Firefox) using AG Grid's "Stretching" technique. Zero overhead when not stretching.
 
 ## Demo
 
@@ -170,6 +171,13 @@ import {
   DetectQuotesOptionsSchema,
 } from '@longd/layout-ui/utils/detect-quotes'
 import type { QuoteRange } from '@longd/layout-ui/utils/detect-quotes'
+
+// Massive Virtualizer
+import {
+  useMassiveVirtualizer,
+  getMaxDivHeight,
+} from '@longd/layout-ui/hooks/use-massive-virtualizer'
+import type { MassiveVirtualizerResult } from '@longd/layout-ui/hooks/use-massive-virtualizer'
 ```
 
 ---
@@ -614,6 +622,131 @@ const result = detectQuotes(`it's a 'test'`, {
   escapeContractions: false,
 })
 // The apostrophe in "it's" is treated as a quote delimiter
+```
+
+---
+
+## useMassiveVirtualizer
+
+A drop-in wrapper around `@tanstack/react-virtual`'s `useVirtualizer` that transparently handles row counts exceeding the browser's maximum element height.
+
+### The problem
+
+Every browser caps the CSS height of a `<div>` (Chrome ≈ 33 M px, Firefox ≈ 17.9 M px). When a virtualizer container's `getTotalSize()` exceeds this ceiling the scroll-bar simply stops — rows beyond the cap are unreachable.
+
+### The solution
+
+`useMassiveVirtualizer` implements AG Grid's **Stretching** technique:
+
+1. Detect the browser's max height **once** (cached at 90 % of detected).
+2. Cap the container height at that limit.
+3. **Amplify** the physical scroll position into a virtual offset so the virtualizer thinks the container is taller than it really is.
+4. **Reverse** the amplification for programmatic scrolls (`scrollToIndex`, `scrollToOffset`).
+5. Subtract a `rowOffset` from each item's `translateY`.
+
+When `totalSize ≤ maxDivHeight` **all of this is completely inert** — zero runtime overhead, identical behavior to plain `useVirtualizer`.
+
+### Quick start
+
+```tsx
+import { useMassiveVirtualizer } from '@longd/layout-ui/hooks/use-massive-virtualizer'
+
+function VirtualList({ count }: { count: number }) {
+  const parentRef = useRef<HTMLDivElement>(null)
+
+  const { virtualizer, containerHeight, rowOffset, scrollToRow } =
+    useMassiveVirtualizer({
+      count,
+      getScrollElement: () => parentRef.current,
+      estimateSize: () => 140,
+      overscan: 5,
+    })
+
+  return (
+    <div ref={parentRef} style={{ height: '100%', overflow: 'auto' }}>
+      <div style={{ height: containerHeight, position: 'relative' }}>
+        {virtualizer.getVirtualItems().map((virtualRow) => (
+          <div
+            key={virtualRow.key}
+            data-index={virtualRow.index}
+            ref={virtualizer.measureElement}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              transform: `translateY(${virtualRow.start - rowOffset}px)`,
+            }}
+          >
+            Row {virtualRow.index}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+```
+
+### Key differences from plain `useVirtualizer`
+
+| Plain `useVirtualizer`              | `useMassiveVirtualizer`                          |
+| ----------------------------------- | ------------------------------------------------ |
+| Inner div: `height: getTotalSize()` | Inner div: `height: containerHeight`             |
+| `translateY(virtualRow.start)`      | `translateY(virtualRow.start - rowOffset)`       |
+| `scrollToIndex(i, { align })`       | `scrollToRow(i, { align })` — works at any scale |
+
+### API
+
+#### `useMassiveVirtualizer(options)`
+
+Accepts the same options as `useVirtualizer<HTMLDivElement, Element>`.
+
+Returns `MassiveVirtualizerResult`:
+
+| Property          | Type                                                                       | Description                                                                                                           |
+| ----------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `virtualizer`     | `ReturnType<typeof useVirtualizer>`                                        | The underlying tanstack-virtual instance.                                                                             |
+| `containerHeight` | `number`                                                                   | Height (px) for the inner spacer div. Capped at `maxDivHeight` when stretching.                                       |
+| `isStretching`    | `boolean`                                                                  | `true` when `totalSize > maxDivHeight`.                                                                               |
+| `rowOffset`       | `number`                                                                   | Offset (px) to subtract from `virtualRow.start` in `translateY`. Zero when not stretching.                            |
+| `scrollToRow`     | `(index: number, opts?: { align?: 'center' \| 'start' \| 'end' }) => void` | Scroll to a row. In stretching mode, bypasses the 10-attempt retry limit by computing the physical position directly. |
+
+#### `getMaxDivHeight()`
+
+Detect and cache the browser's maximum element height. Returns a conservative value (90 % of detected). Falls back to 15 M px in SSR / non-browser environments.
+
+```ts
+import { getMaxDivHeight } from '@longd/layout-ui/hooks/use-massive-virtualizer'
+
+const maxH = getMaxDivHeight() // e.g. ~29.7 M on Chrome
+```
+
+### Examples
+
+#### Programmatic scroll in stretching mode
+
+```tsx
+const { scrollToRow } = useMassiveVirtualizer({ count: 1_000_000, ... })
+
+// Jump to row 999,951 — works even when totalSize > maxDivHeight
+scrollToRow(999_951, { align: 'center' })
+```
+
+#### Conditional rendering based on stretching state
+
+```tsx
+const { isStretching } = useMassiveVirtualizer({ count, ... })
+
+return (
+  <>
+    {isStretching && (
+      <div className="text-xs text-muted-foreground">
+        Showing {count.toLocaleString()} rows (stretching active)
+      </div>
+    )}
+    {/* ... */}
+  </>
+)
 ```
 
 ---
