@@ -3,7 +3,7 @@ import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual'
 import { Redo2, Undo2, Zap } from 'lucide-react'
 
 import type { DetectQuotesOptions } from '@/utils/detect-quotes'
-import type { Range } from '@tanstack/react-virtual'
+import type { Range, Virtualizer } from '@tanstack/react-virtual'
 
 import type {
   CATEditorRef,
@@ -56,6 +56,8 @@ interface CrossEditorHistoryDeps {
   scrollToRow: (rowIndex: number) => void
   /** Try to get the CATEditorRef for a row (may be `undefined` if not mounted). */
   getEditorRef: (rowIndex: number) => CATEditorRef | undefined
+  /** Returns current compression state so applySnapshot can adapt strategy. */
+  getCompressionInfo: () => { compressed: boolean; ratio: number }
 }
 
 /** Consecutive edits to the same row within this window are merged. */
@@ -206,6 +208,18 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
       const text = entry[textKey]
       const selection = entry[selKey]
 
+      // Adapt strategy based on whether height compression is active.
+      // Non-compressed: fast path — single rAF, few attempts, native
+      //   scrollIntoView for caret centering.
+      // Compressed: need periodic re-scrolls (estimated positions are
+      //   imprecise), more attempts, and virtualizer-aware centering
+      //   (native scrollIntoView doesn't account for the ratio mapping).
+      const { compressed, ratio } = depsRef.current.getCompressionInfo()
+      const maxAttempts = compressed
+        ? Math.min(60, 20 + Math.ceil(ratio * 5))
+        : 15
+      const reScrollInterval = compressed ? 8 : 0 // only re-scroll when compressed
+
       const tryApply = (attemptsLeft: number, wasUnmounted: boolean) => {
         const ref = depsRef.current.getEditorRef(entry.rowIndex)
 
@@ -233,25 +247,39 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
           pushTo.push(entry)
           bumpRevision()
 
-          // If we had to scroll to an unmounted row, center the caret's
-          // DOM node in the scroll viewport after DOM reconciliation.
           if (wasUnmounted) {
-            requestAnimationFrame(() => {
-              const nativeSel = window.getSelection()
-              if (nativeSel && nativeSel.rangeCount > 0) {
-                const range = nativeSel.getRangeAt(0)
-                const node = range.startContainer
-                const el = node instanceof Element ? node : node.parentElement
-                if (el) {
-                  el.scrollIntoView({ block: 'center' })
+            if (compressed) {
+              // Compressed: use virtualizer's scrollToIndex which goes
+              // through our compression-aware scrollToFn.  Native
+              // scrollIntoView doesn't account for the ratio mapping.
+              requestAnimationFrame(() => {
+                depsRef.current.scrollToRow(entry.rowIndex)
+              })
+            } else {
+              // Non-compressed: native scrollIntoView is precise and fast.
+              requestAnimationFrame(() => {
+                const nativeSel = window.getSelection()
+                if (nativeSel && nativeSel.rangeCount > 0) {
+                  const range = nativeSel.getRangeAt(0)
+                  const node = range.startContainer
+                  const el = node instanceof Element ? node : node.parentElement
+                  if (el) {
+                    el.scrollIntoView({ block: 'center' })
+                  }
                 }
-              }
-            })
+              })
+            }
           }
           return
         }
 
         if (attemptsLeft > 0) {
+          // In compressed mode, re-issue scrollToRow periodically because
+          // estimated row positions may be imprecise — repeated scrolls
+          // let the virtualizer converge as it measures nearby rows.
+          if (reScrollInterval > 0 && attemptsLeft % reScrollInterval === 0) {
+            depsRef.current.scrollToRow(entry.rowIndex)
+          }
           pendingActionRef.current = setTimeout(
             () => tryApply(attemptsLeft - 1, true),
             60,
@@ -274,7 +302,16 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
 
       // Editor not mounted — scroll to the row and poll until it appears.
       depsRef.current.scrollToRow(entry.rowIndex)
-      requestAnimationFrame(() => tryApply(30, true)) // 30 × 60ms ≈ 1.8s
+      if (compressed) {
+        // Double-rAF gives the virtualizer two frames to process the
+        // scroll and render the target range before we start polling.
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => tryApply(maxAttempts, true))
+        })
+      } else {
+        // Single rAF is sufficient without compression.
+        requestAnimationFrame(() => tryApply(maxAttempts, true))
+      }
     },
     [bumpRevision],
   )
@@ -312,21 +349,58 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
 
   void revision
 
-  return {
-    registerEditor,
-    unregisterEditor,
-    undo,
-    redo,
-    clearHistory,
-    canUndo,
-    canRedo,
-  }
+  return useMemo(
+    () => ({
+      registerEditor,
+      unregisterEditor,
+      undo,
+      redo,
+      clearHistory,
+      canUndo,
+      canRedo,
+    }),
+    // Callbacks are stable (useCallback with stable deps).
+    // Only canUndo/canRedo change — and only on edits, not scroll.
+    [canUndo, canRedo],
+  )
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const TOTAL_ROWS = 1000
 const ROW_HEIGHT = 140
+
+// ─── Height compression for massive row counts ──────────────────────────────
+//
+// Browsers cap the maximum height of a DOM element (Chrome ≈ 32 M px,
+// Firefox ≈ 17 M px, Safari ≈ 32 M px).  When the total height of all rows
+// exceeds this limit the scrollbar cannot reach the bottom of the list.
+//
+// We use AG Grid's "stretching" technique: cap the container div at a safe
+// maximum, then remap scroll positions so the virtualizer sees the full
+// logical range while the DOM stays within browser limits.  The trade-off
+// is that scrolling appears faster (rows move proportionally more per px
+// of scroll) — this is unavoidable when mapping a larger range into a
+// smaller one.
+//
+// See: https://www.ag-grid.com/javascript-data-grid/massive-row-count/
+
+/** Safe maximum div height — conservatively below all major browser limits. */
+const MAX_DIV_HEIGHT = 15_000_000
+
+/**
+ * Mutable compression state, updated synchronously in the scroll handler
+ * so it is always fresh when React re-renders (triggered by the same
+ * scroll event via the virtualizer).
+ */
+interface CompressionState {
+  /** `true` when total row height exceeds `MAX_DIV_HEIGHT`. */
+  enabled: boolean
+  /** `trueScrollRange / cappedScrollRange`.  Always ≥ 1. */
+  ratio: number
+  /** Pixels to subtract from each row's true position: `mappedScroll − actualScroll`. */
+  offset: number
+}
 
 // ─── Sample text generation ──────────────────────────────────────────────────
 
@@ -628,6 +702,236 @@ const EditorRow = memo(function EditorRow({
   )
 })
 
+// ─── Virtualised scroll area (isolated from parent re-renders) ───────────────
+//
+// By hosting `useVirtualizer` inside this memo'd child component, scroll-
+// triggered re-renders are confined here.  The parent (toolbar, header,
+// legend, undo/redo, snippets panel) DOES NOT re-render during scroll.
+
+const getEstimateSize = () => ROW_HEIGHT
+const getMeasureElement = (el: Element) => el.getBoundingClientRect().height
+
+interface VirtualScrollAreaProps {
+  resetKey: number
+  effectiveRowCount: number
+  toOriginalIndex: (index: number) => number
+  rangeExtractor: (range: Range) => Array<number>
+  dynamicHeight: boolean
+  rules: Array<MooRule>
+  editorDir: 'ltr' | 'rtl' | 'auto'
+  popoverDir: 'ltr' | 'rtl' | 'auto' | 'inherit'
+  jpFont: boolean
+  editorEditable: boolean
+  readOnlySelectable: boolean
+  openLinksOnClick: boolean
+  onFocusRow: (index: number) => void
+  onEditorKeyDown: (event: KeyboardEvent) => boolean
+  registerEditorRef: (index: number, instance: CATEditorRef | null) => void
+  virtualizerRef: React.MutableRefObject<ReturnType<
+    typeof useVirtualizer<HTMLDivElement, Element>
+  > | null>
+  /** Shared ref so the parent (cross-editor history) can read compression state. */
+  compressionRef: React.MutableRefObject<CompressionState>
+}
+
+const VirtualScrollArea = memo(function VirtualScrollArea({
+  resetKey,
+  effectiveRowCount,
+  toOriginalIndex,
+  rangeExtractor,
+  dynamicHeight,
+  rules,
+  editorDir,
+  popoverDir,
+  jpFont,
+  editorEditable,
+  readOnlySelectable,
+  openLinksOnClick,
+  onFocusRow,
+  onEditorKeyDown,
+  registerEditorRef,
+  virtualizerRef,
+  compressionRef,
+}: VirtualScrollAreaProps) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const getScrollElement = useCallback(() => scrollRef.current, [])
+
+  const observeElementOffset = useCallback(
+    (
+      instance: Virtualizer<HTMLDivElement, Element>,
+      cb: (offset: number, isScrolling: boolean) => void,
+    ) => {
+      const element = instance.scrollElement
+      if (!element) return
+
+      let scrolling = false
+      let scrollEndTimer: ReturnType<typeof setTimeout> | null = null
+
+      const report = () => {
+        const scrollTop = element.scrollTop
+        const trueTotal = instance.getTotalSize()
+
+        if (trueTotal <= MAX_DIV_HEIGHT) {
+          compressionRef.current = { enabled: false, ratio: 1, offset: 0 }
+          cb(scrollTop, scrolling)
+          return
+        }
+
+        const viewportHeight = element.clientHeight
+        const cappedHeight = MAX_DIV_HEIGHT
+        const maxCappedScroll = Math.max(1, cappedHeight - viewportHeight)
+        const maxTrueScroll = Math.max(1, trueTotal - viewportHeight)
+        const ratio = maxTrueScroll / maxCappedScroll
+        const mappedScroll = scrollTop * ratio
+        const offset = mappedScroll - scrollTop
+
+        compressionRef.current = { enabled: true, ratio, offset }
+        cb(mappedScroll, scrolling)
+      }
+
+      const onScroll = () => {
+        scrolling = true
+        report()
+        if (scrollEndTimer) clearTimeout(scrollEndTimer)
+        scrollEndTimer = setTimeout(() => {
+          scrolling = false
+          report()
+        }, instance.options.isScrollingResetDelay)
+      }
+
+      element.addEventListener('scroll', onScroll, { passive: true })
+      report()
+
+      return () => {
+        element.removeEventListener('scroll', onScroll)
+        if (scrollEndTimer) clearTimeout(scrollEndTimer)
+      }
+    },
+    [],
+  )
+
+  const scrollToFn = useCallback(
+    (
+      offset: number,
+      options: { adjustments?: number; behavior?: ScrollBehavior },
+      instance: Virtualizer<HTMLDivElement, Element>,
+    ) => {
+      const element = instance.scrollElement
+      if (!element) return
+
+      const { ratio, enabled } = compressionRef.current
+      const trueOffset = offset + (options.adjustments ?? 0)
+      const actualOffset = enabled ? trueOffset / ratio : trueOffset
+
+      element.scrollTo({
+        top: actualOffset,
+        behavior: options.behavior,
+      })
+    },
+    [],
+  )
+
+  const virtualizer = useVirtualizer({
+    count: effectiveRowCount,
+    getItemKey: toOriginalIndex,
+    getScrollElement,
+    estimateSize: getEstimateSize,
+    overscan: 5,
+    measureElement: getMeasureElement,
+    rangeExtractor,
+    observeElementOffset,
+    scrollToFn,
+    useAnimationFrameWithResizeObserver: true,
+  })
+  virtualizerRef.current = virtualizer
+
+  const totalSize = virtualizer.getTotalSize()
+  const compressionActive = totalSize > MAX_DIV_HEIGHT
+  const containerHeight = compressionActive ? MAX_DIV_HEIGHT : totalSize
+  const scrollOffset = virtualizer.scrollOffset ?? 0
+
+  return (
+    <>
+      {compressionActive && (
+        <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md px-3 py-1.5">
+          Height compression active &mdash;{' '}
+          <strong>{effectiveRowCount.toLocaleString()}</strong> rows &times;{' '}
+          {ROW_HEIGHT}px ={' '}
+          <strong>
+            {((effectiveRowCount * ROW_HEIGHT) / 1_000_000).toFixed(1)}M px
+          </strong>
+          , capped at{' '}
+          <strong>{(MAX_DIV_HEIGHT / 1_000_000).toFixed(0)}M px</strong>. Scroll
+          ~&times;
+          <strong>
+            {((effectiveRowCount * ROW_HEIGHT) / MAX_DIV_HEIGHT).toFixed(1)}
+          </strong>
+          . Row height: {dynamicHeight ? 'dynamic' : 'fixed'}.
+        </p>
+      )}
+
+      <div
+        key={resetKey}
+        ref={scrollRef}
+        className="rounded-xl border border-border bg-card shadow-sm overflow-auto"
+        style={{
+          height: '75vh',
+          overflowAnchor: 'none',
+        }}
+      >
+        <div style={{ height: `${containerHeight}px`, width: '100%' }}>
+          <div
+            style={{
+              position: 'sticky',
+              top: 0,
+              contain: 'layout style',
+            }}
+          >
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const originalIndex = toOriginalIndex(virtualRow.index)
+              return (
+                <div
+                  key={virtualRow.key}
+                  data-index={virtualRow.index}
+                  ref={dynamicHeight ? virtualizer.measureElement : undefined}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    ...(!dynamicHeight && {
+                      height: ROW_HEIGHT,
+                      overflow: 'hidden',
+                    }),
+                    transform: `translateY(${virtualRow.start - scrollOffset}px)`,
+                  }}
+                  className="border-b border-border/50"
+                >
+                  <EditorRow
+                    index={originalIndex}
+                    text={getSampleText(originalIndex)}
+                    rules={rules}
+                    onFocus={onFocusRow}
+                    onKeyDown={onEditorKeyDown}
+                    registerRef={registerEditorRef}
+                    dir={editorDir}
+                    popoverDir={popoverDir}
+                    jpFont={jpFont}
+                    editable={editorEditable}
+                    readOnlySelectable={readOnlySelectable}
+                    openLinksOnClick={openLinksOnClick}
+                    disableHistory
+                  />
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    </>
+  )
+})
+
 // ─── Main demo component ─────────────────────────────────────────────────────
 
 export function CATEditorV2PerfDemo() {
@@ -637,11 +941,21 @@ export function CATEditorV2PerfDemo() {
     typeof useVirtualizer<HTMLDivElement, Element>
   > | null>(null)
 
+  const compressionRef = useRef<CompressionState>({
+    enabled: false,
+    ratio: 1,
+    offset: 0,
+  })
+
   const crossHistory = useCrossEditorHistory({
     scrollToRow: (rowIndex) => {
       virtualizerRef.current?.scrollToIndex(rowIndex, { align: 'center' })
     },
     getEditorRef: (rowIndex) => editorRefsMap.current.get(rowIndex),
+    getCompressionInfo: () => ({
+      compressed: compressionRef.current.enabled,
+      ratio: compressionRef.current.ratio,
+    }),
   })
 
   const [spellcheckEnabled, setSpellcheckEnabled] = useState(true)
@@ -698,6 +1012,7 @@ export function CATEditorV2PerfDemo() {
   const flashDemoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [rowCount, setRowCount] = useState(TOTAL_ROWS)
+  const [dynamicHeight, setDynamicHeight] = useState(true)
 
   const updateKeyword = useCallback(
     (
@@ -876,26 +1191,35 @@ export function CATEditorV2PerfDemo() {
     setReadOnlySelectable(false)
     setOpenLinksOnClick(true)
     setRowCount(TOTAL_ROWS)
-    crossHistory.clearHistory()
+    setDynamicHeight(true)
+    crossHistoryRef.current.clearHistory()
     setResetKey((k) => k + 1)
-  }, [crossHistory])
+  }, [])
 
   const [focusedRow, setFocusedRow] = useState<number | null>(null)
   const handleFocusRow = useCallback((index: number) => {
     setFocusedRow(index)
   }, [])
 
+  // Ref keeps crossHistory access stable so callbacks below have no deps
+  // on the crossHistory object reference (which changes when canUndo/canRedo
+  // toggle).  This is critical: without it, registerEditorRef and
+  // handleEditorKeyDown would get new references every time canUndo/canRedo
+  // changes, breaking EditorRow's memo.
+  const crossHistoryRef = useRef(crossHistory)
+  crossHistoryRef.current = crossHistory
+
   const registerEditorRef = useCallback(
     (index: number, instance: CATEditorRef | null) => {
       if (instance) {
         editorRefsMap.current.set(index, instance)
-        crossHistory.registerEditor(index, instance)
+        crossHistoryRef.current.registerEditor(index, instance)
       } else {
         editorRefsMap.current.delete(index)
-        crossHistory.unregisterEditor(index)
+        crossHistoryRef.current.unregisterEditor(index)
       }
     },
-    [crossHistory],
+    [],
   )
 
   const focusedRowRef = useRef(focusedRow)
@@ -903,59 +1227,56 @@ export function CATEditorV2PerfDemo() {
   const rowCountRef = useRef(rowCount)
   rowCountRef.current = rowCount
 
-  const handleEditorKeyDown = useCallback(
-    (event: KeyboardEvent): boolean => {
-      const row = focusedRowRef.current
-      const key = event.key.toLowerCase()
-      if ((event.ctrlKey || event.metaKey) && !event.altKey) {
-        if (key === 'z' && !event.shiftKey) {
-          event.preventDefault()
-          crossHistory.undo()
-          return true
-        }
-        if (key === 'y' || (key === 'z' && event.shiftKey)) {
-          event.preventDefault()
-          crossHistory.redo()
+  const handleEditorKeyDown = useCallback((event: KeyboardEvent): boolean => {
+    const row = focusedRowRef.current
+    const key = event.key.toLowerCase()
+    if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+      if (key === 'z' && !event.shiftKey) {
+        event.preventDefault()
+        crossHistoryRef.current.undo()
+        return true
+      }
+      if (key === 'y' || (key === 'z' && event.shiftKey)) {
+        event.preventDefault()
+        crossHistoryRef.current.redo()
+        return true
+      }
+    }
+    if (row === null) return false
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      const editorRef = editorRefsMap.current.get(row)
+      if (!editorRef) return false
+      const sel = editorRef.getSelection()
+      if (!sel || sel.anchor !== sel.focus) return false
+      const navigateTo = (targetRow: number, position: 'start' | 'end') => {
+        virtualizerRef.current?.scrollToIndex(targetRow, { align: 'center' })
+        requestAnimationFrame(() => {
+          const targetRef = editorRefsMap.current.get(targetRow)
+          if (targetRef) {
+            if (position === 'end') targetRef.focusEnd()
+            else targetRef.focusStart()
+          }
+        })
+      }
+      if (event.key === 'ArrowUp' && sel.anchor === 0) {
+        if (row > 0) {
+          navigateTo(row - 1, 'end')
           return true
         }
       }
-      if (row === null) return false
-      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-        const editorRef = editorRefsMap.current.get(row)
-        if (!editorRef) return false
-        const sel = editorRef.getSelection()
-        if (!sel || sel.anchor !== sel.focus) return false
-        const navigateTo = (targetRow: number, position: 'start' | 'end') => {
-          virtualizerRef.current?.scrollToIndex(targetRow, { align: 'center' })
-          requestAnimationFrame(() => {
-            const targetRef = editorRefsMap.current.get(targetRow)
-            if (targetRef) {
-              if (position === 'end') targetRef.focusEnd()
-              else targetRef.focusStart()
-            }
-          })
-        }
-        if (event.key === 'ArrowUp' && sel.anchor === 0) {
-          if (row > 0) {
-            navigateTo(row - 1, 'end')
+      if (event.key === 'ArrowDown') {
+        const text = editorRef.getText()
+        if (sel.anchor === text.length) {
+          const maxRow = rowCountRef.current - 1
+          if (row < maxRow) {
+            navigateTo(row + 1, 'start')
             return true
           }
         }
-        if (event.key === 'ArrowDown') {
-          const text = editorRef.getText()
-          if (sel.anchor === text.length) {
-            const maxRow = rowCountRef.current - 1
-            if (row < maxRow) {
-              navigateTo(row + 1, 'start')
-              return true
-            }
-          }
-        }
       }
-      return false
-    },
-    [crossHistory],
-  )
+    }
+    return false
+  }, [])
 
   const updateSpellcheck = useCallback(
     (idx: number, patch: Partial<ISpellCheckValidation>) =>
@@ -990,27 +1311,26 @@ export function CATEditorV2PerfDemo() {
     (annId: string, durationMs = 5000) => {
       if (flashDemoTimerRef.current) clearTimeout(flashDemoTimerRef.current)
       setFlashedSpellcheckId(annId)
-      if (focusedRow !== null) {
-        editorRefsMap.current.get(focusedRow)?.flashHighlight(annId, durationMs)
+      const fr = focusedRowRef.current
+      if (fr !== null) {
+        editorRefsMap.current.get(fr)?.flashHighlight(annId, durationMs)
       }
       flashDemoTimerRef.current = setTimeout(() => {
         setFlashedSpellcheckId(null)
       }, durationMs)
     },
-    [focusedRow],
+    [],
   )
 
-  const rangeExtractor = useCallback(
-    (range: Range) => {
-      const result = defaultRangeExtractor(range)
-      if (focusedRow !== null && !result.includes(focusedRow)) {
-        result.push(focusedRow)
-        result.sort((a, b) => a - b)
-      }
-      return result
-    },
-    [focusedRow],
-  )
+  const rangeExtractor = useCallback((range: Range) => {
+    const result = defaultRangeExtractor(range)
+    const fr = focusedRowRef.current
+    if (fr !== null && !result.includes(fr)) {
+      result.push(fr)
+      result.sort((a, b) => a - b)
+    }
+    return result
+  }, [])
 
   const filteredRowIndices = useMemo(() => {
     if (!searchFilterRows || !searchKeywords.trim()) return null
@@ -1037,17 +1357,22 @@ export function CATEditorV2PerfDemo() {
     [filteredRowIndices],
   )
 
-  const parentRef = useRef<HTMLDivElement>(null)
-  const virtualizer = useVirtualizer({
-    count: effectiveRowCount,
-    getItemKey: toOriginalIndex,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => ROW_HEIGHT,
-    overscan: 5,
-    measureElement: (el) => el.getBoundingClientRect().height,
-    rangeExtractor,
-  })
-  virtualizerRef.current = virtualizer
+  // Stable snippet/flash callbacks (use focusedRowRef to avoid deps on focusedRow)
+  const handleInsertText = useCallback((text: string) => {
+    const fr = focusedRowRef.current
+    if (fr !== null) editorRefsMap.current.get(fr)?.insertText(text)
+  }, [])
+  const handleSetText = useCallback((text: string) => {
+    const fr = focusedRowRef.current
+    if (fr !== null) editorRefsMap.current.get(fr)?.setText(text)
+  }, [])
+  const handleFlashRange = useCallback(
+    (start: number, end: number, ms?: number) => {
+      const fr = focusedRowRef.current
+      if (fr !== null) editorRefsMap.current.get(fr)?.flashRange(start, end, ms)
+    },
+    [],
+  )
 
   return (
     <div className="min-h-screen bg-linear-to-br from-background via-background to-muted/30 px-4 py-8 sm:px-6 lg:px-8">
@@ -1059,7 +1384,8 @@ export function CATEditorV2PerfDemo() {
           </h1>
           <p className="text-sm text-muted-foreground leading-relaxed max-w-2xl">
             Stress-test with <strong>{rowCount.toLocaleString()}</strong>{' '}
-            virtualized rows &middot; dynamic height &middot;{' '}
+            virtualized rows &middot; {dynamicHeight ? 'dynamic' : 'fixed'}{' '}
+            height &middot;{' '}
             <code className="text-xs bg-muted px-1 rounded">
               @tanstack/react-virtual
             </code>{' '}
@@ -1146,24 +1472,37 @@ export function CATEditorV2PerfDemo() {
           readOnlySelectable={readOnlySelectable}
           onReadOnlySelectableChange={setReadOnlySelectable}
           settingsExtra={
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Row count</Label>
-              <Input
-                className="h-7 text-xs"
-                type="number"
-                min={1}
-                max={10000}
-                value={rowCount}
-                onChange={(e) =>
-                  setRowCount(
-                    Math.max(
-                      1,
-                      Math.min(1000000, parseInt(e.target.value) || 1),
-                    ),
-                  )
-                }
-              />
-            </div>
+            <>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">
+                  Row count
+                </Label>
+                <Input
+                  className="h-7 text-xs"
+                  type="number"
+                  min={1}
+                  max={10000000}
+                  value={rowCount}
+                  onChange={(e) =>
+                    setRowCount(
+                      Math.max(
+                        1,
+                        Math.min(10_000_000, parseInt(e.target.value) || 1),
+                      ),
+                    )
+                  }
+                />
+              </div>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none pt-1">
+                <input
+                  type="checkbox"
+                  checked={dynamicHeight}
+                  onChange={(e) => setDynamicHeight(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-border"
+                />
+                Dynamic row height
+              </label>
+            </>
           }
           searchValue={searchInput}
           onSearchChange={(e) => {
@@ -1226,72 +1565,30 @@ export function CATEditorV2PerfDemo() {
           snippets={TEXT_SNIPPETS}
           flashRanges={FLASH_RANGES}
           disabled={focusedRow === null}
-          onInsertText={(text) => {
-            if (focusedRow !== null) {
-              editorRefsMap.current.get(focusedRow)?.insertText(text)
-            }
-          }}
-          onSetText={(text) => {
-            if (focusedRow !== null) {
-              editorRefsMap.current.get(focusedRow)?.setText(text)
-            }
-          }}
-          onFlashRange={(start, end, ms) => {
-            if (focusedRow !== null) {
-              editorRefsMap.current.get(focusedRow)?.flashRange(start, end, ms)
-            }
-          }}
+          onInsertText={handleInsertText}
+          onSetText={handleSetText}
+          onFlashRange={handleFlashRange}
         />
 
-        <div
-          key={resetKey}
-          ref={parentRef}
-          className="rounded-xl border border-border bg-card shadow-sm overflow-auto"
-          style={{ height: '75vh' }}
-        >
-          <div
-            style={{
-              height: `${virtualizer.getTotalSize()}px`,
-              width: '100%',
-              position: 'relative',
-            }}
-          >
-            {virtualizer.getVirtualItems().map((virtualRow) => {
-              const originalIndex = toOriginalIndex(virtualRow.index)
-              return (
-                <div
-                  key={virtualRow.key}
-                  data-index={virtualRow.index}
-                  ref={virtualizer.measureElement}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
-                  className="border-b border-border/50"
-                >
-                  <EditorRow
-                    index={originalIndex}
-                    text={getSampleText(originalIndex)}
-                    rules={rules}
-                    onFocus={handleFocusRow}
-                    onKeyDown={handleEditorKeyDown}
-                    registerRef={registerEditorRef}
-                    dir={editorDir}
-                    popoverDir={popoverDir}
-                    jpFont={jpFont}
-                    editable={editorEditable}
-                    readOnlySelectable={readOnlySelectable}
-                    openLinksOnClick={openLinksOnClick}
-                    disableHistory
-                  />
-                </div>
-              )
-            })}
-          </div>
-        </div>
+        <VirtualScrollArea
+          resetKey={resetKey}
+          effectiveRowCount={effectiveRowCount}
+          toOriginalIndex={toOriginalIndex}
+          rangeExtractor={rangeExtractor}
+          dynamicHeight={dynamicHeight}
+          rules={rules}
+          editorDir={editorDir}
+          popoverDir={popoverDir}
+          jpFont={jpFont}
+          editorEditable={editorEditable}
+          readOnlySelectable={readOnlySelectable}
+          openLinksOnClick={openLinksOnClick}
+          onFocusRow={handleFocusRow}
+          onEditorKeyDown={handleEditorKeyDown}
+          registerEditorRef={registerEditorRef}
+          virtualizerRef={virtualizerRef}
+          compressionRef={compressionRef}
+        />
       </div>
     </div>
   )
