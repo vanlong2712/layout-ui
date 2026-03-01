@@ -227,7 +227,9 @@ export function useMassiveVirtualizer(
 
       // Read the measurement-accurate item position from the cache.
       const clampedIndex = Math.max(0, Math.min(rowIndex, v.options.count - 1))
-      const item = v.measurementsCache[clampedIndex]
+      const item = v.measurementsCache[clampedIndex] as
+        | (typeof v.measurementsCache)[number]
+        | undefined
 
       let virtualTarget: number
       if (item) {

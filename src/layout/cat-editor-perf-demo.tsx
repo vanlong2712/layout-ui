@@ -148,7 +148,7 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
 
           // Text unchanged — just track selection
           if (before && before.text === newText) {
-            if (newSel && before) before.selection = newSel
+            if (newSel) before.selection = newSel
             return
           }
 
@@ -225,33 +225,43 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
       const text = entry[textKey]
       const selection = entry[selKey]
 
-      /** Write text + selection to a mounted editor. */
-      const apply = (ref: CATEditorRef) => {
-        const textLen = text.length
-        const sel = selection ?? { anchor: 0, focus: 0 }
-        const clamped = {
-          anchor: Math.min(sel.anchor, textLen),
-          focus: Math.min(sel.focus, textLen),
-        }
+      const textLen = text.length
+      const sel = selection ?? { anchor: 0, focus: 0 }
+      const clamped = {
+        anchor: Math.min(sel.anchor, textLen),
+        focus: Math.min(sel.focus, textLen),
+      }
 
-        // Update lastKnown BEFORE setText so the update listener's
-        // text-comparison guard sees "no change".
-        lastKnownRef.current.set(entry.rowIndex, {
-          text,
-          selection: clamped,
-        })
+      // ── Commit to stacks IMMEDIATELY (before any async work) ──
+      // This prevents rapid undo/redo from losing entries: if the user
+      // fires undo again before the poll resolves, `cancelPending` kills
+      // the timer but the entry is already safely in `pushTo`.
+      pushTo.push(entry)
+
+      // Update lastKnown BEFORE setText so the update listener's
+      // text-comparison guard sees "no change".
+      lastKnownRef.current.set(entry.rowIndex, {
+        text,
+        selection: clamped,
+      })
+
+      bumpRevision()
+
+      /** Write text + selection to a mounted editor (DOM-only). */
+      const applyToEditor = (ref: CATEditorRef) => {
+        // Re-check lastKnown — a newer undo/redo may have overwritten
+        // our target row.  If so, skip the stale DOM write.
+        const current = lastKnownRef.current.get(entry.rowIndex)
+        if (current && current.text !== text) return
 
         ref.setText(text, { tag: 'cross-history' })
         ref.setSelection(clamped.anchor, clamped.focus)
-
-        pushTo.push(entry)
-        bumpRevision()
       }
 
       // ── Fast path: editor already mounted ──
       const immediate = depsRef.current.getEditorRef(entry.rowIndex)
       if (immediate) {
-        apply(immediate)
+        applyToEditor(immediate)
         depsRef.current.onAfterApply?.(entry.rowIndex, false)
         return
       }
@@ -266,7 +276,7 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
       const poll = () => {
         const ref = depsRef.current.getEditorRef(entry.rowIndex)
         if (ref) {
-          apply(ref)
+          applyToEditor(ref)
           // Re-scroll after apply to ensure centering (text change may
           // have shifted things in dynamic-height mode).
           requestAnimationFrame(() =>
@@ -282,10 +292,8 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
             depsRef.current.scrollToRow(entry.rowIndex, { align: 'center' })
           }
           pendingRef.current = setTimeout(poll, POLL_MS)
-        } else {
-          // Timed out — row never mounted
-          bumpRevision()
         }
+        // If timed out, entry is already in the stack — no data loss.
       }
 
       requestAnimationFrame(poll)
@@ -336,6 +344,12 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
 
 const TOTAL_ROWS = 1000
 const ROW_HEIGHT = 140
+/**
+ * Maximum row count.  TanStack Virtual creates a `measurementsCache` array
+ * with one object per row (~96 bytes each).  Beyond 100 K the sync build
+ * pass takes hundreds of ms and consumes ~100 MB, risking an OOM crash.
+ */
+const MAX_ROW_COUNT = 1_000_000
 
 // ─── Sample text generation ──────────────────────────────────────────────────
 
@@ -457,15 +471,14 @@ function generateSampleText(index: number): string {
   return text
 }
 
-const sampleTextsCache: Array<string> = []
+/**
+ * Generate sample text for a row index.  Deterministic (seeded RNG) so the
+ * same index always produces the same text.  No cache — generation is fast
+ * enough (~0.01 ms) and caching 1 M strings would consume ~500 MB.
+ */
 function getSampleText(index: number): string {
-  if (index < sampleTextsCache.length) return sampleTextsCache[index]
-  for (let i = sampleTextsCache.length; i <= index; i++) {
-    sampleTextsCache.push(generateSampleText(i))
-  }
-  return sampleTextsCache[index]
+  return generateSampleText(index)
 }
-for (let i = 0; i < TOTAL_ROWS; i++) getSampleText(i)
 
 // ─── Default rule data ───────────────────────────────────────────────────────
 
@@ -1310,13 +1323,13 @@ export function CATEditorPerfDemo() {
                   className="h-7 text-xs"
                   type="number"
                   min={1}
-                  max={10000}
+                  max={MAX_ROW_COUNT}
                   value={rowCount}
                   onChange={(e) =>
                     setRowCount(
                       Math.max(
                         1,
-                        Math.min(1000000, parseInt(e.target.value) || 1),
+                        Math.min(MAX_ROW_COUNT, parseInt(e.target.value) || 1),
                       ),
                     )
                   }
