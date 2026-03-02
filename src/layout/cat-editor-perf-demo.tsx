@@ -294,20 +294,19 @@ function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
 
       /** Write text + selection to a mounted editor (DOM-only). */
       const applyToEditor = (ref: CATEditorRef) => {
-        // Re-check lastKnown — a newer undo/redo may have overwritten
-        // our target row.  If so, skip the stale DOM write.
-        const current = lastKnownRef.current.get(entry.rowIndex)
-        if (current && current.text !== text) return
-
         // Order: setText → setSelection → focus.
-        // setSelection internally calls editor.focus(), but we call
-        // ref.focus() explicitly at the end as a safety net to ensure
-        // the DOM caret is visible after the HighlightsPlugin's rAF
-        // rebuilds the tree (the plugin now always saves/restores the
-        // Lexical model selection regardless of focus state).
         ref.setText(text, { tag: 'cross-history' })
         ref.setSelection(clamped.anchor, clamped.focus)
-        ref.focus()
+        // ref.focus()
+
+        // Re-assert lastKnown after applying.  On the slow path,
+        // `registerEditor` may have clobbered it with the stale
+        // `initialText` when the editor mounted.  This ensures the
+        // update listener's before-text is correct for the next edit.
+        lastKnownRef.current.set(entry.rowIndex, {
+          text,
+          selection: clamped,
+        })
       }
 
       // ── Fast path: editor already mounted ──
@@ -915,7 +914,7 @@ export function CATEditorPerfDemo() {
       // If editor is already mounted, focus immediately.
       const immediate = editorRefsMap.current.get(rowIndex)
       if (immediate) {
-        immediate.focusStart()
+        immediate.focusEnd()
         return
       }
 
@@ -924,7 +923,7 @@ export function CATEditorPerfDemo() {
       const poll = () => {
         const ref = editorRefsMap.current.get(rowIndex)
         if (ref) {
-          ref.focusStart()
+          ref.focusEnd()
           return
         }
         if (++attempts < 20) {
