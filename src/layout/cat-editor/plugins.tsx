@@ -18,12 +18,12 @@ import {
 import { useCallback, useEffect, useRef } from 'react'
 
 import { computeHighlightSegments } from './compute-segments'
+import { CODEPOINT_DISPLAY_MAP, NL_MARKER_PREFIX } from './constants'
 import {
-  CODEPOINT_DISPLAY_MAP,
-  NL_MARKER_PREFIX,
-  setCodepointOverrides,
-} from './constants'
-import { $createHighlightNode, $isHighlightNode } from './highlight-node'
+  $createHighlightNode,
+  $isHighlightNode,
+  HighlightNode,
+} from './highlight-node'
 import {
   $createMentionNode,
   $isMentionNode,
@@ -69,7 +69,7 @@ export function HighlightsPlugin({
 
   const applyHighlights = useCallback(() => {
     // Sync code-point display overrides from the editor-level prop
-    setCodepointOverrides(codepointDisplayMap)
+    HighlightNode.__codepointOverrides = codepointDisplayMap
 
     editor.update(
       () => {
@@ -87,8 +87,7 @@ export function HighlightsPlugin({
         const savedMentions: Array<SavedMention> = []
         let collectOffset = 0
 
-        for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
-          const p = paragraphs[pIdx]
+        for (const p of paragraphs) {
           let lineText = ''
           if ('getChildren' in p) {
             for (const child of (p as ElementNode).getChildren()) {
@@ -307,7 +306,7 @@ export function HighlightsPlugin({
             const typesArr = [
               ...new Set(
                 seg.annotations.map((a) => {
-                  if (a.type === 'glossary') return `glossary-${a.data.label}`
+                  if (a.type === 'keyword') return `keyword-${a.data.label}`
                   if (a.type === 'spellcheck')
                     return `spellcheck-${a.data.categoryId}`
                   return a.type
@@ -396,7 +395,7 @@ export function HighlightsPlugin({
               const types = [
                 ...new Set(
                   nlAnns.map((a) => {
-                    if (a.type === 'glossary') return `glossary-${a.data.label}`
+                    if (a.type === 'keyword') return `keyword-${a.data.label}`
                     if (a.type === 'spellcheck')
                       return `spellcheck-${a.data.categoryId}`
                     return a.type

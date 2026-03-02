@@ -89,7 +89,7 @@ export {
   KeyDownPlugin,
   PasteCleanupPlugin,
   ReadOnlySelectablePlugin,
-} from './plugins'
+} from './plugins/index'
 
 // Hooks (available for custom editor builds)
 export { useFlash } from './hooks/use-flash'

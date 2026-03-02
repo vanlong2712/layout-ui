@@ -40,7 +40,7 @@ export const Route = createFileRoute('/demo/cat-editor')({
 // ─── Default sample data ─────────────────────────────────────────────────────
 
 const SAMPLE_TEXT =
-  "The quick brown fox jumps over the layz dog. This sentance contains severl speling errors and some technical terms like API endpoint and HTTP request.\nTom & Jerry\u00A0say\u2009hello\u2003world\u200Bhidden\u2060join\u200Ahair.\tTabbed here.\n<a href='https://example.com'>Click <b>here</b> for more</a> info <br/> end.\nHello {{userName}}, your order ${orderId} is ready. Total: $amount — use code %PROMO to save.\nShe said 'run away' and he replied \'OK fine\\' before leaving.\nVisit https://github.com/lexical or www.example.com for details. Type @ to mention a user."
+  "The quick brown fox jumps over the layz dog. This sentance contains severl speling errors and some technical terms like API endpoint and HTTP request.\nTom & Jerry\u00A0say\u2009hello\u2003world\u200Bhidden\u2060join\u200Ahair.\tTabbed here.\n<a href='https://example.com'>Click <b>here</b> for more</a> info <br/> end.\nHello {{userName}}, your order ${orderId} is ready. Total: $amount — use code %PROMO to save.\nShe said 'run away' and he replied 'OK fine\\' before leaving.\nVisit https://github.com/lexical or www.example.com for details. Type @ to mention a user."
 
 const DEFAULT_SPELLCHECK: Array<ISpellCheckValidation> = [
   {
