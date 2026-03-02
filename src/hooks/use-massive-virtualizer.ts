@@ -76,11 +76,19 @@ export interface MassiveVirtualizerResult {
   isStretching: boolean
   /**
    * Offset (px) to **subtract** from each `virtualRow.start` in your
-   * `translateY`.  Zero when not stretching.
+   * `translateY`.  Zero when not stretching.  Pixel-rounded to avoid
+   * sub-pixel jitter from floating-point amplification.
    *
    * Usage: `transform: translateY(${virtualRow.start - rowOffset}px)`
    */
   rowOffset: number
+  /**
+   * Ratio of virtual-to-physical scroll speed.  1 when not stretching,
+   * higher when stretching (e.g. 4.67× for 1 M rows).  Useful for
+   * scaling `overscan` proportionally so the physical overscan distance
+   * stays roughly the same as in non-stretch mode.
+   */
+  stretchRatio: number
   /**
    * Scroll to a row by index, centering it in the viewport.
    *
@@ -107,6 +115,11 @@ export function useMassiveVirtualizer(
     maxPhysicalScroll: 1,
   })
   const physicalScrollRef = useRef(0)
+  // rowOffset is computed inside the scroll handler so it's always in sync
+  // with the amplified virtual offset the virtualizer receives.  Reading
+  // `physicalScrollRef` during render would lag by one frame, causing the
+  // `translateY(virtualRow.start - rowOffset)` to jitter in stretch mode.
+  const rowOffsetRef = useRef(0)
 
   // We need estimateSize for the scrollToRow fallback calculation.
   // Capture whatever the caller passed (it may be a closure that changes).
@@ -126,8 +139,14 @@ export function useMassiveVirtualizer(
         const s = stretchRef.current
         if (s.active && s.maxPhysicalScroll > 0) {
           const pct = Math.min(1, physical / s.maxPhysicalScroll)
+          // Keep rowOffset perfectly in sync with the amplified offset.
+          // Round to nearest pixel to avoid sub-pixel jitter from
+          // floating-point amplification (the stretch ratio can be ~4.67×,
+          // so 0.5 px of scrollTop rounding → ~2.3 px of visible jitter).
+          rowOffsetRef.current = Math.round(pct * s.additionalPx)
           cb(physical + pct * s.additionalPx, event?.isTrusted ?? false)
         } else {
+          rowOffsetRef.current = 0
           cb(physical, event?.isTrusted ?? false)
         }
       }
@@ -172,12 +191,10 @@ export function useMassiveVirtualizer(
     maxPhysicalScroll: Math.max(1, cappedHeight - viewportH),
   }
 
-  const rowOffset = isStretching
-    ? Math.min(
-        1,
-        physicalScrollRef.current / stretchRef.current.maxPhysicalScroll,
-      ) * stretchRef.current.additionalPx
-    : 0
+  // Read from the ref that was updated in the scroll handler.
+  // This ensures translateY(virtualRow.start - rowOffset) is consistent
+  // with the amplified offset the virtualizer used for layout.
+  const rowOffset = rowOffsetRef.current
 
   // ── scrollToRow ────────────────────────────────────────────────────
   // Stored in a ref so the returned function is stable across renders.
@@ -259,11 +276,16 @@ export function useMassiveVirtualizer(
     },
   )
 
+  const stretchRatio = isStretching
+    ? 1 + stretchRef.current.additionalPx / stretchRef.current.maxPhysicalScroll
+    : 1
+
   return {
     virtualizer,
     containerHeight: cappedHeight,
     isStretching,
     rowOffset,
+    stretchRatio,
     scrollToRow: scrollToRowRef.current,
   }
 }

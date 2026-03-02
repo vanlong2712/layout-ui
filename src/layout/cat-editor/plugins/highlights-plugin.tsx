@@ -41,48 +41,6 @@ import type {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-// ─── Mount-time highlight scheduler ──────────────────────────────────────────
-// When many editors mount simultaneously during virtualized scroll, running
-// applyHighlights() on each one in the same frame causes cascading layout
-// thrashing (each editor.update() → DOM rebuild → ResizeObserver → TanStack
-// recalculates range → mounts more editors → repeat).
-//
-// This scheduler ensures at most ONE editor's highlight rebuild runs per
-// animation frame, keeping each frame well within the 16 ms budget.
-// Editors that unmount before their turn (scrolled out of view) are skipped.
-
-interface MountJob {
-  apply: () => void
-  cancelled: boolean
-}
-
-const _mountQueue: Array<MountJob> = []
-let _mountRafId: number | null = null
-
-function _processMountQueue() {
-  _mountRafId = null
-  // Process one non-cancelled job per frame
-  while (_mountQueue.length > 0) {
-    const job = _mountQueue.shift()!
-    if (!job.cancelled) {
-      job.apply()
-      break
-    }
-  }
-  if (_mountQueue.length > 0) {
-    _mountRafId = requestAnimationFrame(_processMountQueue)
-  }
-}
-
-function scheduleMountHighlight(apply: () => void): MountJob {
-  const job: MountJob = { apply, cancelled: false }
-  _mountQueue.push(job)
-  if (_mountRafId === null) {
-    _mountRafId = requestAnimationFrame(_processMountQueue)
-  }
-  return job
-}
-
 // ──────────────────────────────────────────────────────────────────────────────
 
 /** Saved mention position recorded during the text-collection phase. */
@@ -448,20 +406,10 @@ export function HighlightsPlugin({
 }: HighlightsPluginProps) {
   const [editor] = useLexicalComposerContext()
   const rafRef = useRef<number | null>(null)
-  const mountJobRef = useRef<MountJob | null>(null)
-  const isMountedRef = useRef(false)
 
   const applyHighlights = useCallback(() => {
     // Sync codepoint overrides for this editor instance
     HighlightNode.__codepointOverrides = codepointDisplayMap
-
-    // Check focus BEFORE editor.update() — if the editor doesn't own
-    // focus, we must not restore selection, otherwise Lexical's DOM
-    // reconciliation steals focus from external inputs (e.g. search field).
-    const editorElement = editor.getRootElement()
-    const editorHasFocus =
-      editorElement != null &&
-      editorElement.contains(editorElement.ownerDocument.activeElement)
 
     editor.update(
       () => {
@@ -481,25 +429,28 @@ export function HighlightsPlugin({
         // 4. Update annotation map for popovers
         syncAnnotationMap(annotationMapRef, segments)
 
-        // 5. Save selection as global offsets
+        // 5. Save selection as global offsets.
+        //    ALWAYS save the Lexical model selection — not just when focused.
+        //    Cross-editor history sets text + selection on an editor that may
+        //    not yet have DOM focus when this rAF fires.  If we only save
+        //    when focused, we'd lose the caret by calling $setSelection(null)
+        //    after rebuild.
         let savedAnchor: number | null = null
         let savedFocus: number | null = null
-        if (editorHasFocus) {
-          const sel = $getSelection()
-          if ($isRangeSelection(sel)) {
-            savedAnchor = $pointToGlobalOffset(
-              sel.anchor.key,
-              sel.anchor.offset,
-            )
-            savedFocus = $pointToGlobalOffset(sel.focus.key, sel.focus.offset)
-          }
+        const sel = $getSelection()
+        if ($isRangeSelection(sel)) {
+          savedAnchor = $pointToGlobalOffset(sel.anchor.key, sel.anchor.offset)
+          savedFocus = $pointToGlobalOffset(sel.focus.key, sel.focus.offset)
         }
 
         // 6. Rebuild content tree with highlights + mentions
         $rebuildTree(root, fullText, segments, allMentions, rules)
 
-        // 7. Restore selection (only when editor is focused)
-        if (editorHasFocus && savedAnchor !== null && savedFocus !== null) {
+        // 7. Restore selection.
+        //    Always restore if we had one — Lexical only syncs the model
+        //    selection to the DOM when the editor is focused, so this won't
+        //    steal focus from external inputs.
+        if (savedAnchor !== null && savedFocus !== null) {
           const anchorPt = $globalOffsetToPoint(savedAnchor)
           const focusPt = $globalOffsetToPoint(savedFocus)
           if (anchorPt && focusPt) {
@@ -516,23 +467,12 @@ export function HighlightsPlugin({
     )
   }, [editor, rules, annotationMapRef, codepointDisplayMap])
 
-  // Run on mount and when rules change.
-  // On first mount: stagger via the global scheduler so that only ONE
-  // editor's highlight rebuild runs per animation frame (prevents the
-  // cascade of N simultaneous editor.update() calls during scroll).
-  // On subsequent runs (e.g. rules change): apply immediately.
+  // Run on mount and whenever rules change.
+  // useEffect already runs after paint, so calling applyHighlights()
+  // synchronously here only blocks the *next* frame.  For the ~10-15
+  // editors that mount during a virtualized scroll (visible + overscan),
+  // each applyHighlights() costs ~1 ms — well within the 16 ms budget.
   useEffect(() => {
-    if (!isMountedRef.current) {
-      isMountedRef.current = true
-      if (mountJobRef.current) mountJobRef.current.cancelled = true
-      mountJobRef.current = scheduleMountHighlight(applyHighlights)
-      return () => {
-        if (mountJobRef.current) {
-          mountJobRef.current.cancelled = true
-          mountJobRef.current = null
-        }
-      }
-    }
     applyHighlights()
   }, [applyHighlights])
 
