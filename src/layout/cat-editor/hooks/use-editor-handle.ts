@@ -219,6 +219,17 @@ export function useEditorHandle(
       flashRange: flash.flashRange,
       clearFlash: flash.clearFlash,
 
+      isFocused: () => {
+        const editor = editorRef.current
+        if (!editor) return false
+        const rootElement = editor.getRootElement()
+        return (
+          !!rootElement &&
+          !!document.activeElement &&
+          rootElement.contains(document.activeElement)
+        )
+      },
+
       getEditor: () => editorRef.current,
     }),
     [editorRef, savedSelectionRef, flash],

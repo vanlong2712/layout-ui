@@ -26,6 +26,7 @@ import {
   EditorGridStoreProvider,
   clearEditorRefs,
   deleteEditorRef,
+  getCrossHistory,
   getEditorRef,
   getVirtualizer,
   setEditorRef,
@@ -603,10 +604,6 @@ function CATEditorPerfDemoInner() {
     [store, scrollToRow],
   )
 
-  // Keep a mutable ref to the latest crossHistory for stable callbacks.
-  const crossHistoryRef = useRef(crossHistory)
-  crossHistoryRef.current = crossHistory
-
   const [spellcheckEnabled, setSpellcheckEnabled] = useState(true)
   const [lexiqaEnabled, setLexiqaEnabled] = useState(true)
   const [tbTargetEnabled, setTbTargetEnabled] = useState(true)
@@ -842,7 +839,7 @@ function CATEditorPerfDemoInner() {
     setFixedHeight(false)
     setIsStretching(false)
     setFocusedRow(store, null)
-    crossHistoryRef.current?.clearHistory()
+    getCrossHistory(store)?.clearHistory()
     setResetKey((k) => k + 1)
   }, [store])
 
@@ -851,7 +848,7 @@ function CATEditorPerfDemoInner() {
       setFixedHeight(checked)
       setIsStretching(false)
       setFocusedRow(store, null)
-      crossHistoryRef.current?.clearHistory()
+      getCrossHistory(store)?.clearHistory()
       clearEditorRefs(store)
       setVirtualizer(store, null)
       setResetKey((k) => k + 1)
@@ -870,10 +867,10 @@ function CATEditorPerfDemoInner() {
     (index: number, instance: CATEditorRef | null) => {
       if (instance) {
         setEditorRef(store, index, instance)
-        crossHistoryRef.current?.registerEditor(index, instance)
+        getCrossHistory(store)?.registerEditor(index, instance)
       } else {
         deleteEditorRef(store, index)
-        crossHistoryRef.current?.unregisterEditor(index)
+        getCrossHistory(store)?.unregisterEditor(index)
       }
     },
     [store],
@@ -891,12 +888,12 @@ function CATEditorPerfDemoInner() {
       if ((event.ctrlKey || event.metaKey) && !event.altKey) {
         if (key === 'z' && !event.shiftKey) {
           event.preventDefault()
-          crossHistoryRef.current?.undo()
+          getCrossHistory(store)?.undo()
           return true
         }
         if (key === 'y' || (key === 'z' && event.shiftKey)) {
           event.preventDefault()
-          crossHistoryRef.current?.redo()
+          getCrossHistory(store)?.redo()
           return true
         }
       }
@@ -1183,7 +1180,7 @@ function CATEditorPerfDemoInner() {
             variant="outline"
             size="sm"
             disabled={!crossHistory?.canUndo}
-            onClick={crossHistory?.undo}
+            onClick={() => crossHistory?.undo()}
             className="gap-1.5"
           >
             <Undo2 className="h-4 w-4" />
@@ -1193,7 +1190,7 @@ function CATEditorPerfDemoInner() {
             variant="outline"
             size="sm"
             disabled={!crossHistory?.canRedo}
-            onClick={crossHistory?.redo}
+            onClick={() => crossHistory?.redo()}
             className="gap-1.5"
           >
             <Redo2 className="h-4 w-4" />

@@ -46,12 +46,28 @@ export interface CrossEditorHistoryDeps {
   onAfterApply?: (rowIndex: number, wasScrolled: boolean) => void
 }
 
+/**
+ * Async guard passed to `undo()` / `redo()`.
+ * Called only when the operation crosses rows (target ≠ active row).
+ *
+ * - Resolve / return `true` / `void` → proceed normally.
+ * - Return `false` or reject → cancel, entry pushed back onto its stack.
+ */
+export type OnBeforeCrossApply = (
+  currentRowIndex: number,
+  targetRowIndex: number,
+) => Promise<boolean | void> | boolean | void
+
 /** Consecutive edits to the same row within this window are merged. */
 const HISTORY_MERGE_INTERVAL = 300
 
 export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
   const depsRef = useRef(deps)
   depsRef.current = deps
+
+  // The row that was most recently edited or restored via undo/redo.
+  // Used to detect "cross-row" operations for the `onBeforeCrossApply` guard.
+  const activeRowRef = useRef<number | null>(null)
 
   // Last known text + selection per row — survives unmount.
   const lastKnownRef = useRef<
@@ -179,6 +195,9 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
             pendingEntryRef.current = entry
             sealDebouncerRef.current!.maybeExecute()
           }
+
+          // Track this row as the active one
+          activeRowRef.current = rowIndex
 
           // New edit clears the redo stack
           redoStackRef.current.length = 0
@@ -322,17 +341,70 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
     [bumpRevision],
   )
 
-  const undo = useCallback(() => {
-    const entry = undoStackRef.current.pop()
-    if (!entry) return
-    applySnapshot(entry, 'beforeText', 'beforeSelection', redoStackRef.current)
-  }, [applySnapshot])
+  const undo = useCallback(
+    async (onBeforeCrossApply?: OnBeforeCrossApply) => {
+      const entry = undoStackRef.current.pop()
+      if (!entry) return
 
-  const redo = useCallback(() => {
-    const entry = redoStackRef.current.pop()
-    if (!entry) return
-    applySnapshot(entry, 'afterText', 'afterSelection', undoStackRef.current)
-  }, [applySnapshot])
+      // Cross-row guard
+      const isCross =
+        activeRowRef.current !== null && entry.rowIndex !== activeRowRef.current
+      if (isCross && onBeforeCrossApply) {
+        try {
+          const result = await onBeforeCrossApply(
+            activeRowRef.current!,
+            entry.rowIndex,
+          )
+          if (result === false) {
+            undoStackRef.current.push(entry)
+            return
+          }
+        } catch {
+          undoStackRef.current.push(entry)
+          return
+        }
+      }
+
+      activeRowRef.current = entry.rowIndex
+      applySnapshot(
+        entry,
+        'beforeText',
+        'beforeSelection',
+        redoStackRef.current,
+      )
+    },
+    [applySnapshot],
+  )
+
+  const redo = useCallback(
+    async (onBeforeCrossApply?: OnBeforeCrossApply) => {
+      const entry = redoStackRef.current.pop()
+      if (!entry) return
+
+      // Cross-row guard
+      const isCross =
+        activeRowRef.current !== null && entry.rowIndex !== activeRowRef.current
+      if (isCross && onBeforeCrossApply) {
+        try {
+          const result = await onBeforeCrossApply(
+            activeRowRef.current!,
+            entry.rowIndex,
+          )
+          if (result === false) {
+            redoStackRef.current.push(entry)
+            return
+          }
+        } catch {
+          redoStackRef.current.push(entry)
+          return
+        }
+      }
+
+      activeRowRef.current = entry.rowIndex
+      applySnapshot(entry, 'afterText', 'afterSelection', undoStackRef.current)
+    },
+    [applySnapshot],
+  )
 
   /** Reset all history (e.g. on full demo reset). */
   const clearHistory = useCallback(() => {
@@ -341,6 +413,7 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
     pendingEntryRef.current = null
     undoStackRef.current.length = 0
     redoStackRef.current.length = 0
+    activeRowRef.current = null
     for (const unreg of listenersRef.current.values()) unreg()
     listenersRef.current.clear()
     lastKnownRef.current.clear()

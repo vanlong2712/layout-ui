@@ -338,6 +338,8 @@ export interface CATEditorRef {
    *  Pass the same `anchor` and `focus` for a collapsed caret.
    *  The editor is focused automatically. */
   setSelection: (anchor: number, focus: number) => void
+  /** Return `true` when the Lexical editor's root element has DOM focus. */
+  isFocused: () => boolean
   /** Return the underlying Lexical editor instance, or `null` if not yet
    *  mounted.  Useful for advanced scenarios such as dispatching commands
    *  (e.g. `UNDO_COMMAND` / `REDO_COMMAND`) or registering listeners
