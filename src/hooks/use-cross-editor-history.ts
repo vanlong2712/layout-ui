@@ -1,5 +1,6 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Debouncer, Queuer } from '@tanstack/react-pacer'
+import { z } from 'zod'
 
 import type { CATEditorRef } from '@/layout/cat-editor'
 
@@ -18,33 +19,47 @@ import type { CATEditorRef } from '@/layout/cat-editor'
  * poll until the editor appears, then apply the snapshot.
  */
 
-interface HistoryEntry {
-  rowIndex: number
-  beforeText: string
-  beforeSelection: { anchor: number; focus: number } | null
-  afterText: string
-  afterSelection: { anchor: number; focus: number } | null
-  timestamp: number
-}
+// ── Zod Schemas ────────────────────────────────────────────────────────────────────
 
-export interface CrossEditorHistoryDeps {
+const SelectionOffsetsSchema = z.object({
+  anchor: z.number(),
+  focus: z.number(),
+})
+
+const HistoryEntrySchema = z.object({
+  rowIndex: z.number(),
+  beforeText: z.string(),
+  beforeSelection: SelectionOffsetsSchema.nullable(),
+  afterText: z.string(),
+  afterSelection: SelectionOffsetsSchema.nullable(),
+  timestamp: z.number(),
+})
+type HistoryEntry = z.infer<typeof HistoryEntrySchema>
+
+export const CrossEditorHistoryDepsSchema = z.object({
   /**
    * Scroll to a row index.  Must handle stretching mode internally
    * (i.e. use `useMassiveVirtualizer.scrollToRow` which bypasses
    * TanStack's retry-based `scrollToIndex`).
    */
-  scrollToRow: (
-    rowIndex: number,
-    opts?: { align?: 'center' | 'start' | 'end' },
-  ) => void
+  scrollToRow:
+    z.custom<
+      (rowIndex: number, opts?: { align?: 'center' | 'start' | 'end' }) => void
+    >(),
   /** Try to get the CATEditorRef for a row (may be `undefined` if not mounted). */
-  getEditorRef: (rowIndex: number) => CATEditorRef | undefined
-  /**
-   * Optional callback fired after a snapshot is applied.
-   * Use this for caret centering, scroll fine-tuning, etc.
-   */
-  onAfterApply?: (rowIndex: number, wasScrolled: boolean) => void
-}
+  getEditorRef: z.custom<(rowIndex: number) => CATEditorRef | undefined>(),
+})
+export type CrossEditorHistoryDeps = z.infer<
+  typeof CrossEditorHistoryDepsSchema
+>
+
+/**
+ * Optional callback fired after a snapshot is applied.
+ * Use this for caret centering, scroll fine-tuning, etc.
+ */
+export const OnAfterApplySchema =
+  z.custom<(rowIndex: number, wasScrolled: boolean) => void>()
+export type OnAfterApply = z.infer<typeof OnAfterApplySchema>
 
 /**
  * Async guard passed to `undo()` / `redo()`.
@@ -53,10 +68,14 @@ export interface CrossEditorHistoryDeps {
  * - Resolve / return `true` / `void` → proceed normally.
  * - Return `false` or reject → cancel, entry pushed back onto its stack.
  */
-export type OnBeforeCrossApply = (
-  currentRowIndex: number,
-  targetRowIndex: number,
-) => Promise<boolean | void> | boolean | void
+export const OnBeforeCrossApplySchema =
+  z.custom<
+    (
+      currentRowIndex: number,
+      targetRowIndex: number,
+    ) => Promise<boolean | void> | boolean | void
+  >()
+export type OnBeforeCrossApply = z.infer<typeof OnBeforeCrossApplySchema>
 
 /** Consecutive edits to the same row within this window are merged. */
 const HISTORY_MERGE_INTERVAL = 300
@@ -250,6 +269,7 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
       textKey: 'beforeText' | 'afterText',
       selKey: 'beforeSelection' | 'afterSelection',
       pushTo: Array<HistoryEntry>,
+      onAfterApply?: OnAfterApply,
     ) => {
       cancelPending()
 
@@ -348,7 +368,7 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
           if (applyEpochRef.current !== epoch) return
           scrollCaretToCenter()
         })
-        depsRef.current.onAfterApply?.(entry.rowIndex, false)
+        onAfterApply?.(entry.rowIndex, false)
         return
       }
 
@@ -376,7 +396,7 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
               if (applyEpochRef.current !== epoch) return
               scrollCaretToCenter()
             })
-            depsRef.current.onAfterApply?.(entry.rowIndex, true)
+            onAfterApply?.(entry.rowIndex, true)
             return // done — don't enqueue more polls
           }
           if (++attempts < MAX_ATTEMPTS) {
@@ -402,7 +422,10 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
   )
 
   const undo = useCallback(
-    async (onBeforeCrossApply?: OnBeforeCrossApply) => {
+    async (
+      onBeforeCrossApply?: OnBeforeCrossApply,
+      onAfterApply?: OnAfterApply,
+    ) => {
       const entry = undoStackRef.current.pop()
       if (!entry) return
 
@@ -431,13 +454,17 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
         'beforeText',
         'beforeSelection',
         redoStackRef.current,
+        onAfterApply,
       )
     },
     [applySnapshot],
   )
 
   const redo = useCallback(
-    async (onBeforeCrossApply?: OnBeforeCrossApply) => {
+    async (
+      onBeforeCrossApply?: OnBeforeCrossApply,
+      onAfterApply?: OnAfterApply,
+    ) => {
       const entry = redoStackRef.current.pop()
       if (!entry) return
 
@@ -461,7 +488,13 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
       }
 
       activeRowRef.current = entry.rowIndex
-      applySnapshot(entry, 'afterText', 'afterSelection', undoStackRef.current)
+      applySnapshot(
+        entry,
+        'afterText',
+        'afterSelection',
+        undoStackRef.current,
+        onAfterApply,
+      )
     },
     [applySnapshot],
   )
@@ -479,6 +512,19 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
     lastKnownRef.current.clear()
     bumpRevision()
   }, [bumpRevision])
+
+  // ── Cleanup on unmount: stop Queuer and cancel Debouncer ──
+  // Without this, a pending Debouncer timer or Queuer tick could fire
+  // after the component tree unmounts, holding closures in memory.
+  useEffect(() => {
+    return () => {
+      applyQueuerRef.current?.stop()
+      applyQueuerRef.current?.clear()
+      sealDebouncerRef.current?.cancel()
+      // Invalidate all in-flight rAF / poll callbacks.
+      applyEpochRef.current++
+    }
+  }, [])
 
   const canUndo = undoStackRef.current.length > 0
   const canRedo = redoStackRef.current.length > 0

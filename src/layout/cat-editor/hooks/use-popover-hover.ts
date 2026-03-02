@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { z } from 'zod'
 
 import { NL_MARKER_PREFIX } from '../constants'
 
@@ -8,19 +9,24 @@ import type { PopoverState, RuleAnnotation } from '../types'
 // Encapsulates the popover show/hide logic, mouse event tracking, and
 // link/mention click handling.
 
-export interface PopoverHoverOptions {
-  annotationMapRef: React.MutableRefObject<Map<string, RuleAnnotation>>
-  openLinksOnClick: boolean
-  onLinkClick?: (url: string) => void
-  onMentionClick?: (userId: string, userName: string) => void
-}
+export const PopoverHoverOptionsSchema = z.object({
+  annotationMapRef:
+    z.custom<React.MutableRefObject<Map<string, RuleAnnotation>>>(),
+  openLinksOnClick: z.boolean(),
+  onLinkClick: z.custom<(url: string) => void>().optional(),
+  onMentionClick: z
+    .custom<(userId: string, userName: string) => void>()
+    .optional(),
+})
+export type PopoverHoverOptions = z.infer<typeof PopoverHoverOptionsSchema>
 
-export interface PopoverHoverReturn {
-  popoverState: PopoverState
-  scheduleHide: () => void
-  cancelHide: () => void
-  isOverPopoverRef: React.MutableRefObject<boolean>
-}
+export const PopoverHoverReturnSchema = z.object({
+  popoverState: z.custom<PopoverState>(),
+  scheduleHide: z.custom<() => void>(),
+  cancelHide: z.custom<() => void>(),
+  isOverPopoverRef: z.custom<React.MutableRefObject<boolean>>(),
+})
+export type PopoverHoverReturn = z.infer<typeof PopoverHoverReturnSchema>
 
 export function usePopoverHover(
   containerRef: React.RefObject<HTMLDivElement | null>,

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
+import { z } from 'zod'
 
 import {
   $getNodeKeysInRange,
@@ -15,14 +16,17 @@ import type { LexicalEditor } from 'lexical'
 //   1. CSS Custom Highlight API (`CSS.highlights`) — character-precise
 //   2. Class-based fallback (whole-node) for older browsers
 
-export interface FlashControls {
+export const FlashControlsSchema = z.object({
   /** Flash elements matching `annotationId` for `durationMs`. */
-  flashHighlight: (annotationId: string, durationMs?: number) => void
+  flashHighlight:
+    z.custom<(annotationId: string, durationMs?: number) => void>(),
   /** Flash the text range `[start, end)` for `durationMs`. */
-  flashRange: (start: number, end: number, durationMs?: number) => void
+  flashRange:
+    z.custom<(start: number, end: number, durationMs?: number) => void>(),
   /** Clear any active flash immediately. */
-  clearFlash: () => void
-}
+  clearFlash: z.custom<() => void>(),
+})
+export type FlashControls = z.infer<typeof FlashControlsSchema>
 
 export function useFlash(
   editorRef: React.MutableRefObject<LexicalEditor | null>,

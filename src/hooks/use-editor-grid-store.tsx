@@ -22,7 +22,10 @@ import { useStore } from '@tanstack/react-store'
 import { z } from 'zod'
 
 import { useCrossEditorHistory } from './use-cross-editor-history'
-import type { OnBeforeCrossApply } from './use-cross-editor-history'
+import type {
+  OnAfterApply,
+  OnBeforeCrossApply,
+} from './use-cross-editor-history'
 import type { PropsWithChildren } from 'react'
 
 import type { CATEditorRef } from '../layout/cat-editor'
@@ -38,8 +41,18 @@ import type { MassiveVirtualizerResult } from './use-massive-virtualizer'
 const CrossEditorHistoryApiSchema = z.object({
   registerEditor: z.custom<(row: number, ref: CATEditorRef) => void>(),
   unregisterEditor: z.custom<(row: number) => void>(),
-  undo: z.custom<(onBeforeCrossApply?: OnBeforeCrossApply) => Promise<void>>(),
-  redo: z.custom<(onBeforeCrossApply?: OnBeforeCrossApply) => Promise<void>>(),
+  undo: z.custom<
+    (
+      onBeforeCrossApply?: OnBeforeCrossApply,
+      onAfterApply?: OnAfterApply,
+    ) => Promise<void>
+  >(),
+  redo: z.custom<
+    (
+      onBeforeCrossApply?: OnBeforeCrossApply,
+      onAfterApply?: OnAfterApply,
+    ) => Promise<void>
+  >(),
   clearHistory: z.custom<() => void>(),
   canUndo: z.boolean(),
   canRedo: z.boolean(),
@@ -103,8 +116,6 @@ export function EditorGridStoreProvider({ children }: PropsWithChildren) {
     scrollToRow: (rowIndex, opts) =>
       store.state.virtualizer?.scrollToRow(rowIndex, opts),
     getEditorRef: (rowIndex) => store.state.editorRefsMap.get(rowIndex),
-    onAfterApply: (rowIndex) =>
-      store.setState((prev) => ({ ...prev, focusedRow: rowIndex })),
   })
 
   // Sync crossHistory into the store each render so selectors pick it up.

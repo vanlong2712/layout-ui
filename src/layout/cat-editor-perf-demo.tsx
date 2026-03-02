@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { defaultRangeExtractor } from '@tanstack/react-virtual'
 import {
   ArrowDownToLine,
@@ -574,9 +574,15 @@ function CATEditorPerfDemoInner() {
    * Scroll to a row AND focus its editor once mounted.
    * Polls up to ~600 ms for the editor ref to appear, then calls
    * `focusStart()` so the caret is visible.
+   *
+   * Uses an epoch guard so that re-invocation (or unmount) instantly
+   * invalidates all stale rAF / setTimeout callbacks.
    */
+  const focusPollEpochRef = useRef(0)
   const scrollToRowAndFocus = useCallback(
     (rowIndex: number) => {
+      const epoch = ++focusPollEpochRef.current
+
       scrollToRow(rowIndex)
       setFocusedRow(store, rowIndex)
 
@@ -590,6 +596,7 @@ function CATEditorPerfDemoInner() {
       // Otherwise poll until the editor mounts.
       let attempts = 0
       const poll = () => {
+        if (focusPollEpochRef.current !== epoch) return
         const ref = getEditorRef(store, rowIndex)
         if (ref) {
           ref.focusEnd()
@@ -656,6 +663,16 @@ function CATEditorPerfDemoInner() {
     null,
   )
   const flashDemoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // ── Unmount cleanup: clear all pending timers ──
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+      if (flashDemoTimerRef.current) clearTimeout(flashDemoTimerRef.current)
+      // Invalidate any in-flight scrollToRowAndFocus poll chain
+      focusPollEpochRef.current++
+    }
+  }, [])
 
   const [rowCount, setRowCount] = useState(TOTAL_ROWS)
 
@@ -881,6 +898,11 @@ function CATEditorPerfDemoInner() {
   const rowCountRef = useRef(rowCount)
   rowCountRef.current = rowCount
 
+  const handleAfterApply = useCallback(
+    (rowIndex: number) => setFocusedRow(store, rowIndex),
+    [store],
+  )
+
   const handleEditorKeyDown = useCallback(
     (event: KeyboardEvent): boolean => {
       const row = focusedRowRef.current
@@ -888,12 +910,12 @@ function CATEditorPerfDemoInner() {
       if ((event.ctrlKey || event.metaKey) && !event.altKey) {
         if (key === 'z' && !event.shiftKey) {
           event.preventDefault()
-          getCrossHistory(store)?.undo()
+          getCrossHistory(store)?.undo(undefined, handleAfterApply)
           return true
         }
         if (key === 'y' || (key === 'z' && event.shiftKey)) {
           event.preventDefault()
-          getCrossHistory(store)?.redo()
+          getCrossHistory(store)?.redo(undefined, handleAfterApply)
           return true
         }
       }
@@ -932,7 +954,7 @@ function CATEditorPerfDemoInner() {
       }
       return false
     },
-    [store, scrollToRow],
+    [store, scrollToRow, handleAfterApply],
   )
   const updateSpellcheck = useCallback(
     (idx: number, patch: Partial<ISpellCheckValidation>) =>
@@ -1180,7 +1202,7 @@ function CATEditorPerfDemoInner() {
             variant="outline"
             size="sm"
             disabled={!crossHistory?.canUndo}
-            onClick={() => crossHistory?.undo()}
+            onClick={() => crossHistory?.undo(undefined, handleAfterApply)}
             className="gap-1.5"
           >
             <Undo2 className="h-4 w-4" />
@@ -1190,7 +1212,7 @@ function CATEditorPerfDemoInner() {
             variant="outline"
             size="sm"
             disabled={!crossHistory?.canRedo}
-            onClick={() => crossHistory?.redo()}
+            onClick={() => crossHistory?.redo(undefined, handleAfterApply)}
             className="gap-1.5"
           >
             <Redo2 className="h-4 w-4" />

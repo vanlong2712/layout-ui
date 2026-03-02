@@ -93,8 +93,13 @@ export {
 
 // Hooks (available for custom editor builds)
 export { useFlash } from './hooks/use-flash'
+export { FlashControlsSchema } from './hooks/use-flash'
 export type { FlashControls } from './hooks/use-flash'
 export { usePopoverHover } from './hooks/use-popover-hover'
+export {
+  PopoverHoverOptionsSchema,
+  PopoverHoverReturnSchema,
+} from './hooks/use-popover-hover'
 export type {
   PopoverHoverOptions,
   PopoverHoverReturn,
