@@ -118,6 +118,10 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
       wait: 0,
     })
   }
+  // Generation counter — incremented at the start of each applySnapshot.
+  // Stale requestAnimationFrame / poll callbacks check this and bail out.
+  const applyEpochRef = useRef(0)
+
   const cancelPending = () => {
     applyQueuerRef.current?.clear()
   }
@@ -249,6 +253,10 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
     ) => {
       cancelPending()
 
+      // Bump epoch so any in-flight rAF / poll callbacks from a
+      // previous applySnapshot become no-ops.
+      const epoch = ++applyEpochRef.current
+
       const text = entry[textKey]
       const selection = entry[selKey]
 
@@ -279,7 +287,6 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
         // Order: setText → setSelection → focus.
         ref.setText(text, { tag: 'cross-history' })
         ref.setSelection(clamped.anchor, clamped.focus)
-        // ref.focus()
 
         // Re-assert lastKnown after applying.  On the slow path,
         // `registerEditor` may have clobbered it with the stale
@@ -291,10 +298,56 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
         })
       }
 
+      /**
+       * Scroll the caret (native DOM selection) to the vertical center of
+       * the nearest scrollable ancestor.  Called after `applyToEditor` so
+       * the browser selection already sits at the restored caret position.
+       */
+      const scrollCaretToCenter = () => {
+        const nativeSel = window.getSelection()
+        if (!nativeSel || nativeSel.rangeCount === 0) return
+
+        const range = nativeSel.getRangeAt(0)
+        const caretRect = range.getBoundingClientRect()
+        // Guard: collapsed range on a hidden/unmeasured node returns a zero rect.
+        if (caretRect.top === 0 && caretRect.height === 0) return
+
+        // Walk up from the caret to find the first scrollable ancestor
+        // (the virtualizer's scroll container).
+        let scrollParent: HTMLElement | null =
+          range.startContainer instanceof Element
+            ? (range.startContainer as HTMLElement)
+            : range.startContainer.parentElement
+        while (scrollParent) {
+          const { overflowY } = getComputedStyle(scrollParent)
+          if (
+            overflowY === 'auto' ||
+            overflowY === 'scroll' ||
+            overflowY === 'overlay'
+          ) {
+            break
+          }
+          scrollParent = scrollParent.parentElement
+        }
+        if (!scrollParent) return
+
+        const containerRect = scrollParent.getBoundingClientRect()
+        // Caret position relative to the scroll container's content.
+        const caretInContainer =
+          caretRect.top - containerRect.top + scrollParent.scrollTop
+        // Target: place the caret at the vertical center of the viewport.
+        scrollParent.scrollTop =
+          caretInContainer - containerRect.height / 2 + caretRect.height / 2
+      }
+
       // ── Fast path: editor already mounted ──
       const immediate = depsRef.current.getEditorRef(entry.rowIndex)
       if (immediate) {
         applyToEditor(immediate)
+        requestAnimationFrame(() => {
+          if (applyEpochRef.current !== epoch) return
+          scrollCaretToCenter()
+        })
         depsRef.current.onAfterApply?.(entry.rowIndex, false)
         return
       }
@@ -311,14 +364,18 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
 
       const enqueuePoll = () => {
         queuer.addItem(() => {
+          // A newer applySnapshot has started — abandon this poll chain.
+          if (applyEpochRef.current !== epoch) return
+
           const ref = depsRef.current.getEditorRef(entry.rowIndex)
           if (ref) {
             applyToEditor(ref)
-            // Re-scroll after apply to ensure centering (text change may
-            // have shifted things in dynamic-height mode).
-            requestAnimationFrame(() =>
-              depsRef.current.scrollToRow(entry.rowIndex, { align: 'center' }),
-            )
+            // Center the caret in the scroll viewport after the text
+            // change, which may have shifted the caret out of view.
+            requestAnimationFrame(() => {
+              if (applyEpochRef.current !== epoch) return
+              scrollCaretToCenter()
+            })
             depsRef.current.onAfterApply?.(entry.rowIndex, true)
             return // done — don't enqueue more polls
           }
@@ -336,7 +393,10 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
 
       // Kick off the first poll after a rAF to give the virtualizer
       // time to mount the target row.
-      requestAnimationFrame(enqueuePoll)
+      requestAnimationFrame(() => {
+        if (applyEpochRef.current !== epoch) return
+        enqueuePoll()
+      })
     },
     [bumpRevision],
   )
