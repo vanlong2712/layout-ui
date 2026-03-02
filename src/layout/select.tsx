@@ -1,6 +1,7 @@
 import * as React from 'react'
 import {
   useCallback,
+  useDeferredValue,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -41,9 +42,9 @@ import type {
 
 import { cn } from '@/lib/utils'
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// Types (public API – kept identical for backward compatibility)
+// ===========================================================================
 
 /**
  * For `icon` we accept either a ReactNode (already rendered) or a **render
@@ -180,25 +181,67 @@ export type LayoutSelectProps = SharedSelectProps &
   (SingleSelectProps | MultipleSelectProps) &
   (SortableEnabledProps | SortableDisabledProps)
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// Constants (hoisted outside render for stable identity & zero alloc)
+// ===========================================================================
 
-/** Resolve an `IconProp` to a ReactNode – cheap for already‑rendered nodes,
+/** Identity transform returned when a sortable item should not visually move. */
+const NO_MOVE = { x: 0, y: 0, scaleX: 1, scaleY: 1 } as const
+
+/** Estimated heights used by the virtualizer. */
+const GROUP_HEADER_HEIGHT = 28
+const OPTION_ROW_HEIGHT = 36
+const VIRTUALIZER_OVERSCAN = 8
+
+/** Maximum chips rendered in the invisible measurement layer. */
+const MAX_MEASURE_CHIPS = 20
+/** Base minimum width for a partial (truncated) chip. */
+const MIN_PARTIAL_CHIP_WIDTH = 50
+/** Minimum badge width reserved for the "+N" overflow indicator. */
+const MIN_BADGE_WIDTH = 40
+
+/** Stable DnD-kit modifier array – prevents re-allocation per render. */
+const DND_MODIFIERS = [
+  restrictToVerticalAxis,
+  restrictToFirstScrollableAncestor,
+]
+
+/**
+ * Stable no-op callback matching {@link ChipProps.onRemove} signature.
+ * Used in the invisible measurement layer so the remove button renders
+ * for accurate width measurement without creating per-chip closures.
+ */
+const NOOP_REMOVE = (_: IOption): void => {}
+
+// ===========================================================================
+// Pure helper functions
+// ===========================================================================
+
+/** Resolve an `IconProp` to a ReactNode – cheap for already-rendered nodes,
  *  and defers the call for function icons. */
 function resolveIcon(icon: IconProp | undefined): React.ReactNode {
-  if (icon === undefined || icon === null) return null
-  if (typeof icon === 'function') return (icon as () => React.ReactNode)()
-  return icon
+  if (icon == null) return null
+  return typeof icon === 'function' ? (icon as () => React.ReactNode)() : icon
 }
 
-/** Flatten a potentially nested option tree into a flat list (depth‑first).
- *  Group parents (options with `children`) are **excluded** – only leaves. */
+/**
+ * Flatten a nested option tree into a flat leaf list (iterative DFS).
+ * Group parents (options with `children`) are **excluded** – only leaves.
+ *
+ * Uses an explicit stack instead of recursive spread to avoid O(n²)
+ * intermediate array allocations on deep / wide trees.
+ */
 function flattenOptions(options: Array<IOption>): Array<IOption> {
   const result: Array<IOption> = []
-  for (const opt of options) {
+  const stack: Array<IOption> = []
+  // Push in reverse so the first option is popped first (preserves order).
+  for (let i = options.length - 1; i >= 0; i--) stack.push(options[i])
+  while (stack.length > 0) {
+    const opt = stack.pop()!
     if (opt.children && opt.children.length > 0) {
-      result.push(...flattenOptions(opt.children))
+      for (let i = opt.children.length - 1; i >= 0; i--) {
+        stack.push(opt.children[i])
+      }
     } else {
       result.push(opt)
     }
@@ -207,7 +250,7 @@ function flattenOptions(options: Array<IOption>): Array<IOption> {
 }
 
 // ---------------------------------------------------------------------------
-// Display row types for virtualised list (group headers + leaf options)
+// Display row types for the virtualised list (group headers + leaf options)
 // ---------------------------------------------------------------------------
 
 type DisplayRow =
@@ -243,62 +286,150 @@ function hasGroups(options: Array<IOption>): boolean {
 }
 
 /** Simple value equality check for options. */
-function optionEq(a: IOption, b: IOption) {
+function optionEq(a: IOption, b: IOption): boolean {
   return a.value === b.value
 }
 
-function isSelected(option: IOption, value: IOption | Array<IOption> | null) {
-  if (!value) return false
-  if (Array.isArray(value)) return value.some((v) => optionEq(v, option))
-  return optionEq(value, option)
-}
-
-// ---------------------------------------------------------------------------
-// Sortable item wrapper (for dnd‑kit inside virtual list)
-// ---------------------------------------------------------------------------
-
-interface SortableItemProps {
-  id: string
-  children: React.ReactNode
-  disabled?: boolean
-}
-
-function SortableItem({ id, children, disabled }: SortableItemProps) {
-  const {
-    setNodeRef,
-    attributes,
-    listeners,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id, disabled })
-
-  const style: React.CSSProperties = {
-    transform: transform
-      ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
-      : undefined,
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    position: 'relative',
-    zIndex: isDragging ? 50 : undefined,
+/**
+ * Build a `Set` of selected option values for **O(1)** membership checks.
+ * Far cheaper than linear `.some()` scans when rendering hundreds of rows.
+ */
+function buildSelectedSet(
+  value: IOption | Array<IOption> | null,
+): Set<string | number> {
+  if (!value) return new Set()
+  if (Array.isArray(value)) {
+    const s = new Set<string | number>()
+    for (const v of value) s.add(v.value)
+    return s
   }
-
-  return (
-    <div ref={setNodeRef} style={style} className="flex items-center">
-      {!disabled && (
-        <button
-          type="button"
-          className="flex shrink-0 cursor-grab items-center px-1 text-muted-foreground hover:text-foreground active:cursor-grabbing"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="size-3.5" />
-        </button>
-      )}
-      <div className="min-w-0 flex-1">{children}</div>
-    </div>
-  )
+  return new Set([value.value])
 }
+
+/**
+ * Build a `Map` from option stringified-value → group value for **O(1)**
+ * group lookups (used by collision detection & sorting strategy).
+ */
+function buildValueToGroupMap(
+  displayRows: Array<DisplayRow>,
+): Map<string, string | number | undefined> {
+  const map = new Map<string, string | number | undefined>()
+  for (const r of displayRows) {
+    if (r.kind === 'option') map.set(`${r.option.value}`, r.groupValue)
+  }
+  return map
+}
+
+/** Estimate badge width for "+N" overflow text. */
+function estimateBadgeWidth(overflowCount: number): number {
+  return overflowCount > 0 ? 14 + 8 * String(overflowCount).length : 0
+}
+
+// ===========================================================================
+// Custom hooks
+// ===========================================================================
+
+/**
+ * Measures how many chips fit in a container before overflowing.
+ * Extracted from `MultipleTriggerContent` for single-responsibility and
+ * independent testability.
+ *
+ * Returns `{ visibleCount, lastIsPartial, measured }`.
+ */
+function useChipOverflow(
+  value: Array<IOption>,
+  collapsed: boolean | undefined,
+  wrapperRef: React.RefObject<HTMLDivElement | null>,
+  measureRef: React.RefObject<HTMLDivElement | null>,
+): { visibleCount: number; lastIsPartial: boolean; measured: boolean } {
+  const [visibleCount, setVisibleCount] = useState(value.length)
+  const [lastIsPartial, setLastIsPartial] = useState(false)
+  const [measured, setMeasured] = useState(false)
+
+  // `useEffectEvent` reads latest `value` without being a dependency.
+  const calculate = React.useEffectEvent(() => {
+    const measureContainer = measureRef.current
+    if (!measureContainer) return
+
+    const children = Array.from(measureContainer.children) as Array<HTMLElement>
+    const containerRight = measureContainer.getBoundingClientRect().right
+    const gap = parseFloat(getComputedStyle(measureContainer).columnGap) || 0
+    let count = 0
+    let partial = false
+
+    for (const child of children) {
+      const childRight = child.getBoundingClientRect().right
+      const overflow = value.length - (count + 1)
+      const reserve =
+        overflow > 0
+          ? Math.max(MIN_BADGE_WIDTH, estimateBadgeWidth(overflow))
+          : 0
+      if (childRight + reserve <= containerRight) {
+        count++
+      } else {
+        break
+      }
+    }
+    // Always show at least 1 chip when there are items.
+    count = Math.max(1, count)
+
+    // Check whether an extra "partial" (truncated) chip can fit.
+    if (count < value.length && children.length >= count) {
+      const lastRight = children[count - 1].getBoundingClientRect().right
+      const needsBadge = count + 1 < value.length
+      const badgeReserve = needsBadge
+        ? Math.max(
+            MIN_BADGE_WIDTH,
+            estimateBadgeWidth(value.length - count - 1),
+          )
+        : 0
+      const spaceForPartial = containerRight - badgeReserve - lastRight - gap
+      const nextChip = value[count]
+      let minWidth = MIN_PARTIAL_CHIP_WIDTH
+      if (nextChip.icon && children.length > count) {
+        const iconWrapper = children[count].firstElementChild
+        if (iconWrapper) {
+          minWidth += iconWrapper.getBoundingClientRect().width + gap
+        }
+      }
+      if (spaceForPartial >= minWidth) {
+        count++
+        partial = true
+      }
+    }
+
+    setVisibleCount(count)
+    setLastIsPartial(partial)
+    setMeasured(true)
+  })
+
+  useLayoutEffect(() => {
+    if (collapsed || value.length === 0) {
+      setVisibleCount(value.length)
+      setLastIsPartial(false)
+      setMeasured(true)
+      return
+    }
+
+    const wrapper = wrapperRef.current
+    const container = measureRef.current
+    if (!wrapper || !container) return
+
+    // Measure synchronously before browser paint.
+    calculate()
+
+    // Re-measure on resize so overflow recalculates correctly.
+    const observer = new ResizeObserver(calculate)
+    observer.observe(wrapper)
+    return () => observer.disconnect()
+  }, [collapsed, value])
+
+  return { visibleCount, lastIsPartial, measured }
+}
+
+// ===========================================================================
+// Sub-components (React.memo where beneficial for render optimisation)
+// ===========================================================================
 
 // ---------------------------------------------------------------------------
 // DisabledTooltip wrapper
@@ -327,12 +458,13 @@ function MaybeTooltip({
 }
 
 // ---------------------------------------------------------------------------
-// Chip (for multiple‑select trigger)
+// Chip (for multiple-select trigger)
 // ---------------------------------------------------------------------------
 
 interface ChipProps {
   option: IOption
-  onRemove?: () => void
+  /** When provided, a remove button is rendered. Called with the chip's option. */
+  onRemove?: (option: IOption) => void
   readOnly?: boolean
   disabled?: boolean
   className?: string
@@ -340,7 +472,12 @@ interface ChipProps {
   partial?: boolean
 }
 
-function Chip({
+/**
+ * Memoised chip component.  Accepts `onRemove(option)` instead of a
+ * zero-arg callback so the parent can pass a **single stable reference**
+ * for all chips, eliminating N closure allocations per render.
+ */
+const Chip = React.memo(function Chip({
   option,
   onRemove,
   readOnly,
@@ -369,7 +506,7 @@ function Chip({
           className="ml-0.5 flex shrink-0 items-center rounded-sm text-muted-foreground hover:text-foreground"
           onClick={(e) => {
             e.stopPropagation()
-            onRemove()
+            onRemove(option)
           }}
           tabIndex={-1}
           aria-label={`Remove ${option.label}`}
@@ -379,13 +516,13 @@ function Chip({
       )}
     </span>
   )
-}
+})
 
 // ---------------------------------------------------------------------------
 // Overflow chip badge
 // ---------------------------------------------------------------------------
 
-function OverflowBadge({
+const OverflowBadge = React.memo(function OverflowBadge({
   items,
   onRemove,
 }: {
@@ -439,7 +576,7 @@ function OverflowBadge({
       </Tooltip.Portal>
     </Tooltip.Root>
   )
-}
+})
 
 // ---------------------------------------------------------------------------
 // Default trigger renderers
@@ -484,104 +621,18 @@ function MultipleTriggerContent({
   readOnly?: boolean
   disabled?: boolean
 }) {
-  // Shared layout classes so measure layer, display div, and wrappers
-  // always use the same gap / alignment.  Change once, applied everywhere.
   const chipRowClass = 'flex items-center gap-1'
 
   const wrapperRef = useRef<HTMLDivElement>(null)
   const measureRef = useRef<HTMLDivElement>(null)
-  const [visibleCount, setVisibleCount] = useState(value.length)
-  const [lastIsPartial, setLastIsPartial] = useState(false)
-  const [measured, setMeasured] = useState(false)
+  const measureCount = Math.min(value.length, MAX_MEASURE_CHIPS)
 
-  // Cap invisible measurement chips – no single-row trigger needs more than
-  // ~20 chips, so we avoid creating thousands of DOM nodes for large lists.
-  const measureCount = Math.min(value.length, 20)
-
-  const calculate = React.useEffectEvent(() => {
-    const measureContainer = measureRef.current
-    if (!measureContainer) return
-
-    const children = Array.from(measureContainer.children) as Array<HTMLElement>
-    const containerRight = measureContainer.getBoundingClientRect().right
-    const gap = parseFloat(getComputedStyle(measureContainer).columnGap) || 0
-    // The invisible layer has no badge sibling, so always reserve space
-    // for the badge that will appear in the visible layer.
-    // Estimate badge width based on overflow digit count:
-    // "+N" at text-xs with px-1.5 + border ≈ 14px + 8px per character.
-    const estimateBadgeWidth = (overflowCount: number) =>
-      overflowCount > 0 ? 14 + 8 * String(overflowCount).length : 0
-    let count = 0
-    let partial = false
-
-    for (const child of children) {
-      const childRight = child.getBoundingClientRect().right
-      const overflow = value.length - (count + 1)
-      const reserve =
-        overflow > 0 ? Math.max(40, estimateBadgeWidth(overflow)) : 0
-      if (childRight + reserve <= containerRight) {
-        count++
-      } else {
-        break
-      }
-    }
-    // Show at least 1 chip when there are items
-    count = Math.max(1, count)
-
-    // If there are overflow items, check whether an extra "partial"
-    // (squeezed) chip can fit.  Chips with icons need more space.
-    if (count < value.length && children.length >= count) {
-      const lastRight = children[count - 1].getBoundingClientRect().right
-      // If the partial chip would be the LAST item, no badge is needed.
-      const needsBadge = count + 1 < value.length
-      const badgeReserve = needsBadge
-        ? Math.max(40, estimateBadgeWidth(value.length - count - 1))
-        : 0
-      const spaceForPartial = containerRight - badgeReserve - lastRight - gap
-      const nextChip = value[count]
-      // Base minimum: 50px (covers label truncation + remove button).
-      // If the chip has an icon, add the icon's actual rendered width + gap.
-      let minPartialWidth = 50
-      if (nextChip.icon && children.length > count) {
-        const iconWrapper = children[count].firstElementChild
-        if (iconWrapper) {
-          minPartialWidth += iconWrapper.getBoundingClientRect().width + gap
-        }
-      }
-      if (spaceForPartial >= minPartialWidth) {
-        count++ // include partial chip in the count
-        partial = true
-      }
-    }
-
-    setVisibleCount(count)
-    setLastIsPartial(partial)
-    setMeasured(true)
-  })
-
-  useLayoutEffect(() => {
-    if (collapsed || value.length === 0) {
-      setVisibleCount(value.length)
-      setLastIsPartial(false)
-      setMeasured(true)
-      return
-    }
-
-    const wrapper = wrapperRef.current
-    const container = measureRef.current
-    if (!wrapper || !container) return
-
-    // Measure immediately (synchronous, before browser paint)
-    calculate()
-
-    // Re-measure whenever the wrapper resizes (window resize, container
-    // layout change).  Because we always measure the invisible layer
-    // (which has ALL chips as shrink-0), this correctly handles both
-    // resize-smaller AND resize-larger.
-    const observer = new ResizeObserver(calculate)
-    observer.observe(wrapper)
-    return () => observer.disconnect()
-  }, [collapsed, value])
+  const { visibleCount, lastIsPartial, measured } = useChipOverflow(
+    value,
+    collapsed,
+    wrapperRef,
+    measureRef,
+  )
 
   if (value.length === 0) {
     return <span className="truncate text-muted-foreground">{placeholder}</span>
@@ -602,7 +653,7 @@ function MultipleTriggerContent({
         <Chip
           key={opt.value}
           option={opt}
-          onRemove={onRemove ? () => {} : undefined}
+          onRemove={onRemove ? NOOP_REMOVE : undefined}
           readOnly={readOnly}
           disabled={disabled}
           className="shrink-0"
@@ -662,7 +713,7 @@ function MultipleTriggerContent({
             <Chip
               key={opt.value}
               option={opt}
-              onRemove={onRemove ? () => onRemove(opt) : undefined}
+              onRemove={onRemove}
               readOnly={readOnly}
               disabled={disabled}
               partial={isPartial}
@@ -692,7 +743,12 @@ interface OptionRowProps {
   highlighted?: boolean
 }
 
-function OptionRow({
+/**
+ * Memoised option row.  Because `onSelect` is stabilised via refs in the
+ * parent, this memo is effective: rows whose `selected` boolean hasn't
+ * changed skip re-rendering entirely during scroll & selection events.
+ */
+const OptionRow = React.memo(function OptionRow({
   option,
   selected,
   renderItem,
@@ -748,11 +804,62 @@ function OptionRow({
   }
 
   return row
-}
+})
 
 // ---------------------------------------------------------------------------
-// Virtual + Sortable list
+// Sortable item wrapper (for dnd-kit inside virtual list)
 // ---------------------------------------------------------------------------
+
+interface SortableItemProps {
+  id: string
+  children: React.ReactNode
+  disabled?: boolean
+}
+
+const SortableItem = React.memo(function SortableItem({
+  id,
+  children,
+  disabled,
+}: SortableItemProps) {
+  const {
+    setNodeRef,
+    attributes,
+    listeners,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id, disabled })
+
+  const style: React.CSSProperties = {
+    transform: transform
+      ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+      : undefined,
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    position: 'relative',
+    zIndex: isDragging ? 50 : undefined,
+  }
+
+  return (
+    <div ref={setNodeRef} style={style} className="flex items-center">
+      {!disabled && (
+        <button
+          type="button"
+          className="flex shrink-0 cursor-grab items-center px-1 text-muted-foreground hover:text-foreground active:cursor-grabbing"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="size-3.5" />
+        </button>
+      )}
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  )
+})
+
+// ===========================================================================
+// Virtual + Sortable list
+// ===========================================================================
 
 interface VirtualListProps {
   /** Raw (potentially grouped) options – used to build display rows. */
@@ -765,8 +872,7 @@ interface VirtualListProps {
   sortable?: boolean
   sortableAcrossGroups?: boolean
   onSortEnd?: (items: Array<IOption>) => void
-  /** Called when items within a group are reordered (grouped mode). Receives
-   *  the group parent value and the new ordered children. */
+  /** Called when items within a group are reordered (grouped mode). */
   onGroupSortEnd?: (
     groupValue: string | number,
     children: Array<IOption>,
@@ -802,13 +908,26 @@ function VirtualList({
     [grouped, effectiveOptions],
   )
 
-  // The flat list used by the virtualizer – either from display rows or the
-  // legacy flat items.
+  // Flat display rows for un-grouped mode.
   const flatDisplayRows = useMemo(
     () => items.map<DisplayRow>((o) => ({ kind: 'option', option: o })),
     [items],
   )
   const virtualItems = displayRows ?? flatDisplayRows
+
+  // --- O(1) lookup structures (re-built only when data changes) ---
+
+  /** Set of selected values for fast membership checks. */
+  const selectedSet = useMemo(
+    () => buildSelectedSet(selectedValue),
+    [selectedValue],
+  )
+
+  /** Map from stringified option value → group value. */
+  const valueToGroup = useMemo(
+    () => (displayRows ? buildValueToGroupMap(displayRows) : null),
+    [displayRows],
+  )
 
   // Derive activeIndex from activeId so it stays correct after cross-group
   // moves update the tree mid-drag.
@@ -834,12 +953,20 @@ function VirtualList({
     [activeIndex],
   )
 
+  // Memoised estimateSize prevents virtualizer from re-measuring on every render.
+  const estimateSize = useCallback(
+    (index: number) =>
+      virtualItems[index].kind === 'group-header'
+        ? GROUP_HEADER_HEIGHT
+        : OPTION_ROW_HEIGHT,
+    [virtualItems],
+  )
+
   const virtualizer = useVirtualizer({
     count: virtualItems.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: (index) =>
-      virtualItems[index].kind === 'group-header' ? 28 : 36,
-    overscan: 8,
+    estimateSize,
+    overscan: VIRTUALIZER_OVERSCAN,
     rangeExtractor,
   })
 
@@ -866,43 +993,24 @@ function VirtualList({
     [virtualItems],
   )
 
-  // Custom collision detection: restrict collisions to same-group items
-  // when sortableAcrossGroups is disabled.
+  // Custom collision detection using the pre-built Map for O(1) group lookups.
   const sameGroupCollision: CollisionDetection = useCallback(
     (args) => {
-      if (!displayRows) return closestCenter(args)
-      const draggedId = args.active.id
-      const activeRow = displayRows.find(
-        (r) => r.kind === 'option' && `${r.option.value}` === `${draggedId}`,
+      if (!valueToGroup) return closestCenter(args)
+      const activeGroup = valueToGroup.get(`${args.active.id}`)
+      if (activeGroup === undefined) return closestCenter(args)
+      const filtered = args.droppableContainers.filter(
+        (container) => valueToGroup.get(`${container.id}`) === activeGroup,
       )
-      if (!activeRow || activeRow.kind !== 'option') return closestCenter(args)
-      const activeGroup = activeRow.groupValue
-      const filtered = args.droppableContainers.filter((container) => {
-        const row = displayRows.find(
-          (r) =>
-            r.kind === 'option' && `${r.option.value}` === `${container.id}`,
-        )
-        return row && row.kind === 'option' && row.groupValue === activeGroup
-      })
       return closestCenter({ ...args, droppableContainers: filtered })
     },
-    [displayRows],
+    [valueToGroup],
   )
 
-  // Custom sorting strategy for grouped options.
-  // Only displace items that are in the same group as the active (dragged)
-  // item. Cross-group items are never displaced — group headers are at
-  // fixed virtualizer positions and can't participate in dnd-kit transforms,
-  // so shifting items across groups would cause overlaps.
+  // Custom sorting strategy for grouped options using Map for O(1) lookups.
+  // Only displaces items in the same group as the dragged item.
   const sortingStrategy = useMemo(() => {
-    if (!grouped || !displayRows) return verticalListSortingStrategy
-    const idToGroup = new Map<string, string | number | undefined>()
-    for (const row of displayRows) {
-      if (row.kind === 'option') {
-        idToGroup.set(`${row.option.value}`, row.groupValue)
-      }
-    }
-    const noMove = { x: 0, y: 0, scaleX: 1, scaleY: 1 }
+    if (!grouped || !valueToGroup) return verticalListSortingStrategy
     return (
       args: Parameters<typeof verticalListSortingStrategy>[0],
     ): ReturnType<typeof verticalListSortingStrategy> => {
@@ -911,13 +1019,13 @@ function VirtualList({
       if (
         draggedId &&
         currentId &&
-        idToGroup.get(draggedId) !== idToGroup.get(currentId)
+        valueToGroup.get(draggedId) !== valueToGroup.get(currentId)
       ) {
-        return noMove
+        return NO_MOVE
       }
       return verticalListSortingStrategy(args)
     }
-  }, [grouped, displayRows, flatSortableIds])
+  }, [grouped, valueToGroup, flatSortableIds])
 
   // ---- onDragOver: move item between groups during drag ----
   const handleDragOver = useCallback(
@@ -944,10 +1052,10 @@ function VirtualList({
       )
         return
 
-      // Same group — let dnd-kit's sorting strategy handle displacement
+      // Same group — let dnd-kit's sorting strategy handle displacement.
       if (activeRow.groupValue === overRow.groupValue) return
 
-      // Cross-group: move item from source group to destination group
+      // Cross-group: move item from source group to destination group.
       const newTree = currentTree.map((opt) => {
         if (!opt.children) return opt
         if (opt.value === activeRow.groupValue) {
@@ -959,7 +1067,6 @@ function VirtualList({
           }
         }
         if (opt.value === overRow.groupValue) {
-          // Remove first in case of duplicate, then insert at over position
           const destChildren = opt.children.filter(
             (c) => `${c.value}` !== `${active.id}`,
           )
@@ -1003,7 +1110,7 @@ function VirtualList({
       const { active, over } = event
 
       if (!over || active.id === over.id) {
-        // No move — revert intermediate drag tree
+        // No move — commit intermediate drag tree if one exists.
         if (dragTree) onTreeSort?.(dragTree)
         setDragTree(null)
         return
@@ -1036,7 +1143,7 @@ function VirtualList({
       const baseTree = dragTree ?? options
 
       if (activeGroup === overGroup) {
-        // Same-group reorder (applies on top of any earlier cross-group move)
+        // Same-group reorder (applies on top of any earlier cross-group move).
         const groupChildren = displayRows
           .filter(
             (r): r is DisplayRow & { kind: 'option' } =>
@@ -1054,7 +1161,7 @@ function VirtualList({
         if (oldIdx !== -1 && newIdx !== -1 && oldIdx !== newIdx) {
           const reordered = arrayMove(groupChildren, oldIdx, newIdx)
           if (dragTree) {
-            // Cross-group move happened earlier — commit full tree
+            // Cross-group move happened earlier — commit full tree.
             const finalTree = baseTree.map((opt) => {
               if (opt.value === activeGroup && opt.children) {
                 return { ...opt, children: reordered }
@@ -1063,15 +1170,15 @@ function VirtualList({
             })
             onTreeSort?.(finalTree)
           } else {
-            // Pure within-group reorder
+            // Pure within-group reorder.
             onGroupSortEnd?.(activeGroup!, reordered)
           }
         } else if (dragTree) {
-          // Cross-group happened but no final reorder within group
+          // Cross-group happened but no final reorder within group.
           onTreeSort?.(baseTree)
         }
       } else {
-        // Fallback: active and over still in different groups at drop time
+        // Fallback: active and over still in different groups at drop time.
         const finalTree = baseTree.map((opt) => {
           if (!opt.children) return opt
           if (opt.value === activeGroup) {
@@ -1152,7 +1259,7 @@ function VirtualList({
             <OptionRow
               key={option.value}
               option={option}
-              selected={isSelected(option, selectedValue)}
+              selected={selectedSet.has(option.value)}
               renderItem={renderItem}
               onSelect={onSelect}
             />
@@ -1200,11 +1307,9 @@ function VirtualList({
       setDragTree(null)
     }
 
-    // Single SortableContext wrapping everything.
-    // Custom sortingStrategy handles per-group displacement.
     return (
       <DndContext
-        modifiers={[restrictToVerticalAxis, restrictToFirstScrollableAncestor]}
+        modifiers={DND_MODIFIERS}
         sensors={sensors}
         collisionDetection={
           grouped && !sortableAcrossGroups ? sameGroupCollision : closestCenter
@@ -1224,9 +1329,9 @@ function VirtualList({
   return listContent
 }
 
-// ---------------------------------------------------------------------------
+// ===========================================================================
 // Main component
-// ---------------------------------------------------------------------------
+// ===========================================================================
 
 export function LayoutSelect(props: LayoutSelectProps) {
   const {
@@ -1248,6 +1353,27 @@ export function LayoutSelect(props: LayoutSelectProps) {
     label,
   } = props
 
+  // Extract type-specific props once to avoid including `props` in deps.
+  const selectValue =
+    type === 'single'
+      ? (props as SingleSelectProps).selectValue
+      : (props as MultipleSelectProps).selectValue
+  const collapsed =
+    type === 'multiple' ? (props as MultipleSelectProps).collapsed : undefined
+  const showItemsLength =
+    type === 'multiple'
+      ? (props as MultipleSelectProps).showItemsLength
+      : undefined
+
+  const sortable = props.sortable ?? false
+  const sortableAcrossGroups = props.sortable
+    ? ((props as SortableEnabledProps).sortableAcrossGroups ?? false)
+    : false
+  const consumerOnSortEnd = props.sortable
+    ? (props as SortableEnabledProps).onSortEnd
+    : undefined
+
+  // ---- State ----
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [asyncOptions, setAsyncOptions] = useState<Array<IOption> | null>(null)
@@ -1255,13 +1381,32 @@ export function LayoutSelect(props: LayoutSelectProps) {
   const [internalSortedOptions, setInternalSortedOptions] =
     useState<Array<IOption> | null>(null)
 
+  // `useDeferredValue` keeps the search input responsive while the
+  // (potentially expensive) list filtering is deferred to a lower priority.
+  const deferredSearch = useDeferredValue(search)
+
   // ---- Resolve current value ----
   const currentValue = useMemo(() => {
-    if (type === 'single') {
-      return (props as SingleSelectProps).selectValue ?? null
-    }
-    return (props as MultipleSelectProps).selectValue ?? []
-  }, [type, props])
+    if (type === 'single') return selectValue ?? null
+    return selectValue ?? []
+  }, [type, selectValue])
+
+  // ---- Refs for stable callbacks (advanced-event-handler-refs pattern) ----
+  // By reading mutable values from refs, callbacks that are passed deep into
+  // the tree (VirtualList → OptionRow) maintain a *stable identity* even
+  // when the selected value or onChange handler changes.  This is critical
+  // for React.memo on OptionRow to be effective.
+
+  const currentValueRef = useRef(currentValue)
+  currentValueRef.current = currentValue
+
+  const onChangeRef = useRef<
+    SingleSelectProps['onChange'] | MultipleSelectProps['onChange'] | undefined
+  >(undefined)
+  onChangeRef.current =
+    type === 'single'
+      ? (props as SingleSelectProps).onChange
+      : (props as MultipleSelectProps).onChange
 
   // ---- Resolve display options ----
   const resolvedOptions = useMemo(() => {
@@ -1274,20 +1419,21 @@ export function LayoutSelect(props: LayoutSelectProps) {
     [resolvedOptions],
   )
 
+  const flatOptionsRef = useRef(flatOptions)
+  flatOptionsRef.current = flatOptions
+
   // ---- Filtered options (search) ----
-  // For virtualisation we need a flat list of leaf options, and when options
-  // are grouped we also keep a filtered version of the grouped tree so that
-  // VirtualList can render group headers correctly.
+  // Uses `deferredSearch` so the input stays responsive for large lists.
   const filteredOptions = useMemo(() => {
-    if (!search) return flatOptions
-    const q = search.toLowerCase()
+    if (!deferredSearch) return flatOptions
+    const q = deferredSearch.toLowerCase()
     return flatOptions.filter((o) => o.label.toLowerCase().includes(q))
-  }, [flatOptions, search])
+  }, [flatOptions, deferredSearch])
 
   /** Resolved options filtered by search, preserving group structure. */
   const filteredGroupedOptions = useMemo(() => {
-    if (!search) return resolvedOptions
-    const q = search.toLowerCase()
+    if (!deferredSearch) return resolvedOptions
+    const q = deferredSearch.toLowerCase()
     return resolvedOptions
       .map((opt) => {
         if (opt.children && opt.children.length > 0) {
@@ -1300,7 +1446,7 @@ export function LayoutSelect(props: LayoutSelectProps) {
         return opt.label.toLowerCase().includes(q) ? opt : null
       })
       .filter(Boolean) as Array<IOption>
-  }, [resolvedOptions, search])
+  }, [resolvedOptions, deferredSearch])
 
   // ---- Async loading ----
   useEffect(() => {
@@ -1309,9 +1455,7 @@ export function LayoutSelect(props: LayoutSelectProps) {
       setLoading(true)
       queryFn()
         .then((data) => {
-          if (!cancelled) {
-            setAsyncOptions(data)
-          }
+          if (!cancelled) setAsyncOptions(data)
         })
         .finally(() => {
           if (!cancelled) setLoading(false)
@@ -1322,21 +1466,21 @@ export function LayoutSelect(props: LayoutSelectProps) {
     }
   }, [open, queryFn])
 
-  // Reset search when closed
+  // Reset search when closed.
   useEffect(() => {
-    if (!open) {
-      setSearch('')
-    }
+    if (!open) setSearch('')
   }, [open])
 
-  // ---- Selection handler ----
+  // ---- Selection handler (STABLE – uses refs) ----
   const handleSelect = useCallback(
     (option: IOption) => {
       if (readOnly) return
 
       if (type === 'single') {
-        const onChange = (props as SingleSelectProps).onChange
-        const current = currentValue as IOption | null
+        const onChange = onChangeRef.current as
+          | SingleSelectProps['onChange']
+          | undefined
+        const current = currentValueRef.current as IOption | null
         if (clearable && current && optionEq(current, option)) {
           onChange?.(null, option)
         } else {
@@ -1344,8 +1488,10 @@ export function LayoutSelect(props: LayoutSelectProps) {
         }
         setOpen(false)
       } else {
-        const onChange = (props as MultipleSelectProps).onChange
-        const current = currentValue as Array<IOption>
+        const onChange = onChangeRef.current as
+          | MultipleSelectProps['onChange']
+          | undefined
+        const current = currentValueRef.current as Array<IOption>
         const exists = current.some((v) => optionEq(v, option))
         if (exists) {
           onChange?.(
@@ -1357,67 +1503,61 @@ export function LayoutSelect(props: LayoutSelectProps) {
         }
       }
     },
-    [type, currentValue, clearable, readOnly, props],
+    [type, clearable, readOnly],
   )
 
-  // ---- Remove chip (multiple) ----
+  // ---- Remove chip (STABLE – uses refs) ----
   const handleRemoveChip = useCallback(
     (option: IOption) => {
       if (type !== 'multiple' || readOnly || disabled) return
-      const onChange = (props as MultipleSelectProps).onChange
-      const current = currentValue as Array<IOption>
+      const onChange = onChangeRef.current as
+        | MultipleSelectProps['onChange']
+        | undefined
+      const current = currentValueRef.current as Array<IOption>
       onChange?.(
         current.filter((v) => !optionEq(v, option)),
         option,
       )
     },
-    [type, currentValue, readOnly, disabled, props],
+    [type, readOnly, disabled],
   )
 
-  // ---- Select all / unselect all (multiple only) ----
+  // ---- Select all / unselect all (multiple only, STABLE – uses refs) ----
   const handleToggleAll = useCallback(() => {
     if (type !== 'multiple' || readOnly || disabled) return
-    const onChange = (props as MultipleSelectProps).onChange
-    const current = currentValue as Array<IOption>
-    const selectableOptions = flatOptions.filter((o) => !o.disabled)
-    const allSelected =
-      selectableOptions.length > 0 &&
-      selectableOptions.every((o) => current.some((v) => optionEq(v, o)))
+    const onChange = onChangeRef.current as
+      | MultipleSelectProps['onChange']
+      | undefined
+    const current = currentValueRef.current as Array<IOption>
+    const selectable = flatOptionsRef.current.filter((o) => !o.disabled)
+    if (selectable.length === 0) return
+
+    // Use Set for O(1) membership checks instead of nested .some() loops.
+    const currentSet = new Set(current.map((v) => v.value))
+    const allSelected = selectable.every((o) => currentSet.has(o.value))
 
     if (allSelected) {
-      // Keep only disabled options that were somehow selected
-      const kept = current.filter((v) =>
-        selectableOptions.every((o) => !optionEq(o, v)),
-      )
-      onChange?.(kept, selectableOptions[0])
+      const selectableSet = new Set(selectable.map((o) => o.value))
+      const kept = current.filter((v) => !selectableSet.has(v.value))
+      onChange?.(kept, selectable[0])
     } else {
-      // Merge: keep existing + add missing selectable options
-      const missing = selectableOptions.filter(
-        (o) => !current.some((v) => optionEq(v, o)),
-      )
-      onChange?.([...current, ...missing], selectableOptions[0])
+      const missing = selectable.filter((o) => !currentSet.has(o.value))
+      onChange?.([...current, ...missing], selectable[0])
     }
-  }, [type, currentValue, flatOptions, readOnly, disabled, props])
+  }, [type, readOnly, disabled])
 
   const allSelected = useMemo(() => {
     if (type !== 'multiple') return false
     const current = currentValue as Array<IOption>
-    const selectableOptions = flatOptions.filter((o) => !o.disabled)
-    return (
-      selectableOptions.length > 0 &&
-      selectableOptions.every((o) => current.some((v) => optionEq(v, o)))
-    )
+    if (current.length === 0) return false
+    const selectable = flatOptions.filter((o) => !o.disabled)
+    if (selectable.length === 0) return false
+    // Set-based O(n+m) check instead of O(n*m).
+    const currentSet = new Set(current.map((v) => v.value))
+    return selectable.every((o) => currentSet.has(o.value))
   }, [type, currentValue, flatOptions])
 
-  const sortable = props.sortable ?? false
-  const sortableAcrossGroups = props.sortable
-    ? ((props as SortableEnabledProps).sortableAcrossGroups ?? false)
-    : false
-  const consumerOnSortEnd = props.sortable
-    ? (props as SortableEnabledProps).onSortEnd
-    : undefined
-
-  // ---- Sort handler (flat) ----
+  // ---- Sort handlers ----
   const handleSortEnd = useCallback(
     (sorted: Array<IOption>) => {
       setInternalSortedOptions(sorted)
@@ -1426,10 +1566,8 @@ export function LayoutSelect(props: LayoutSelectProps) {
     [consumerOnSortEnd],
   )
 
-  // ---- Sort handler (within a group) ----
   const handleGroupSortEnd = useCallback(
     (groupValue: string | number, reorderedChildren: Array<IOption>) => {
-      // Rebuild the full options tree with the updated group
       const updated = resolvedOptions.map((opt) => {
         if (opt.value === groupValue && opt.children) {
           return { ...opt, children: reorderedChildren }
@@ -1442,7 +1580,6 @@ export function LayoutSelect(props: LayoutSelectProps) {
     [resolvedOptions, consumerOnSortEnd],
   )
 
-  // ---- Sort handler (cross-group tree rebuild) ----
   const handleTreeSort = useCallback(
     (newTree: Array<IOption>) => {
       setInternalSortedOptions(newTree)
@@ -1486,8 +1623,8 @@ export function LayoutSelect(props: LayoutSelectProps) {
       <MultipleTriggerContent
         value={currentValue as Array<IOption>}
         placeholder={placeholder}
-        collapsed={(props as MultipleSelectProps).collapsed}
-        showItemsLength={(props as MultipleSelectProps).showItemsLength}
+        collapsed={collapsed}
+        showItemsLength={showItemsLength}
         onRemove={handleRemoveChip}
         readOnly={readOnly}
         disabled={disabled}
@@ -1502,7 +1639,8 @@ export function LayoutSelect(props: LayoutSelectProps) {
     readOnly,
     error,
     placeholder,
-    props,
+    collapsed,
+    showItemsLength,
     handleRemoveChip,
   ])
 

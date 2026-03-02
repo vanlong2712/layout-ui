@@ -27,10 +27,24 @@ Below are the features for the `LayoutSelect` demo (sourced from `src/data/layou
 - **Grouped options** with visual headers
 - **Intelligent chip overflow** — auto-detects available space, shows partial (truncated) chips, and collapses into a `+N` overflow badge with tooltip
 - **Async option loading** via `queryFn`
-- **Search / filter** built-in
+- **Search / filter** built-in with `useDeferredValue` for responsive input on large lists
 - **Keyboard accessible** — full keyboard navigation
 - **Fully typed** — comprehensive TypeScript definitions
 - **Tailwind CSS v4** — themeable via CSS custom properties (shadcn/ui compatible)
+
+### Performance (v0.2.0)
+
+The `LayoutSelect` component was rewritten in v0.2.0 with a focus on performance, scalability, and best practices:
+
+- **`React.memo`** on `Chip`, `OptionRow`, `SortableItem`, and `OverflowBadge` — prevents wasteful re-renders in virtualized lists and chip rows
+- **Set-based selection lookups** — O(1) `selectedSet.has()` checks instead of O(n) `.some()` scans for every option row during render
+- **Map-based group lookups** — O(1) group resolution in collision detection and sorting strategy instead of O(n) `.find()` per item
+- **Stable callbacks via refs** — `handleSelect`, `handleRemoveChip`, and `handleToggleAll` read mutable values from refs, keeping their identity stable so `React.memo` on child components is effective
+- **`useDeferredValue(search)`** — keeps the search input responsive while list filtering is deferred for large option lists
+- **Iterative `flattenOptions`** — stack-based DFS avoids O(n²) recursive spread allocations on deep/wide trees
+- **Hoisted constants** — `NO_MOVE`, `DND_MODIFIERS`, `NOOP_REMOVE`, and size constants are defined at module scope for zero re-allocation per render
+- **Extracted `useChipOverflow` hook** — single-responsibility measurement logic, independently testable
+- **Chip `onRemove` signature** — accepts `(option: IOption) => void` so the parent passes one stable reference for all chips, eliminating N closure allocations
 
 ---
 
@@ -941,6 +955,27 @@ npm publish --access public
 ```
 
 The `prepublishOnly` script automatically runs `build:lib` before publishing.
+
+---
+
+## Changelog
+
+### v0.2.0
+
+**LayoutSelect performance rewrite** — full rewrite of `LayoutSelect` internals for performance, scalability, and best practices. The public API (`LayoutSelectProps`, `IOption`, `IconProp`, `OptionSchema`) is **100% backward compatible**.
+
+- `React.memo` on `Chip`, `OptionRow`, `SortableItem`, `OverflowBadge`
+- Set-based O(1) selection checks replacing O(n) `.some()` scans
+- Map-based O(1) group lookups in collision detection & sorting strategy
+- Stable callbacks via event-handler refs pattern (eliminates unnecessary child re-renders)
+- `useDeferredValue` for responsive search input on large lists
+- Iterative stack-based `flattenOptions` (no recursive spread allocations)
+- Extracted `useChipOverflow` hook for single-responsibility
+- All magic numbers extracted to named module-scope constants
+
+### v0.1.2
+
+- Initial release with LayoutSelect, CATEditor, Detect Quotes, and useMassiveVirtualizer.
 
 ---
 

@@ -1,0 +1,14 @@
+{
+  "version": 3,
+  "skills": {
+    "shadcn-ui": {
+      "source": "google-labs-code/stitch-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/google-labs-code/stitch-skills.git",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-02T17:01:26.792Z",
+      "updatedAt": "2026-03-02T17:01:26.792Z"
+    }
+  },
+  "dismissed": {}
+}
