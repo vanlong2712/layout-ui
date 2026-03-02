@@ -7,7 +7,7 @@ import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin'
 import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin'
 import { PlainTextPlugin } from '@lexical/react/LexicalPlainTextPlugin'
 
-import { HighlightNode } from './highlight-node'
+import { $isHighlightNode, HighlightNode } from './highlight-node'
 import { MentionNode, setMentionNodeConfig } from './mention-node'
 import { MentionPlugin } from './mention-plugin'
 import { HighlightPopover } from './popover'
@@ -169,8 +169,8 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
           const allNodes = root.getAllTextNodes()
           for (const node of allNodes) {
             if (
-              (node as any).__ruleIds &&
-              (node as any).__ruleIds.split(',').includes(ruleId)
+              $isHighlightNode(node) &&
+              node.__ruleIds.split(',').includes(ruleId)
             ) {
               const globalOffset = $pointToGlobalOffset(node.getKey(), 0)
               const originalContent = node.getTextContent()

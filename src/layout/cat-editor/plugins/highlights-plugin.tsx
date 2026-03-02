@@ -41,6 +41,50 @@ import type {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+// ─── Mount-time highlight scheduler ──────────────────────────────────────────
+// When many editors mount simultaneously during virtualized scroll, running
+// applyHighlights() on each one in the same frame causes cascading layout
+// thrashing (each editor.update() → DOM rebuild → ResizeObserver → TanStack
+// recalculates range → mounts more editors → repeat).
+//
+// This scheduler ensures at most ONE editor's highlight rebuild runs per
+// animation frame, keeping each frame well within the 16 ms budget.
+// Editors that unmount before their turn (scrolled out of view) are skipped.
+
+interface MountJob {
+  apply: () => void
+  cancelled: boolean
+}
+
+const _mountQueue: Array<MountJob> = []
+let _mountRafId: number | null = null
+
+function _processMountQueue() {
+  _mountRafId = null
+  // Process one non-cancelled job per frame
+  while (_mountQueue.length > 0) {
+    const job = _mountQueue.shift()!
+    if (!job.cancelled) {
+      job.apply()
+      break
+    }
+  }
+  if (_mountQueue.length > 0) {
+    _mountRafId = requestAnimationFrame(_processMountQueue)
+  }
+}
+
+function scheduleMountHighlight(apply: () => void): MountJob {
+  const job: MountJob = { apply, cancelled: false }
+  _mountQueue.push(job)
+  if (_mountRafId === null) {
+    _mountRafId = requestAnimationFrame(_processMountQueue)
+  }
+  return job
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+
 /** Saved mention position recorded during the text-collection phase. */
 interface SavedMention {
   start: number
@@ -157,7 +201,7 @@ function maskMentionRanges(
 // ─── Annotation Map Sync ─────────────────────────────────────────────────────
 
 /** Update the annotation map from computed segments. */
-function syncAnnotationMap(
+export function syncAnnotationMap(
   ref: React.MutableRefObject<Map<string, RuleAnnotation>>,
   segments: Array<HighlightSegment>,
 ): void {
@@ -174,7 +218,7 @@ function syncAnnotationMap(
 
 /** Rebuild the Lexical content tree with highlight/mention nodes.
  *  Must be called inside `editor.update()`. */
-function $rebuildTree(
+export function $rebuildTree(
   root: ElementNode,
   fullText: string,
   segments: Array<HighlightSegment>,
@@ -404,6 +448,8 @@ export function HighlightsPlugin({
 }: HighlightsPluginProps) {
   const [editor] = useLexicalComposerContext()
   const rafRef = useRef<number | null>(null)
+  const mountJobRef = useRef<MountJob | null>(null)
+  const isMountedRef = useRef(false)
 
   const applyHighlights = useCallback(() => {
     // Sync codepoint overrides for this editor instance
@@ -470,8 +516,23 @@ export function HighlightsPlugin({
     )
   }, [editor, rules, annotationMapRef, codepointDisplayMap])
 
-  // Run on mount and when rules change
+  // Run on mount and when rules change.
+  // On first mount: stagger via the global scheduler so that only ONE
+  // editor's highlight rebuild runs per animation frame (prevents the
+  // cascade of N simultaneous editor.update() calls during scroll).
+  // On subsequent runs (e.g. rules change): apply immediately.
   useEffect(() => {
+    if (!isMountedRef.current) {
+      isMountedRef.current = true
+      if (mountJobRef.current) mountJobRef.current.cancelled = true
+      mountJobRef.current = scheduleMountHighlight(applyHighlights)
+      return () => {
+        if (mountJobRef.current) {
+          mountJobRef.current.cancelled = true
+          mountJobRef.current = null
+        }
+      }
+    }
     applyHighlights()
   }, [applyHighlights])
 

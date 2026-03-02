@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 import {
   $getNodeKeysInRange,
@@ -218,6 +218,11 @@ export function useFlash(
     },
     [editorRef, applyFlashRange, clearFlash],
   )
+
+  // Clean up any active flash (and its update listener) on unmount
+  useEffect(() => {
+    return () => clearFlash()
+  }, [clearFlash])
 
   return { flashHighlight, flashRange, clearFlash }
 }

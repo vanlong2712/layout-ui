@@ -317,7 +317,10 @@ export function HighlightPopover({
     el.style.visibility = 'hidden'
 
     if (popperRef.current) {
-      // Reuse existing instance — just update the virtual reference
+      // Reuse existing instance — just update the virtual reference.
+      // ⚠️ This directly mutates Popper's internal state instead of using
+      // setOptions(). It avoids recreating the instance and is faster, but
+      // relies on an undocumented internal. Pin @popperjs/core if this breaks.
       popperRef.current.state.elements.reference =
         virtualEl as unknown as Element
     } else {
