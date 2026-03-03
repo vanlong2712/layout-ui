@@ -18,7 +18,11 @@ import {
   Type,
 } from 'lucide-react'
 
-import type { IKeywordsEntry, ISpellCheckValidation } from '@/layout/cat-editor'
+import type {
+  IKeywordsEntry,
+  ILexiQAValidation,
+  ISpellCheckValidation,
+} from '@/layout/cat-editor'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -161,8 +165,8 @@ export interface CATEditorToolbarProps {
   // ── LexiQA ─────────────────────────────────────
   lexiqaEnabled: boolean
   onLexiqaEnabledChange: (v: boolean) => void
-  lexiqaEntries: Array<IKeywordsEntry>
-  onLexiqaUpdate: (idx: number, patch: Partial<IKeywordsEntry>) => void
+  lexiqaData: Array<ILexiQAValidation>
+  onLexiqaUpdate: (idx: number, patch: Partial<ILexiQAValidation>) => void
   onLexiqaRemove: (idx: number) => void
   onLexiqaAdd: () => void
 
@@ -409,12 +413,86 @@ export function CATEditorToolbar(props: CATEditorToolbarProps) {
         enabled={props.lexiqaEnabled}
         onToggle={props.onLexiqaEnabledChange}
       >
-        <KeywordEditor
-          entries={props.lexiqaEntries}
-          onUpdate={props.onLexiqaUpdate}
-          onRemove={props.onLexiqaRemove}
-          onAdd={props.onLexiqaAdd}
-        />
+        <div className="space-y-2 max-h-60 overflow-y-auto">
+          {props.lexiqaData.map((v, i) => (
+            <div
+              key={i}
+              className="flex items-start gap-2 rounded border border-border/50 bg-background p-2"
+            >
+              <div className="grid grid-cols-[60px_1fr] gap-1.5 flex-1 text-xs">
+                <span className="text-muted-foreground self-center">msg</span>
+                <Input
+                  className="h-7 text-xs"
+                  value={v.msg}
+                  onChange={(e) =>
+                    props.onLexiqaUpdate(i, { msg: e.target.value })
+                  }
+                />
+                <span className="text-muted-foreground self-center">
+                  start/len
+                </span>
+                <div className="flex gap-1">
+                  <Input
+                    className="h-7 text-xs w-16"
+                    type="number"
+                    value={v.start}
+                    onChange={(e) =>
+                      props.onLexiqaUpdate(i, {
+                        start: parseInt(e.target.value) || 0,
+                      })
+                    }
+                  />
+                  <Input
+                    className="h-7 text-xs w-16"
+                    type="number"
+                    value={v.length}
+                    onChange={(e) =>
+                      props.onLexiqaUpdate(i, {
+                        length: parseInt(e.target.value) || 0,
+                      })
+                    }
+                  />
+                </div>
+                <span className="text-muted-foreground self-center">
+                  category
+                </span>
+                <Input
+                  className="h-7 text-xs"
+                  value={v.category}
+                  onChange={(e) =>
+                    props.onLexiqaUpdate(i, { category: e.target.value })
+                  }
+                />
+                <span className="text-muted-foreground self-center">
+                  module
+                </span>
+                <Input
+                  className="h-7 text-xs"
+                  value={v.module}
+                  onChange={(e) =>
+                    props.onLexiqaUpdate(i, { module: e.target.value })
+                  }
+                />
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0 text-muted-foreground"
+                onClick={() => props.onLexiqaRemove(i)}
+              >
+                <Minus className="h-3 w-3" />
+              </Button>
+            </div>
+          ))}
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full h-7 text-xs gap-1"
+          onClick={props.onLexiqaAdd}
+        >
+          <Plus className="h-3 w-3" /> Add validation
+        </Button>
       </ToolbarPopoverButton>
 
       {/* TB Target */}
@@ -790,7 +868,7 @@ export function CATEditorLegend({ showMention }: CATEditorLegendProps) {
         <span className="text-muted-foreground">Spellcheck</span>
       </div>
       <div className="flex items-center gap-1.5">
-        <span className="inline-block h-3 w-6 rounded cat-highlight cat-highlight-keyword cat-highlight-keyword-lexiqa" />
+        <span className="inline-block h-3 w-6 rounded cat-highlight cat-highlight-lexiqa" />
         <span className="text-muted-foreground">LexiQA</span>
       </div>
       <div className="flex items-center gap-1.5">

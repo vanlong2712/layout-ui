@@ -15,6 +15,8 @@ import type {
   CATEditorRef,
   IKeywordsEntry,
   IKeywordsRule,
+  ILexiQARule,
+  ILexiQAValidation,
   ILinkRule,
   IQuoteRule,
   ISpellCheckRule,
@@ -199,9 +201,21 @@ function getSampleText(index: number): string {
 const DEFAULT_TAG_PATTERN =
   '<[^>]+>|(\\{\\{[^{}]*\\}\\})|(\\{[^{}]*\\})|(["\']?\\{[^{}]*\\}["\']?)|(["\']?\\$\\{[^{}]*\\}["\']?)|(["\']?\\$[A-Za-z0-9_]+["\']?)|(["\']?%[A-Za-z0-9]+["\']?)'
 
-const DEFAULT_LEXIQA_ENTRIES: Array<IKeywordsEntry> = [
-  { pattern: 'API endpoint' },
-  { pattern: 'HTTP request' },
+const DEFAULT_LEXIQA_DATA: Array<ILexiQAValidation> = [
+  {
+    category: 'terminology',
+    start: 0,
+    end: 3,
+    errorid: 'lq-term-001',
+    ignored: false,
+    insource: true,
+    length: 3,
+    module: 'term_check',
+    msg: 'Demo LexiQA: first word of every row.',
+    suggestions: [{ value: 'A' }],
+    categoryId: 'TERM',
+    shortMessage: 'Term',
+  },
 ]
 
 const DEFAULT_TB_ENTRIES: Array<IKeywordsEntry> = [
@@ -673,8 +687,8 @@ function CATEditorPerfDemoInner() {
 
   const [spellcheckData, setSpellcheckData] =
     useState<Array<ISpellCheckValidation>>(DEFAULT_SPELLCHECK)
-  const [lexiqaEntries, setLexiqaEntries] = useState<Array<IKeywordsEntry>>(
-    DEFAULT_LEXIQA_ENTRIES,
+  const [lexiqaData, setLexiqaData] = useState<Array<ILexiQAValidation>>(
+    DEFAULT_LEXIQA_DATA,
   )
   const [tbEntries, setTbEntries] =
     useState<Array<IKeywordsEntry>>(DEFAULT_TB_ENTRIES)
@@ -769,10 +783,9 @@ function CATEditorPerfDemoInner() {
     }
     if (lexiqaEnabled) {
       active.push({
-        type: 'keyword',
-        label: 'lexiqa',
-        entries: lexiqaEntries,
-      } satisfies IKeywordsRule)
+        type: 'lexiqa',
+        validations: lexiqaData,
+      } satisfies ILexiQARule)
     }
     if (tbTargetEnabled) {
       active.push({
@@ -832,7 +845,7 @@ function CATEditorPerfDemoInner() {
     spellcheckEnabled,
     spellcheckData,
     lexiqaEnabled,
-    lexiqaEntries,
+    lexiqaData,
     tbTargetEnabled,
     tbEntries,
     specialCharEnabled,
@@ -870,7 +883,7 @@ function CATEditorPerfDemoInner() {
     setSearchKeywords('')
     setSearchFilterRows(false)
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
-    setLexiqaEntries(DEFAULT_LEXIQA_ENTRIES)
+    setLexiqaData(DEFAULT_LEXIQA_DATA)
     setTbEntries(DEFAULT_TB_ENTRIES)
     setSpecialCharEntries(DEFAULT_SPECIAL_CHARS)
     setTagsCollapsed(false)
@@ -1107,12 +1120,32 @@ function CATEditorPerfDemoInner() {
           spellcheckFlashDisabled={focusedRow === null}
           lexiqaEnabled={lexiqaEnabled}
           onLexiqaEnabledChange={setLexiqaEnabled}
-          lexiqaEntries={lexiqaEntries}
+          lexiqaData={lexiqaData}
           onLexiqaUpdate={(idx, patch) =>
-            updateKeyword(setLexiqaEntries, idx, patch)
+            setLexiqaData((prev) =>
+              prev.map((v, i) => (i === idx ? { ...v, ...patch } : v)),
+            )
           }
-          onLexiqaRemove={(idx) => removeKeyword(setLexiqaEntries, idx)}
-          onLexiqaAdd={() => addKeyword(setLexiqaEntries)}
+          onLexiqaRemove={(idx) =>
+            setLexiqaData((prev) => prev.filter((_, i) => i !== idx))
+          }
+          onLexiqaAdd={() =>
+            setLexiqaData((prev) => [
+              ...prev,
+              {
+                category: 'misc',
+                start: 0,
+                end: 0,
+                errorid: `lq-new-${Date.now()}`,
+                ignored: false,
+                insource: false,
+                length: 0,
+                module: 'custom',
+                msg: '',
+                suggestions: [],
+              },
+            ])
+          }
           tbTargetEnabled={tbTargetEnabled}
           onTbTargetEnabledChange={setTbTargetEnabled}
           tbEntries={tbEntries}

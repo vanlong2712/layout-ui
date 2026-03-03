@@ -68,6 +68,9 @@ export class HighlightNode extends TextNode {
       if (t.startsWith('spellcheck-')) {
         dom.classList.add('cat-highlight-spellcheck')
       }
+      if (t.startsWith('lexiqa-')) {
+        dom.classList.add('cat-highlight-lexiqa')
+      }
     }
     if (this.__highlightTypes.includes(',')) {
       dom.classList.add('cat-highlight-nested')
@@ -145,6 +148,9 @@ export class HighlightNode extends TextNode {
         if (t.startsWith('spellcheck-')) {
           dom.classList.remove('cat-highlight-spellcheck')
         }
+        if (t.startsWith('lexiqa-')) {
+          dom.classList.remove('cat-highlight-lexiqa')
+        }
       }
       dom.classList.remove('cat-highlight-nested')
       for (const t of this.__highlightTypes.split(',')) {
@@ -154,6 +160,9 @@ export class HighlightNode extends TextNode {
         }
         if (t.startsWith('spellcheck-')) {
           dom.classList.add('cat-highlight-spellcheck')
+        }
+        if (t.startsWith('lexiqa-')) {
+          dom.classList.add('cat-highlight-lexiqa')
         }
       }
       if (this.__highlightTypes.includes(',')) {

@@ -7,6 +7,7 @@ import { CODEPOINT_DISPLAY_MAP } from './constants'
 
 import type { Instance as PopperInstance } from '@popperjs/core'
 import type {
+  ILexiQAValidation,
   ISpellCheckValidation,
   PopoverContentRenderer,
   PopoverState,
@@ -60,6 +61,73 @@ function SpellCheckPopoverContent({
           </div>
         </div>
       )}
+      {data.dictionaries && data.dictionaries.length > 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          Dictionaries: {data.dictionaries.join(', ')}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function LexiQAPopoverContent({
+  data,
+  onSuggestionClick,
+}: {
+  data: ILexiQAValidation
+  onSuggestionClick: (suggestion: string) => void
+}) {
+  const displayMessage = data.message || data.msg
+  const displayShort = data.shortMessage || data.category
+
+  return (
+    <div className="space-y-2.5 p-3 max-w-sm">
+      <div className="flex items-center gap-2">
+        <span className="cat-badge cat-badge-lexiqa">
+          {displayShort || 'LexiQA'}
+        </span>
+        {data.categoryId && (
+          <span className="text-[11px] text-muted-foreground">
+            {data.categoryId}
+          </span>
+        )}
+        <span className="text-[11px] text-muted-foreground ml-auto">
+          {data.module}
+        </span>
+      </div>
+      {displayMessage && (
+        <p className="text-sm leading-relaxed text-foreground">
+          {displayMessage}
+        </p>
+      )}
+      {data.suggestions.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted-foreground">
+            Suggestions:
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {data.suggestions.map((s, i) => (
+              <button
+                key={i}
+                type="button"
+                className="cat-suggestion-btn"
+                onClick={() => onSuggestionClick(s.value)}
+              >
+                {s.value}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+        <span>
+          Error: <code className="font-mono">{data.errorid}</code>
+        </span>
+        {data.insource && <span>· in source</span>}
+        {data.ignored && (
+          <span className="text-amber-600 dark:text-amber-400">· ignored</span>
+        )}
+      </div>
       {data.dictionaries && data.dictionaries.length > 0 && (
         <p className="text-[11px] text-muted-foreground">
           Dictionaries: {data.dictionaries.join(', ')}
@@ -410,6 +478,11 @@ export function HighlightPopover({
               custom
             ) : ann.type === 'spellcheck' ? (
               <SpellCheckPopoverContent
+                data={ann.data}
+                onSuggestionClick={(s) => onSuggestionClick(s, ann.id)}
+              />
+            ) : ann.type === 'lexiqa' ? (
+              <LexiQAPopoverContent
                 data={ann.data}
                 onSuggestionClick={(s) => onSuggestionClick(s, ann.id)}
               />

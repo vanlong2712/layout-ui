@@ -17,6 +17,8 @@ export type { CATEditorProps } from './layout/cat-editor'
 export {
   KeywordsEntrySchema,
   KeywordsRuleSchema,
+  LexiQARuleSchema,
+  LexiQAValidationSchema,
   MooRuleSchema,
   RuleAnnotationSchema,
   SpellCheckRuleSchema,
@@ -24,6 +26,8 @@ export {
 export type {
   CATEditorRef,
   MooRule,
+  ILexiQARule,
+  ILexiQAValidation,
   ISpellCheckRule,
   IKeywordsRule,
   ITagRule,

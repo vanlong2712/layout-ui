@@ -271,6 +271,51 @@ function detectCustomTags(
   return result
 }
 
+// ─── Shared QA offset matching ───────────────────────────────────────────────
+
+/**
+ * Resolve validated start/end offsets against the current editor text.
+ *
+ * - Primary: use the provided offsets if the `content` still matches.
+ * - Fallback: if text has been edited and offsets are stale, search for
+ *   `content` near the original position.
+ *
+ * Shared by spellcheck and lexiqa rules.
+ *
+ * @returns `{ matchStart, matchEnd }` or `null` if no match.
+ */
+function matchQAOffset(
+  text: string,
+  start: number,
+  end: number,
+  content: string | undefined,
+): { matchStart: number; matchEnd: number } | null {
+  if (start < 0 || start >= end) return null
+  if (!content) {
+    // No content string — trust the offsets directly if in range.
+    if (end <= text.length) return { matchStart: start, matchEnd: end }
+    return null
+  }
+
+  // Exact match at given offsets?
+  if (end <= text.length && text.slice(start, end) === content) {
+    return { matchStart: start, matchEnd: end }
+  }
+
+  // Fallback: search within a window around the original offset.
+  const searchRadius = Math.max(64, content.length * 4)
+  const searchFrom = Math.max(0, start - searchRadius)
+  const searchTo = Math.min(text.length, end + searchRadius)
+  const regionLower = text.slice(searchFrom, searchTo).toLowerCase()
+  const contentLower = content.toLowerCase()
+  const idx = regionLower.indexOf(contentLower)
+  if (idx !== -1) {
+    const matchStart = searchFrom + idx
+    return { matchStart, matchEnd: matchStart + content.length }
+  }
+  return null
+}
+
 // ─── Highlight computation (sweep-line with nesting) ──────────────────────────
 
 export function computeHighlightSegments(
@@ -283,40 +328,36 @@ export function computeHighlightSegments(
   for (const rule of rules) {
     if (rule.type === 'spellcheck') {
       for (const v of rule.validations) {
-        if (v.start < 0 || v.start >= v.end || !v.content) continue
-
-        // Primary: use the provided offsets if the text still matches.
-        // Fallback: if the text has been edited (typing, paste, etc.)
-        // and the offsets are stale, search for the content string
-        // near the original position. This keeps highlights correct
-        // even when the user types and shifts the text around.
-        let matchStart = -1
-        let matchEnd = -1
-
-        if (v.end <= text.length && text.slice(v.start, v.end) === v.content) {
-          matchStart = v.start
-          matchEnd = v.end
-        } else {
-          // Search within a window around the original offset
-          const searchRadius = Math.max(64, v.content.length * 4)
-          const searchFrom = Math.max(0, v.start - searchRadius)
-          const searchTo = Math.min(text.length, v.end + searchRadius)
-          const regionLower = text.slice(searchFrom, searchTo).toLowerCase()
-          const contentLower = v.content.toLowerCase()
-          const idx = regionLower.indexOf(contentLower)
-          if (idx !== -1) {
-            matchStart = searchFrom + idx
-            matchEnd = matchStart + v.content.length
-          }
-        }
-
-        if (matchStart >= 0) {
+        const match = matchQAOffset(text, v.start, v.end, v.content)
+        if (match) {
           rawRanges.push({
-            start: matchStart,
-            end: matchEnd,
+            start: match.matchStart,
+            end: match.matchEnd,
             annotation: {
               type: 'spellcheck',
-              id: `sc-${matchStart}-${matchEnd}`,
+              id: `sc-${match.matchStart}-${match.matchEnd}`,
+              data: v,
+            },
+          })
+        }
+      }
+    } else if (rule.type === 'lexiqa') {
+      for (const v of rule.validations) {
+        // LexiQA validations have start + length; derive content from text
+        // for fallback matching.  `v.length` is the character count.
+        const end = v.start + v.length
+        const content =
+          v.start >= 0 && end <= text.length
+            ? text.slice(v.start, end)
+            : undefined
+        const match = matchQAOffset(text, v.start, end, content)
+        if (match) {
+          rawRanges.push({
+            start: match.matchStart,
+            end: match.matchEnd,
+            annotation: {
+              type: 'lexiqa',
+              id: `lq-${v.errorid}-${match.matchStart}-${match.matchEnd}`,
               data: v,
             },
           })

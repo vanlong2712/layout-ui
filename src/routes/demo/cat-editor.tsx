@@ -10,6 +10,8 @@ import type {
   CATEditorRef,
   IKeywordsEntry,
   IKeywordsRule,
+  ILexiQARule,
+  ILexiQAValidation,
   ILinkRule,
   IMentionRule,
   IMentionUser,
@@ -92,9 +94,35 @@ const DEFAULT_SPELLCHECK: Array<ISpellCheckValidation> = [
 const DEFAULT_TAG_PATTERN =
   "<[^>]+>|(\\{\\{[^{}]*\\}\\})|(\\{[^{}]*\\})|(['\\\\']?\\{[^{}]*\\}['\\\\']?)|(['\\\\']?\\$\\{[^{}]*\\}['\\\\']?)|(['\\\\']?\\$[A-Za-z0-9_]+['\\\\']?)|(['\\\\']?%[A-Za-z0-9]+['\\\\']?)"
 
-const DEFAULT_LEXIQA_ENTRIES: Array<IKeywordsEntry> = [
-  { pattern: 'API endpoint' },
-  { pattern: 'HTTP request' },
+const DEFAULT_LEXIQA_DATA: Array<ILexiQAValidation> = [
+  {
+    category: 'terminology',
+    start: 107,
+    end: 119,
+    errorid: 'lq-term-001',
+    ignored: false,
+    insource: true,
+    length: 12,
+    module: 'term_check',
+    msg: 'Technical term "API endpoint" detected — verify translation.',
+    suggestions: [{ value: 'API endpoint' }],
+    categoryId: 'TERM',
+    shortMessage: 'Term',
+  },
+  {
+    category: 'terminology',
+    start: 124,
+    end: 136,
+    errorid: 'lq-term-002',
+    ignored: false,
+    insource: true,
+    length: 12,
+    module: 'term_check',
+    msg: 'Technical term "HTTP request" detected — verify translation.',
+    suggestions: [{ value: 'HTTP request' }],
+    categoryId: 'TERM',
+    shortMessage: 'Term',
+  },
 ]
 
 const DEFAULT_TB_ENTRIES: Array<IKeywordsEntry> = [
@@ -440,9 +468,8 @@ function CATEditorDemo() {
   // ── Editable rule data ───────────────────────────────────────────────
   const [spellcheckData, setSpellcheckData] =
     useState<Array<ISpellCheckValidation>>(DEFAULT_SPELLCHECK)
-  const [lexiqaEntries, setLexiqaEntries] = useState<Array<IKeywordsEntry>>(
-    DEFAULT_LEXIQA_ENTRIES,
-  )
+  const [lexiqaData, setLexiqaData] =
+    useState<Array<ILexiQAValidation>>(DEFAULT_LEXIQA_DATA)
   const [tbEntries, setTbEntries] =
     useState<Array<IKeywordsEntry>>(DEFAULT_TB_ENTRIES)
   const [specialCharEntries, setSpecialCharEntries] = useState<
@@ -546,10 +573,9 @@ function CATEditorDemo() {
     }
     if (lexiqaEnabled) {
       active.push({
-        type: 'keyword',
-        label: 'lexiqa',
-        entries: lexiqaEntries,
-      } satisfies IKeywordsRule)
+        type: 'lexiqa',
+        validations: lexiqaData,
+      } satisfies ILexiQARule)
     }
     if (tbTargetEnabled) {
       active.push({
@@ -618,7 +644,7 @@ function CATEditorDemo() {
     spellcheckEnabled,
     spellcheckData,
     lexiqaEnabled,
-    lexiqaEntries,
+    lexiqaData,
     tbTargetEnabled,
     tbEntries,
     specialCharEnabled,
@@ -667,7 +693,7 @@ function CATEditorDemo() {
     setTagsEnabled(true)
     setQuotesEnabled(true)
     setSpellcheckData(DEFAULT_SPELLCHECK)
-    setLexiqaEntries(DEFAULT_LEXIQA_ENTRIES)
+    setLexiqaData(DEFAULT_LEXIQA_DATA)
     setTbEntries(DEFAULT_TB_ENTRIES)
     setSpecialCharEntries(DEFAULT_SPECIAL_CHARS)
     setTagsCollapsed(false)
@@ -800,12 +826,32 @@ function CATEditorDemo() {
           onFlashSpellcheck={handleFlashSpellcheck}
           lexiqaEnabled={lexiqaEnabled}
           onLexiqaEnabledChange={setLexiqaEnabled}
-          lexiqaEntries={lexiqaEntries}
+          lexiqaData={lexiqaData}
           onLexiqaUpdate={(idx, patch) =>
-            updateKeyword(setLexiqaEntries, idx, patch)
+            setLexiqaData((prev) =>
+              prev.map((v, i) => (i === idx ? { ...v, ...patch } : v)),
+            )
           }
-          onLexiqaRemove={(idx) => removeKeyword(setLexiqaEntries, idx)}
-          onLexiqaAdd={() => addKeyword(setLexiqaEntries)}
+          onLexiqaRemove={(idx) =>
+            setLexiqaData((prev) => prev.filter((_, i) => i !== idx))
+          }
+          onLexiqaAdd={() =>
+            setLexiqaData((prev) => [
+              ...prev,
+              {
+                category: 'misc',
+                start: 0,
+                end: 0,
+                errorid: `lq-new-${Date.now()}`,
+                ignored: false,
+                insource: false,
+                length: 0,
+                module: 'custom',
+                msg: '',
+                suggestions: [],
+              },
+            ])
+          }
           tbTargetEnabled={tbTargetEnabled}
           onTbTargetEnabledChange={setTbTargetEnabled}
           tbEntries={tbEntries}

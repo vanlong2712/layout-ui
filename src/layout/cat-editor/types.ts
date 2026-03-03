@@ -10,6 +10,23 @@ export const SuggestionSchema = z.object({
 })
 export type ISuggestion = z.infer<typeof SuggestionSchema>
 
+// ─── Shared QA validation base ────────────────────────────────────────────────
+// Common fields between spellcheck and lexiqa validations.
+// Not used as a standalone schema — exists for documentation & DRY.
+
+export const QAValidationBaseSchema = z.object({
+  start: z.number(),
+  end: z.number(),
+  suggestions: z.array(SuggestionSchema),
+  categoryId: z.string().optional(),
+  message: z.string().optional(),
+  shortMessage: z.string().optional(),
+  dictionaries: z.array(z.string()).optional(),
+})
+export type IQAValidationBase = z.infer<typeof QAValidationBaseSchema>
+
+// ─── Spellcheck ───────────────────────────────────────────────────────────────
+
 export const SpellCheckValidationSchema = z.object({
   categoryId: z.string(),
   start: z.number(),
@@ -27,6 +44,34 @@ export const SpellCheckRuleSchema = z.object({
   validations: z.array(SpellCheckValidationSchema),
 })
 export type ISpellCheckRule = z.infer<typeof SpellCheckRuleSchema>
+
+// ─── LexiQA ──────────────────────────────────────────────────────────────────
+
+export const LexiQAValidationSchema = z.object({
+  category: z.string(),
+  end: z.number(),
+  errorid: z.string(),
+  ignored: z.boolean(),
+  insource: z.boolean(),
+  length: z.number(),
+  module: z.string(),
+  start: z.number(),
+  msg: z.string(),
+  categoryId: z.string().optional(),
+  suggestions: z.array(SuggestionSchema),
+  rowId: z.string().optional(),
+  columnId: z.string().optional(),
+  shortMessage: z.string().optional(),
+  dictionaries: z.array(z.string()).optional(),
+  message: z.string().optional(),
+})
+export type ILexiQAValidation = z.infer<typeof LexiQAValidationSchema>
+
+export const LexiQARuleSchema = z.object({
+  type: z.literal('lexiqa'),
+  validations: z.array(LexiQAValidationSchema),
+})
+export type ILexiQARule = z.infer<typeof LexiQARuleSchema>
 
 // ─── Keywords (generic term-matching) ─────────────────────────────────────────
 // Covers LexiQA, TB Target, keyword search, missing keywords, and any future
@@ -146,6 +191,7 @@ export type IMentionRule = z.infer<typeof MentionRuleSchema>
 
 export const MooRuleSchema = z.discriminatedUnion('type', [
   SpellCheckRuleSchema,
+  LexiQARuleSchema,
   KeywordsRuleSchema,
   TagRuleSchema,
   QuoteRuleSchema,
@@ -162,6 +208,13 @@ export const SpellCheckAnnotationSchema = z.object({
   data: SpellCheckValidationSchema,
 })
 export type SpellCheckAnnotation = z.infer<typeof SpellCheckAnnotationSchema>
+
+export const LexiQAAnnotationSchema = z.object({
+  type: z.literal('lexiqa'),
+  id: z.string(),
+  data: LexiQAValidationSchema,
+})
+export type LexiQAAnnotation = z.infer<typeof LexiQAAnnotationSchema>
 
 export const KeywordsAnnotationSchema = z.object({
   type: z.literal('keyword'),
@@ -237,6 +290,7 @@ export type LinkAnnotation = z.infer<typeof LinkAnnotationSchema>
 
 export const RuleAnnotationSchema = z.discriminatedUnion('type', [
   SpellCheckAnnotationSchema,
+  LexiQAAnnotationSchema,
   KeywordsAnnotationSchema,
   TagAnnotationSchema,
   QuoteAnnotationSchema,

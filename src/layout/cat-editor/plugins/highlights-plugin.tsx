@@ -279,6 +279,8 @@ export function $rebuildTree(
             if (a.type === 'keyword') return `keyword-${a.data.label}`
             if (a.type === 'spellcheck')
               return `spellcheck-${a.data.categoryId}`
+            if (a.type === 'lexiqa')
+              return `lexiqa-${a.data.categoryId ?? a.data.category}`
             return a.type
           }),
         ),
@@ -366,6 +368,8 @@ export function $rebuildTree(
               if (a.type === 'keyword') return `keyword-${a.data.label}`
               if (a.type === 'spellcheck')
                 return `spellcheck-${a.data.categoryId}`
+              if (a.type === 'lexiqa')
+                return `lexiqa-${a.data.categoryId ?? a.data.category}`
               return a.type
             }),
           ),

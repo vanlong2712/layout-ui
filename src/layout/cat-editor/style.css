@@ -102,6 +102,16 @@
   background-color: var(--cat-spellcheck-bg-hover, oklch(0.7 0.2 25 / 0.25));
 }
 
+/* ─── LexiQA: orange wavy underline + subtle orange background ─────────── */
+
+.cat-highlight-lexiqa {
+  background-color: var(--cat-lexiqa-bg, oklch(0.78 0.14 55 / 0.14));
+  border-bottom: 2px wavy var(--cat-lexiqa-underline, oklch(0.6 0.18 55));
+}
+.cat-highlight-lexiqa:hover {
+  background-color: var(--cat-lexiqa-bg-hover, oklch(0.78 0.14 55 / 0.28));
+}
+
 /* ─── Keyword (generic term-match) ────────────────────────────────────── */
 
 .cat-highlight-keyword {
@@ -379,6 +389,14 @@
   background-color: var(--cat-spellcheck-bg-hover, oklch(0.5 0.2 25 / 0.4));
 }
 
+.dark .cat-highlight-lexiqa {
+  background-color: var(--cat-lexiqa-bg, oklch(0.5 0.16 55 / 0.25));
+  border-bottom-color: var(--cat-lexiqa-underline, oklch(0.65 0.18 55));
+}
+.dark .cat-highlight-lexiqa:hover {
+  background-color: var(--cat-lexiqa-bg-hover, oklch(0.5 0.16 55 / 0.4));
+}
+
 .dark .cat-highlight-keyword {
   background-color: var(--cat-keyword-bg, oklch(0.5 0.17 280 / 0.25));
   border-bottom-color: var(--cat-keyword-underline, oklch(0.65 0.2 280));
@@ -544,6 +562,15 @@
 .dark .cat-badge-spell {
   background: oklch(0.5 0.2 25 / 0.3);
   color: oklch(0.75 0.2 25);
+}
+
+.cat-badge-lexiqa {
+  background: oklch(0.78 0.14 55 / 0.18);
+  color: oklch(0.45 0.18 55);
+}
+.dark .cat-badge-lexiqa {
+  background: oklch(0.5 0.14 55 / 0.3);
+  color: oklch(0.78 0.16 55);
 }
 
 .cat-badge-keyword {
