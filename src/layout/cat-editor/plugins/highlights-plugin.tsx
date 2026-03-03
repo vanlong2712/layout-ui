@@ -415,6 +415,13 @@ export function HighlightsPlugin({
     // Sync codepoint overrides for this editor instance
     HighlightNode.__codepointOverrides = codepointDisplayMap
 
+    // Snapshot DOM focus BEFORE the update.  Inside the update callback
+    // the DOM isn't yet reconciled, so we can't reliably read activeElement.
+    const rootElement = editor.getRootElement()
+    const hasDOMFocus =
+      rootElement != null &&
+      rootElement.contains(rootElement.ownerDocument.activeElement)
+
     editor.update(
       () => {
         $addUpdateTag('cat-highlights')
@@ -434,11 +441,6 @@ export function HighlightsPlugin({
         syncAnnotationMap(annotationMapRef, segments)
 
         // 5. Save selection as global offsets.
-        //    ALWAYS save the Lexical model selection — not just when focused.
-        //    Cross-editor history sets text + selection on an editor that may
-        //    not yet have DOM focus when this rAF fires.  If we only save
-        //    when focused, we'd lose the caret by calling $setSelection(null)
-        //    after rebuild.
         let savedAnchor: number | null = null
         let savedFocus: number | null = null
         const sel = $getSelection()
@@ -450,11 +452,17 @@ export function HighlightsPlugin({
         // 6. Rebuild content tree with highlights + mentions
         $rebuildTree(root, fullText, segments, allMentions, rules)
 
-        // 7. Restore selection.
-        //    Always restore if we had one — Lexical only syncs the model
-        //    selection to the DOM when the editor is focused, so this won't
-        //    steal focus from external inputs.
-        if (savedAnchor !== null && savedFocus !== null) {
+        // 7. Restore selection only when the editor has DOM focus.
+        //    Lexical's reconciliation calls `rootElement.focus()` when it
+        //    applies a non-null selection, which steals focus from external
+        //    inputs (e.g. a search bar).  By setting `$setSelection(null)`
+        //    when unfocused we prevent that focus theft.
+        //
+        //    Cross-editor history is not affected: it explicitly calls
+        //    `editor.focus()` after `setSelection`, which runs before
+        //    this rAF-deferred `applyHighlights` — so by that time the
+        //    editor already has DOM focus and `hasDOMFocus` is `true`.
+        if (savedAnchor !== null && savedFocus !== null && hasDOMFocus) {
           const anchorPt = $globalOffsetToPoint(savedAnchor)
           const focusPt = $globalOffsetToPoint(savedFocus)
           if (anchorPt && focusPt) {
