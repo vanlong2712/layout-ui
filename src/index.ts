@@ -22,6 +22,9 @@ export {
   MooRuleSchema,
   RuleAnnotationSchema,
   SpellCheckRuleSchema,
+  SuggestionObjectSchema,
+  normalizeSuggestions,
+  resolveSuggestionValue,
 } from './layout/cat-editor'
 export type {
   CATEditorRef,

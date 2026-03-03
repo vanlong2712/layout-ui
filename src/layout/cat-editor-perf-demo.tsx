@@ -24,6 +24,7 @@ import type {
   ITagRule,
   MooRule,
 } from '@/layout/cat-editor'
+import type { RegexPreset } from '@/components/cat-editor-toolbar'
 import {
   EditorGridStoreProvider,
   clearEditorRefs,
@@ -51,6 +52,8 @@ import {
   CATEditorLegend,
   CATEditorSnippetsAndFlash,
   CATEditorToolbar,
+  DEFAULT_REGEX_PRESETS,
+  parseSearchTerms,
 } from '@/components/cat-editor-toolbar'
 // (cn removed — unused)
 
@@ -505,7 +508,7 @@ const VirtualizedEditorList = memo(function VirtualizedEditorList({
     <div
       key={resetKey}
       ref={parentRef}
-      className="rounded-xl border border-border bg-card shadow-sm overflow-auto"
+      className="rounded-xl border border-border bg-card shadow-sm overflow-auto isolate"
       style={{ height: '75vh' }}
     >
       {/* ── Sticky header ── */}
@@ -675,6 +678,10 @@ function CATEditorPerfDemoInner() {
   const [searchKeywords, setSearchKeywords] = useState('')
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(null)
   const [searchFilterRows, setSearchFilterRows] = useState(false)
+  const [regexPresetsEnabled, setRegexPresetsEnabled] = useState(true)
+  const [regexPresets, setRegexPresets] = useState<Array<RegexPreset>>(
+    DEFAULT_REGEX_PRESETS,
+  )
 
   const [editorDir, setEditorDir] = useState<'ltr' | 'rtl' | 'auto'>('ltr')
   const [popoverDir, setPopoverDir] = useState<
@@ -687,9 +694,8 @@ function CATEditorPerfDemoInner() {
 
   const [spellcheckData, setSpellcheckData] =
     useState<Array<ISpellCheckValidation>>(DEFAULT_SPELLCHECK)
-  const [lexiqaData, setLexiqaData] = useState<Array<ILexiQAValidation>>(
-    DEFAULT_LEXIQA_DATA,
-  )
+  const [lexiqaData, setLexiqaData] =
+    useState<Array<ILexiQAValidation>>(DEFAULT_LEXIQA_DATA)
   const [tbEntries, setTbEntries] =
     useState<Array<IKeywordsEntry>>(DEFAULT_TB_ENTRIES)
   const [specialCharEntries, setSpecialCharEntries] = useState<
@@ -827,18 +833,25 @@ function CATEditorPerfDemoInner() {
     if (linkEnabled) {
       active.push({ type: 'link' } satisfies ILinkRule)
     }
-    if (searchKeywords.trim()) {
-      const terms = searchKeywords
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean)
-      if (terms.length > 0) {
+    if (regexPresetsEnabled) {
+      const presetEntries = regexPresets
+        .filter((p) => p.pattern.trim())
+        .map((p) => ({ pattern: p.pattern, description: p.label || undefined }))
+      if (presetEntries.length > 0) {
         active.push({
           type: 'keyword',
-          label: 'search',
-          entries: terms.map((t) => ({ pattern: t })),
+          label: 'custom',
+          entries: presetEntries,
         } satisfies IKeywordsRule)
       }
+    }
+    // Search pushed last → highest highlight priority
+    if (searchKeywords.trim()) {
+      active.push({
+        type: 'keyword',
+        label: 'search',
+        entries: [{ pattern: searchKeywords }],
+      } satisfies IKeywordsRule)
     }
     return active
   }, [
@@ -866,6 +879,8 @@ function CATEditorPerfDemoInner() {
     quoteDetectInner,
     linkEnabled,
     searchKeywords,
+    regexPresetsEnabled,
+    regexPresets,
   ])
 
   const handleReset = useCallback(() => {
@@ -1245,6 +1260,10 @@ function CATEditorPerfDemoInner() {
             if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
             searchTimerRef.current = setTimeout(() => setSearchKeywords(v), 300)
           }}
+          regexPresetsEnabled={regexPresetsEnabled}
+          onRegexPresetsEnabledChange={setRegexPresetsEnabled}
+          regexPresets={regexPresets}
+          onRegexPresetsChange={setRegexPresets}
           afterSearch={
             <>
               <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground cursor-pointer select-none whitespace-nowrap">

@@ -33,7 +33,10 @@ import {
   CATEditorLegend,
   CATEditorSnippetsAndFlash,
   CATEditorToolbar,
+  DEFAULT_REGEX_PRESETS,
+  parseSearchTerms,
 } from '@/components/cat-editor-toolbar'
+import type { RegexPreset } from '@/components/cat-editor-toolbar'
 
 export const Route = createFileRoute('/demo/cat-editor')({
   component: CATEditorDemo,
@@ -453,6 +456,10 @@ function CATEditorDemo() {
   const [mentionShowAvatar, setMentionShowAvatar] = useState(true)
   const [mentionSerializeFormat, setMentionSerializeFormat] = useState('@{id}')
   const [searchKeywords, setSearchKeywords] = useState('')
+  const [regexPresetsEnabled, setRegexPresetsEnabled] = useState(true)
+  const [regexPresets, setRegexPresets] = useState<RegexPreset[]>(
+    DEFAULT_REGEX_PRESETS,
+  )
 
   // ── Editor options ───────────────────────────────────────────────────
   const [editorDir, setEditorDir] = useState<'ltr' | 'rtl' | 'auto'>('ltr')
@@ -626,16 +633,26 @@ function CATEditorDemo() {
         trigger: mentionTrigger || '@',
       } satisfies IMentionRule)
     }
+    if (regexPresetsEnabled) {
+      const presetEntries = regexPresets
+        .filter((p) => p.pattern.trim())
+        .map((p) => ({ pattern: p.pattern, description: p.label || undefined }))
+      if (presetEntries.length > 0) {
+        active.push({
+          type: 'keyword',
+          label: 'custom',
+          entries: presetEntries,
+        } satisfies IKeywordsRule)
+      }
+    }
+    // Search pushed last → highest highlight priority
     if (searchKeywords.trim()) {
-      const terms = searchKeywords
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean)
-      if (terms.length > 0) {
+      const entries = parseSearchTerms(searchKeywords)
+      if (entries.length > 0) {
         active.push({
           type: 'keyword',
           label: 'search',
-          entries: terms.map((t) => ({ pattern: t })),
+          entries,
         } satisfies IKeywordsRule)
       }
     }
@@ -667,6 +684,8 @@ function CATEditorDemo() {
     mentionEnabled,
     mentionTrigger,
     searchKeywords,
+    regexPresetsEnabled,
+    regexPresets,
   ])
 
   const handleSuggestionApply = useCallback(
@@ -934,6 +953,10 @@ function CATEditorDemo() {
           }
           searchValue={searchKeywords}
           onSearchChange={(e) => setSearchKeywords(e.target.value)}
+          regexPresetsEnabled={regexPresetsEnabled}
+          onRegexPresetsEnabledChange={setRegexPresetsEnabled}
+          regexPresets={regexPresets}
+          onRegexPresetsChange={setRegexPresets}
         />
 
         {/* Key-down log */}

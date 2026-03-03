@@ -6,6 +6,7 @@ import { createPopper } from '@popperjs/core'
 import { CODEPOINT_DISPLAY_MAP } from './constants'
 
 import type { Instance as PopperInstance } from '@popperjs/core'
+import { resolveSuggestionValue } from './types'
 import type {
   ILexiQAValidation,
   ISpellCheckValidation,
@@ -48,16 +49,19 @@ function SpellCheckPopoverContent({
             Suggestions:
           </p>
           <div className="flex flex-wrap gap-1">
-            {data.suggestions.map((s, i) => (
-              <button
-                key={i}
-                type="button"
-                className="cat-suggestion-btn"
-                onClick={() => onSuggestionClick(s.value)}
-              >
-                {s.value}
-              </button>
-            ))}
+            {data.suggestions.map((s, i) => {
+              const val = resolveSuggestionValue(s)
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  className="cat-suggestion-btn"
+                  onClick={() => onSuggestionClick(val)}
+                >
+                  {val}
+                </button>
+              )
+            })}
           </div>
         </div>
       )}
@@ -106,16 +110,19 @@ function LexiQAPopoverContent({
             Suggestions:
           </p>
           <div className="flex flex-wrap gap-1">
-            {data.suggestions.map((s, i) => (
-              <button
-                key={i}
-                type="button"
-                className="cat-suggestion-btn"
-                onClick={() => onSuggestionClick(s.value)}
-              >
-                {s.value}
-              </button>
-            ))}
+            {data.suggestions.map((s, i) => {
+              const val = resolveSuggestionValue(s)
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  className="cat-suggestion-btn"
+                  onClick={() => onSuggestionClick(val)}
+                >
+                  {val}
+                </button>
+              )
+            })}
           </div>
         </div>
       )}

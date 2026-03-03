@@ -5,10 +5,31 @@ import type { EditorUpdateOptions, LexicalEditor } from 'lexical'
 import type React from 'react'
 import { DetectQuotesOptionsSchema } from '@/utils/detect-quotes'
 
-export const SuggestionSchema = z.object({
+/** A structured suggestion with an explicit `value` property. */
+export const SuggestionObjectSchema = z.object({
   value: z.string(),
 })
+
+/**
+ * A suggestion can be either a plain string or an object `{ value: string }`.
+ * Both forms are accepted in every `suggestions` array throughout the API.
+ */
+export const SuggestionSchema = z.union([SuggestionObjectSchema, z.string()])
 export type ISuggestion = z.infer<typeof SuggestionSchema>
+
+// ─── Suggestion helpers ───────────────────────────────────────────────────────
+
+/** Resolve a single suggestion entry to its string value. */
+export function resolveSuggestionValue(s: ISuggestion): string {
+  return typeof s === 'string' ? s : s.value
+}
+
+/** Normalize a mixed `ISuggestion[]` to `{ value: string }[]`. */
+export function normalizeSuggestions(
+  suggestions: Array<ISuggestion>,
+): Array<{ value: string }> {
+  return suggestions.map((s) => (typeof s === 'string' ? { value: s } : s))
+}
 
 // ─── Shared QA validation base ────────────────────────────────────────────────
 // Common fields between spellcheck and lexiqa validations.

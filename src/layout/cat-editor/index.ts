@@ -53,8 +53,11 @@ export {
   SpellCheckRuleSchema,
   SpellCheckValidationSchema,
   SuggestionSchema,
+  SuggestionObjectSchema,
   TagAnnotationSchema,
   TagRuleSchema,
+  normalizeSuggestions,
+  resolveSuggestionValue,
 } from './types'
 
 export type {

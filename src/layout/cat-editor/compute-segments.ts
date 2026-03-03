@@ -2,6 +2,47 @@ import type { HighlightSegment, IQuoteRule, MooRule, RawRange } from './types'
 
 import { detectQuotes } from '@/utils/detect-quotes'
 
+// ─── Regex pattern helpers ────────────────────────────────────────────────────
+
+/**
+ * Parse a pattern string that may contain inline regex flags.
+ *
+ * Supported syntaxes:
+ *  - `(?i)pattern`           → `/pattern/gi`
+ *  - `(?im)pattern`          → `/pattern/gim`
+ *  - `(?i:pattern)`          → `/(?i:pattern)/g`  (passed through to engine)
+ *  - `/pattern/flags`        → `/pattern/flags`   (literal regex notation)
+ *  - plain string            → `/string/g`
+ *
+ * The `g` flag is always ensured so `exec()` iterates all matches.
+ * Invalid JS regex flags (e.g. `a`, `x`) are silently stripped.
+ */
+const INLINE_FLAGS_RE = /^\(\?([gimsuy]+)\)/
+const LITERAL_REGEX_RE = /^\/(.+)\/([gimsuy]*)$/s
+
+const VALID_JS_FLAGS = new Set([...'gimsuy'])
+
+function parsePatternWithFlags(pattern: string): RegExp {
+  // 1. Literal `/regex/flags` notation
+  const litMatch = LITERAL_REGEX_RE.exec(pattern)
+  if (litMatch) {
+    const flags = new Set([...'g', ...litMatch[2]])
+    return new RegExp(litMatch[1], [...flags].join(''))
+  }
+
+  // 2. Inline `(?flags)` prefix — strip it and merge into flags
+  const inlineMatch = INLINE_FLAGS_RE.exec(pattern)
+  if (inlineMatch) {
+    const flagChars = [...inlineMatch[1]].filter((c) => VALID_JS_FLAGS.has(c))
+    const flags = new Set([...'g', ...flagChars])
+    const body = pattern.slice(inlineMatch[0].length)
+    return new RegExp(body, [...flags].join(''))
+  }
+
+  // 3. Plain pattern — global only
+  return new RegExp(pattern, 'g')
+}
+
 // ─── Tag detection helpers ────────────────────────────────────────────────────
 
 /** Matches opening, closing, and self-closing HTML tags. */
@@ -134,7 +175,7 @@ function detectCustomTags(
 }> {
   let re: RegExp
   try {
-    re = new RegExp(patternSource, 'g')
+    re = parsePatternWithFlags(patternSource)
   } catch {
     return []
   }
@@ -370,7 +411,7 @@ export function computeHighlightSegments(
 
         let re: RegExp
         try {
-          re = new RegExp(entry.pattern, 'g')
+          re = parsePatternWithFlags(entry.pattern)
         } catch {
           continue // skip invalid regex
         }

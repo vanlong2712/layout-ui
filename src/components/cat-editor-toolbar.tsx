@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Popover } from '@base-ui/react/popover'
 import {
   AtSign,
@@ -11,6 +11,7 @@ import {
   MousePointerClick,
   Plus,
   Quote,
+  Regex,
   RotateCcw,
   Search,
   Settings,
@@ -35,6 +36,49 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+
+// ─── Regex preset type ───────────────────────────────────────────────────────
+
+/** A named regex pattern that can be inserted into the search input. */
+export interface RegexPreset {
+  label: string
+  pattern: string
+}
+
+export const DEFAULT_REGEX_PRESETS: Array<RegexPreset> = [
+  {
+    label: 'All (combined, case-insensitive)',
+    pattern:
+      '(?i)[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}|https?://[^\\s]+|\\d+|\\+?\\d[\\d\\s()-]{6,}|\\d{4}-\\d{2}-\\d{2}',
+  },
+  {
+    label: 'Email',
+    pattern: '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}',
+  },
+  { label: 'URL', pattern: 'https?://[^\\s]+' },
+  { label: 'Number', pattern: '\\d+' },
+  { label: 'Phone', pattern: '\\+?\\d[\\d\\s()-]{6,}' },
+  { label: 'Date (YYYY-MM-DD)', pattern: '\\d{4}-\\d{2}-\\d{2}' },
+]
+
+// ─── Search term parser ──────────────────────────────────────────────────────
+// Parses a search input into keyword entries.  Each comma-separated term
+// is used directly as a regex pattern (no escaping) so users can type raw
+// regex like `https?://[^\s]+` or `\d+` in the search box.
+//
+// Examples:
+//   "hello"              → [{ pattern: "hello" }]
+//   "https?://[^\\s]+"   → [{ pattern: "https?://[^\\s]+" }]
+//   "fox, \\d+"          → [{ pattern: "fox" }, { pattern: "\\d+" }]
+
+export function parseSearchTerms(input: string): Array<IKeywordsEntry> {
+  if (!input.trim()) return []
+  return input
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((term) => ({ pattern: term }))
+}
 
 // ─── Toolbar popover button ──────────────────────────────────────────────────
 
@@ -253,8 +297,163 @@ export interface CATEditorToolbarProps {
   searchValue: string
   onSearchChange: (e: React.ChangeEvent<HTMLInputElement>) => void
 
+  // ── Regex presets ──────────────────────────────
+  regexPresetsEnabled?: boolean
+  onRegexPresetsEnabledChange?: (v: boolean) => void
+  regexPresets?: Array<RegexPreset>
+  onRegexPresetsChange?: (presets: Array<RegexPreset>) => void
+
   // ── Extra content after search ─────────────────
   afterSearch?: React.ReactNode
+}
+
+// ─── Regex presets popover ───────────────────────────────────────────────────
+
+function RegexPresetsPopover({
+  presets,
+  onChange,
+  enabled,
+  onToggle,
+  searchValue,
+  onSearchChange,
+}: {
+  presets: Array<RegexPreset>
+  onChange?: (presets: Array<RegexPreset>) => void
+  enabled: boolean
+  onToggle: (v: boolean) => void
+  searchValue: string
+  onSearchChange: (e: React.ChangeEvent<HTMLInputElement>) => void
+}) {
+  const [editIdx, setEditIdx] = useState<number | null>(null)
+
+  const appendToSearch = useCallback(
+    (pattern: string) => {
+      // Wrap in [] to mark as regex in the search input
+      const term = `[${pattern}]`
+      const next = searchValue.trim() ? `${searchValue}, ${term}` : term
+      // Synthesize a change event
+      const synth = {
+        target: { value: next },
+      } as React.ChangeEvent<HTMLInputElement>
+      onSearchChange(synth)
+    },
+    [searchValue, onSearchChange],
+  )
+
+  const updatePreset = (idx: number, patch: Partial<RegexPreset>) => {
+    if (!onChange) return
+    onChange(presets.map((p, i) => (i === idx ? { ...p, ...patch } : p)))
+  }
+  const removePreset = (idx: number) => {
+    if (!onChange) return
+    onChange(presets.filter((_, i) => i !== idx))
+    if (editIdx === idx) setEditIdx(null)
+  }
+  const addPreset = () => {
+    if (!onChange) return
+    onChange([...presets, { label: '', pattern: '' }])
+    setEditIdx(presets.length)
+  }
+
+  return (
+    <ToolbarPopoverButton
+      label="Regex"
+      icon={<Regex className="h-3.5 w-3.5" />}
+      enabled={enabled}
+      onToggle={onToggle}
+    >
+      <p className="text-[10px] text-muted-foreground">
+        Each preset is applied as a <strong>keyword rule</strong> (label{' '}
+        <code className="bg-muted px-0.5 rounded">custom</code>) when enabled.
+        Click a preset to also append it to the search input.
+      </p>
+
+      {/* Preset list */}
+      <div className="space-y-1.5 max-h-56 overflow-y-auto">
+        {presets.map((preset, i) => (
+          <div
+            key={i}
+            className="rounded border border-border/50 bg-background"
+          >
+            {editIdx === i ? (
+              /* Edit mode */
+              <div className="p-1.5 space-y-1">
+                <Input
+                  className="h-6 text-xs"
+                  value={preset.label}
+                  placeholder="Label"
+                  onChange={(e) => updatePreset(i, { label: e.target.value })}
+                />
+                <Input
+                  className="h-6 text-xs font-mono"
+                  value={preset.pattern}
+                  placeholder="Regex pattern"
+                  onChange={(e) => updatePreset(i, { pattern: e.target.value })}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-[10px]"
+                  onClick={() => setEditIdx(null)}
+                >
+                  Done
+                </Button>
+              </div>
+            ) : (
+              /* Display mode */
+              <div className="flex items-center gap-1.5 p-1.5">
+                <button
+                  type="button"
+                  className="flex-1 text-left text-xs hover:text-primary transition-colors"
+                  onClick={() => appendToSearch(preset.pattern)}
+                  title={`Insert [${preset.pattern}] into search`}
+                >
+                  <span className="font-medium">
+                    {preset.label || 'Untitled'}
+                  </span>
+                  <span className="ml-1.5 font-mono text-muted-foreground text-[10px]">
+                    {preset.pattern}
+                  </span>
+                </button>
+                {onChange && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground shrink-0"
+                      onClick={() => setEditIdx(i)}
+                    >
+                      <Settings className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive shrink-0"
+                      onClick={() => removePreset(i)}
+                    >
+                      <Minus className="h-3 w-3" />
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {onChange && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-6 text-xs"
+          onClick={addPreset}
+        >
+          <Plus className="mr-1 h-3 w-3" />
+          Add preset
+        </Button>
+      )}
+    </ToolbarPopoverButton>
+  )
 }
 
 // ─── CATEditorToolbar ────────────────────────────────────────────────────────
@@ -338,14 +537,16 @@ export function CATEditorToolbar(props: CATEditorToolbarProps) {
                 </span>
                 <Input
                   className="h-7 text-xs"
-                  value={v.suggestions.map((s) => s.value).join(', ')}
+                  value={v.suggestions
+                    .map((s) => (typeof s === 'string' ? s : s.value))
+                    .join(', ')}
                   placeholder="comma-separated"
                   onChange={(e) =>
                     props.onSpellcheckUpdate(i, {
                       suggestions: e.target.value
                         .split(',')
-                        .map((s) => ({ value: s.trim() }))
-                        .filter((s) => s.value),
+                        .map((s) => s.trim())
+                        .filter(Boolean),
                     })
                   }
                 />
@@ -843,10 +1044,22 @@ export function CATEditorToolbar(props: CATEditorToolbarProps) {
         <Input
           value={props.searchValue}
           onChange={props.onSearchChange}
-          placeholder="Search…"
+          placeholder="Search… (use [regex] for regex)"
           className="h-7 text-xs"
         />
       </div>
+
+      {/* Regex Presets */}
+      {props.regexPresets != null && (
+        <RegexPresetsPopover
+          presets={props.regexPresets}
+          onChange={props.onRegexPresetsChange}
+          enabled={props.regexPresetsEnabled ?? false}
+          onToggle={props.onRegexPresetsEnabledChange ?? (() => {})}
+          searchValue={props.searchValue}
+          onSearchChange={props.onSearchChange}
+        />
+      )}
 
       {props.afterSearch}
     </div>
@@ -878,6 +1091,10 @@ export function CATEditorLegend({ showMention }: CATEditorLegendProps) {
       <div className="flex items-center gap-1.5">
         <span className="inline-block h-3 w-6 rounded cat-highlight cat-highlight-keyword cat-highlight-keyword-search" />
         <span className="text-muted-foreground">Search</span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <span className="inline-block h-3 w-6 rounded cat-highlight cat-highlight-keyword cat-highlight-keyword-custom" />
+        <span className="text-muted-foreground">Custom (Regex)</span>
       </div>
       <div className="flex items-center gap-1.5">
         <span className="inline-block h-3 w-6 rounded cat-highlight cat-highlight-keyword cat-highlight-keyword-special-char" />
