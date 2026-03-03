@@ -56,6 +56,8 @@ import {
 
 const TOTAL_ROWS = 1000
 const ROW_HEIGHT = 140
+const STICKY_HEADER_HEIGHT = 36
+const STICKY_FOOTER_HEIGHT = 36
 /**
  * Maximum row count.  TanStack Virtual creates a `measurementsCache` array
  * with one object per row (~96 bytes each).  Beyond 100 K the sync build
@@ -436,6 +438,8 @@ const VirtualizedEditorList = memo(function VirtualizedEditorList({
       getScrollElement: () => parentRef.current,
       estimateSize: () => ROW_HEIGHT,
       overscan,
+      // paddingStart: STICKY_HEADER_HEIGHT,
+      // paddingEnd: STICKY_FOOTER_HEIGHT,
       ...(fixedHeight
         ? {}
         : {
@@ -490,6 +494,24 @@ const VirtualizedEditorList = memo(function VirtualizedEditorList({
       className="rounded-xl border border-border bg-card shadow-sm overflow-auto"
       style={{ height: '75vh' }}
     >
+      {/* ── Sticky header ── */}
+      <div
+        className="flex items-center px-4 bg-muted/80 backdrop-blur-sm border-b border-border text-xs font-medium text-muted-foreground"
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 10,
+          height: `${STICKY_HEADER_HEIGHT}px`,
+        }}
+      >
+        <span className="font-mono">#</span>
+        <span className="ml-12">Source segment</span>
+        <span className="ml-auto tabular-nums">
+          {effectiveRowCount.toLocaleString()} rows
+        </span>
+      </div>
+
+      {/* ── Virtualized content ── */}
       <div
         style={{
           height: `${containerHeight}px`,
@@ -534,6 +556,23 @@ const VirtualizedEditorList = memo(function VirtualizedEditorList({
             </div>
           )
         })}
+      </div>
+
+      {/* ── Sticky footer ── */}
+      <div
+        className="flex items-center justify-between px-4 bg-muted/80 backdrop-blur-sm border-t border-border text-xs text-muted-foreground"
+        style={{
+          position: 'sticky',
+          bottom: 0,
+          zIndex: 10,
+          height: `${STICKY_FOOTER_HEIGHT}px`,
+        }}
+      >
+        <span>
+          {fixedHeight ? 'Fixed' : 'Dynamic'} height
+          {isStretchingNow && ' · stretch mode'}
+        </span>
+        <span className="tabular-nums">Row height: {ROW_HEIGHT}px</span>
       </div>
     </div>
   )
