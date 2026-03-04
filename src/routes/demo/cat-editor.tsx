@@ -16,6 +16,8 @@ import type {
   IMentionRule,
   IMentionUser,
   IQuoteRule,
+  IRangeHighlight,
+  IRangeHighlightRule,
   ISpellCheckRule,
   ISpellCheckValidation,
   ITagRule,
@@ -23,6 +25,7 @@ import type {
   MooRule,
   RuleAnnotation,
 } from '@/layout/cat-editor'
+import type { RegexPreset } from '@/components/cat-editor-toolbar'
 import { CATEditor } from '@/layout/cat-editor'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -36,7 +39,6 @@ import {
   DEFAULT_REGEX_PRESETS,
   parseSearchTerms,
 } from '@/components/cat-editor-toolbar'
-import type { RegexPreset } from '@/components/cat-editor-toolbar'
 
 export const Route = createFileRoute('/demo/cat-editor')({
   component: CATEditorDemo,
@@ -457,7 +459,7 @@ function CATEditorDemo() {
   const [mentionSerializeFormat, setMentionSerializeFormat] = useState('@{id}')
   const [searchKeywords, setSearchKeywords] = useState('')
   const [regexPresetsEnabled, setRegexPresetsEnabled] = useState(true)
-  const [regexPresets, setRegexPresets] = useState<RegexPreset[]>(
+  const [regexPresets, setRegexPresets] = useState<Array<RegexPreset>>(
     DEFAULT_REGEX_PRESETS,
   )
 
@@ -572,18 +574,36 @@ function CATEditorDemo() {
   // ── Build active rules from state ────────────────────────────────────
   const rules = useMemo<Array<MooRule>>(() => {
     const active: Array<MooRule> = []
+
+    // ── Unified range-highlight rule (spellcheck + lexiqa) ──
+    const highlights: Array<IRangeHighlight> = []
     if (spellcheckEnabled) {
-      active.push({
-        type: 'spellcheck',
-        validations: spellcheckData,
-      } satisfies ISpellCheckRule)
+      for (const v of spellcheckData) {
+        highlights.push({
+          type: 'spellcheck',
+          start: v.start,
+          end: v.end,
+          validation: v,
+        })
+      }
     }
     if (lexiqaEnabled) {
-      active.push({
-        type: 'lexiqa',
-        validations: lexiqaData,
-      } satisfies ILexiQARule)
+      for (const v of lexiqaData) {
+        highlights.push({
+          type: 'lexiqa',
+          start: v.start,
+          end: v.start + v.length,
+          validation: v,
+        })
+      }
     }
+    if (highlights.length > 0) {
+      active.push({
+        type: 'range-highlight',
+        highlights,
+      } satisfies IRangeHighlightRule)
+    }
+
     if (tbTargetEnabled) {
       active.push({
         type: 'keyword',

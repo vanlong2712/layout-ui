@@ -5,13 +5,14 @@ import { createPopper } from '@popperjs/core'
 
 import { CODEPOINT_DISPLAY_MAP } from './constants'
 
-import type { Instance as PopperInstance } from '@popperjs/core'
 import { resolveSuggestionValue } from './types'
+import type { Instance as PopperInstance } from '@popperjs/core'
 import type {
   ILexiQAValidation,
   ISpellCheckValidation,
   PopoverContentRenderer,
   PopoverState,
+  RangeHighlightAnnotation,
   RuleAnnotation,
 } from './types'
 
@@ -139,6 +140,82 @@ function LexiQAPopoverContent({
         <p className="text-[11px] text-muted-foreground">
           Dictionaries: {data.dictionaries.join(', ')}
         </p>
+      )}
+    </div>
+  )
+}
+
+/** Popover content for unified range-highlight annotations.
+ *  Delegates to SpellCheck or LexiQA popover based on `highlightType`. */
+function RangeHighlightPopoverContent({
+  ann,
+  onSuggestionClick,
+}: {
+  ann: RangeHighlightAnnotation
+  onSuggestionClick: (suggestion: string) => void
+}) {
+  const { highlightType, validation } = ann.data
+
+  if (highlightType === 'spellcheck' && 'content' in validation) {
+    return (
+      <SpellCheckPopoverContent
+        data={validation}
+        onSuggestionClick={onSuggestionClick}
+      />
+    )
+  }
+
+  if (highlightType === 'lexiqa' && 'errorid' in validation) {
+    return (
+      <LexiQAPopoverContent
+        data={validation}
+        onSuggestionClick={onSuggestionClick}
+      />
+    )
+  }
+
+  // Fallback for custom highlight types: show a generic popover
+  const displayLabel = highlightType
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
+
+  return (
+    <div className="space-y-2.5 p-3 max-w-sm">
+      <div className="flex items-center gap-2">
+        <span className="cat-badge">{displayLabel}</span>
+        {'categoryId' in validation && validation.categoryId && (
+          <span className="text-[11px] text-muted-foreground">
+            {validation.categoryId}
+          </span>
+        )}
+      </div>
+      {'message' in validation && validation.message && (
+        <p className="text-sm leading-relaxed text-foreground">
+          {validation.message}
+        </p>
+      )}
+      {validation.suggestions.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted-foreground">
+            Suggestions:
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {validation.suggestions.map((s, i) => {
+              const val = resolveSuggestionValue(s)
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  className="cat-suggestion-btn"
+                  onClick={() => onSuggestionClick(val)}
+                >
+                  {val}
+                </button>
+              )
+            })}
+          </div>
+        </div>
       )}
     </div>
   )
@@ -491,6 +568,11 @@ export function HighlightPopover({
             ) : ann.type === 'lexiqa' ? (
               <LexiQAPopoverContent
                 data={ann.data}
+                onSuggestionClick={(s) => onSuggestionClick(s, ann.id)}
+              />
+            ) : ann.type === 'range-highlight' ? (
+              <RangeHighlightPopoverContent
+                ann={ann}
                 onSuggestionClick={(s) => onSuggestionClick(s, ann.id)}
               />
             ) : ann.type === 'keyword' ? (

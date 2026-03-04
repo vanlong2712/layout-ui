@@ -60,10 +60,12 @@ export const SpellCheckValidationSchema = z.object({
 })
 export type ISpellCheckValidation = z.infer<typeof SpellCheckValidationSchema>
 
+/** @deprecated Use `RangeHighlightRuleSchema` instead. */
 export const SpellCheckRuleSchema = z.object({
   type: z.literal('spellcheck'),
   validations: z.array(SpellCheckValidationSchema),
 })
+/** @deprecated Use `IRangeHighlightRule` instead. */
 export type ISpellCheckRule = z.infer<typeof SpellCheckRuleSchema>
 
 // ─── LexiQA ──────────────────────────────────────────────────────────────────
@@ -88,11 +90,40 @@ export const LexiQAValidationSchema = z.object({
 })
 export type ILexiQAValidation = z.infer<typeof LexiQAValidationSchema>
 
+/** @deprecated Use `RangeHighlightRuleSchema` instead. */
 export const LexiQARuleSchema = z.object({
   type: z.literal('lexiqa'),
   validations: z.array(LexiQAValidationSchema),
 })
+/** @deprecated Use `IRangeHighlightRule` instead. */
 export type ILexiQARule = z.infer<typeof LexiQARuleSchema>
+
+// ─── Range Highlight (unified QA rule) ────────────────────────────────────────
+// Replaces SpellCheckRule + LexiQARule with a single, extensible rule type.
+// Consumers may use `type: 'spellcheck'`, `type: 'lexiqa'`, or any custom
+// string to identify the validation source.
+
+/** A single QA-style range highlight entry. */
+export const RangeHighlightSchema = z.object({
+  /** Identifies the validation source: `'spellcheck'`, `'lexiqa'`, or a custom string. */
+  type: z.string(),
+  /** Start character offset (global, 0-based). */
+  start: z.number(),
+  /** End character offset (exclusive). */
+  end: z.number(),
+  /** The original validation payload — either SpellCheck or LexiQA data.
+   *  Custom integrations may extend this union. */
+  validation: z.union([SpellCheckValidationSchema, LexiQAValidationSchema]),
+})
+export type IRangeHighlight = z.infer<typeof RangeHighlightSchema>
+
+/** Unified range-highlight rule.  Pass an array of `RangeHighlight` items
+ *  covering spellcheck, LexiQA, or any custom QA source. */
+export const RangeHighlightRuleSchema = z.object({
+  type: z.literal('range-highlight'),
+  highlights: z.array(RangeHighlightSchema),
+})
+export type IRangeHighlightRule = z.infer<typeof RangeHighlightRuleSchema>
 
 // ─── Keywords (generic term-matching) ─────────────────────────────────────────
 // Covers LexiQA, TB Target, keyword search, missing keywords, and any future
@@ -213,6 +244,7 @@ export type IMentionRule = z.infer<typeof MentionRuleSchema>
 export const MooRuleSchema = z.discriminatedUnion('type', [
   SpellCheckRuleSchema,
   LexiQARuleSchema,
+  RangeHighlightRuleSchema,
   KeywordsRuleSchema,
   TagRuleSchema,
   QuoteRuleSchema,
@@ -223,19 +255,38 @@ export type MooRule = z.infer<typeof MooRuleSchema>
 
 // ─── Rule highlight annotations ───────────────────────────────────────────────
 
+/** @deprecated Use `RangeHighlightAnnotationSchema` instead. */
 export const SpellCheckAnnotationSchema = z.object({
   type: z.literal('spellcheck'),
   id: z.string(),
   data: SpellCheckValidationSchema,
 })
+/** @deprecated Use `RangeHighlightAnnotation` instead. */
 export type SpellCheckAnnotation = z.infer<typeof SpellCheckAnnotationSchema>
 
+/** @deprecated Use `RangeHighlightAnnotationSchema` instead. */
 export const LexiQAAnnotationSchema = z.object({
   type: z.literal('lexiqa'),
   id: z.string(),
   data: LexiQAValidationSchema,
 })
+/** @deprecated Use `RangeHighlightAnnotation` instead. */
 export type LexiQAAnnotation = z.infer<typeof LexiQAAnnotationSchema>
+
+/** Annotation emitted by a `range-highlight` rule. */
+export const RangeHighlightAnnotationSchema = z.object({
+  type: z.literal('range-highlight'),
+  id: z.string(),
+  data: z.object({
+    /** The source kind: `'spellcheck'`, `'lexiqa'`, or custom. */
+    highlightType: z.string(),
+    /** Original validation payload. */
+    validation: z.union([SpellCheckValidationSchema, LexiQAValidationSchema]),
+  }),
+})
+export type RangeHighlightAnnotation = z.infer<
+  typeof RangeHighlightAnnotationSchema
+>
 
 export const KeywordsAnnotationSchema = z.object({
   type: z.literal('keyword'),
@@ -312,6 +363,7 @@ export type LinkAnnotation = z.infer<typeof LinkAnnotationSchema>
 export const RuleAnnotationSchema = z.discriminatedUnion('type', [
   SpellCheckAnnotationSchema,
   LexiQAAnnotationSchema,
+  RangeHighlightAnnotationSchema,
   KeywordsAnnotationSchema,
   TagAnnotationSchema,
   QuoteAnnotationSchema,

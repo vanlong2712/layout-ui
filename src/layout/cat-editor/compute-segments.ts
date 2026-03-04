@@ -404,6 +404,47 @@ export function computeHighlightSegments(
           })
         }
       }
+    } else if (rule.type === 'range-highlight') {
+      // ── Unified range-highlight rule ──
+      for (const h of rule.highlights) {
+        const hType = h.type // 'spellcheck' | 'lexiqa' | custom
+        const v = h.validation
+
+        // Derive content for offset matching
+        let content: string | undefined
+        let end = h.end
+        if ('content' in v && typeof v.content === 'string') {
+          // SpellCheck-style: use the content field
+          content = v.content
+        } else if ('length' in v && typeof v.length === 'number') {
+          // LexiQA-style: derive from text using start + length
+          end = h.start + v.length
+          content =
+            h.start >= 0 && end <= text.length
+              ? text.slice(h.start, end)
+              : undefined
+        }
+
+        const match = matchQAOffset(text, h.start, end, content)
+        if (match) {
+          const idPrefix =
+            hType === 'lexiqa' && 'errorid' in v
+              ? `rh-${v.errorid}`
+              : `rh-${hType}`
+          rawRanges.push({
+            start: match.matchStart,
+            end: match.matchEnd,
+            annotation: {
+              type: 'range-highlight',
+              id: `${idPrefix}-${match.matchStart}-${match.matchEnd}`,
+              data: {
+                highlightType: hType,
+                validation: v,
+              },
+            },
+          })
+        }
+      }
     } else if (rule.type === 'keyword') {
       const { label, entries } = rule
       for (const entry of entries) {

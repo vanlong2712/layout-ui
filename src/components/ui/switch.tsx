@@ -35,7 +35,7 @@ function Switch({
       checked={checked}
       defaultChecked={defaultChecked}
       onCheckedChange={
-        onCheckedChange ? (checked) => onCheckedChange(checked) : undefined
+        onCheckedChange ? (isChecked) => onCheckedChange(isChecked) : undefined
       }
       disabled={disabled}
       required={required}

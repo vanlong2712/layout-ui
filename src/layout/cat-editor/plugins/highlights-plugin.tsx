@@ -278,6 +278,13 @@ export function $rebuildTree(
               return `spellcheck-${a.data.categoryId}`
             if (a.type === 'lexiqa')
               return `lexiqa-${a.data.categoryId ?? a.data.category}`
+            if (a.type === 'range-highlight') {
+              const ht = a.data.highlightType
+              const v = a.data.validation
+              const catId = 'categoryId' in v ? v.categoryId : undefined
+              const cat = 'category' in v ? v.category : undefined
+              return `${ht}-${catId ?? cat ?? ht}`
+            }
             return a.type
           }),
         ),
@@ -368,6 +375,13 @@ export function $rebuildTree(
                 return `spellcheck-${a.data.categoryId}`
               if (a.type === 'lexiqa')
                 return `lexiqa-${a.data.categoryId ?? a.data.category}`
+              if (a.type === 'range-highlight') {
+                const ht = a.data.highlightType
+                const v = a.data.validation
+                const catId = 'categoryId' in v ? v.categoryId : undefined
+                const cat = 'category' in v ? v.category : undefined
+                return `${ht}-${catId ?? cat ?? ht}`
+              }
               return a.type
             }),
           ),
@@ -447,7 +461,10 @@ function $ensureEditableBoundaries(paragraph: ElementNode): void {
   let lastContentIdx = children.length - 1
   while (lastContentIdx >= 0) {
     const child = children[lastContentIdx]
-    if (!$isHighlightNode(child) || !child.__ruleIds.startsWith(NL_MARKER_PREFIX))
+    if (
+      !$isHighlightNode(child) ||
+      !child.__ruleIds.startsWith(NL_MARKER_PREFIX)
+    )
       break
     lastContentIdx--
   }

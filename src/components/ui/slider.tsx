@@ -19,15 +19,15 @@ function Slider({
   ...props
 }: {
   className?: string
-  defaultValue?: number | number[]
-  value?: number | number[]
+  defaultValue?: number | Array<number>
+  value?: number | Array<number>
   min?: number
   max?: number
   step?: number
   disabled?: boolean
   orientation?: 'horizontal' | 'vertical'
-  onValueChange?: (value: number | number[]) => void
-  onValueCommitted?: (value: number | number[]) => void
+  onValueChange?: (value: number | Array<number>) => void
+  onValueCommitted?: (value: number | Array<number>) => void
   id?: string
   onBlur?: React.FocusEventHandler
 } & Omit<React.ComponentProps<'div'>, 'defaultValue' | 'onChange'>) {

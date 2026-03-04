@@ -1,5 +1,5 @@
-import { defineConfig } from 'tsup'
 import { resolve } from 'node:path'
+import { defineConfig } from 'tsup'
 
 export default defineConfig({
   // -----------------------------------------------------------------------

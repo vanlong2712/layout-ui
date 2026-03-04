@@ -21,7 +21,7 @@ export default function Messages({
   messages,
   user,
 }: {
-  messages: Message[]
+  messages: Array<Message>
   user: string
 }) {
   return (

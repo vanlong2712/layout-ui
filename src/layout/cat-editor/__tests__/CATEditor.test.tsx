@@ -5,7 +5,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { CATEditor } from '../CATEditor'
 
-import type { CATEditorRef, IKeywordsRule, ISpellCheckRule } from '../types'
+import type {
+  CATEditorRef,
+  IKeywordsRule,
+  IRangeHighlightRule,
+  ISpellCheckRule,
+} from '../types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -197,7 +202,7 @@ describe('CATEditor', () => {
 
       const editable = document.querySelector('[contenteditable]')!
 
-      await act(async () => {
+      await act(() => {
         // Focus and type into the editor
         editable.dispatchEvent(new FocusEvent('focus'))
       })
@@ -239,7 +244,7 @@ describe('CATEditor', () => {
 
       // In jsdom, focus() on a contenteditable doesn't reliably set
       // document.activeElement — just verify it doesn't throw.
-      await act(async () => {
+      await act(() => {
         expect(() => ref.current!.focus()).not.toThrow()
       })
     })
@@ -253,7 +258,7 @@ describe('CATEditor', () => {
         expect(ref.current).not.toBeNull()
       })
 
-      await act(async () => {
+      await act(() => {
         ref.current!.insertText('World')
       })
 
@@ -273,7 +278,7 @@ describe('CATEditor', () => {
       })
 
       let count = 0
-      await act(async () => {
+      await act(() => {
         count = ref.current!.replaceAll('foo', 'qux')
       })
 
@@ -295,7 +300,7 @@ describe('CATEditor', () => {
       })
 
       let count = 0
-      await act(async () => {
+      await act(() => {
         count = ref.current!.replaceAll('xyz', 'abc')
       })
       expect(count).toBe(0)
@@ -311,7 +316,7 @@ describe('CATEditor', () => {
       })
 
       let count = 0
-      await act(async () => {
+      await act(() => {
         count = ref.current!.replaceAll('', 'abc')
       })
       expect(count).toBe(0)
@@ -359,6 +364,38 @@ describe('CATEditor', () => {
       await waitForEditor()
 
       // The editor should still render even with rules
+      await waitFor(() => {
+        const editable = document.querySelector('[contenteditable]')!
+        expect(editable.textContent).toContain('Helo')
+      })
+    })
+
+    it('renders with range-highlight rules (unified)', async () => {
+      const rules: Array<IRangeHighlightRule> = [
+        {
+          type: 'range-highlight',
+          highlights: [
+            {
+              type: 'spellcheck',
+              start: 0,
+              end: 5,
+              validation: {
+                categoryId: 'spell',
+                start: 0,
+                end: 5,
+                content: 'Helo',
+                message: 'Did you mean "Hello"?',
+                shortMessage: 'Spelling',
+                suggestions: [{ value: 'Hello' }],
+              },
+            },
+          ],
+        },
+      ]
+
+      render(<CATEditor initialText="Helo world" rules={rules} />)
+      await waitForEditor()
+
       await waitFor(() => {
         const editable = document.querySelector('[contenteditable]')!
         expect(editable.textContent).toContain('Helo')

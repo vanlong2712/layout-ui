@@ -15,11 +15,11 @@ import type {
   CATEditorRef,
   IKeywordsEntry,
   IKeywordsRule,
-  ILexiQARule,
   ILexiQAValidation,
   ILinkRule,
   IQuoteRule,
-  ISpellCheckRule,
+  IRangeHighlight,
+  IRangeHighlightRule,
   ISpellCheckValidation,
   ITagRule,
   MooRule,
@@ -780,18 +780,36 @@ function CATEditorPerfDemoInner() {
 
   const rules = useMemo<Array<MooRule>>(() => {
     const active: Array<MooRule> = []
+
+    // ── Unified range-highlight rule (spellcheck + lexiqa) ──
+    const highlights: Array<IRangeHighlight> = []
     if (spellcheckEnabled) {
-      active.push({
-        type: 'spellcheck',
-        validations: spellcheckData,
-      } satisfies ISpellCheckRule)
+      for (const v of spellcheckData) {
+        highlights.push({
+          type: 'spellcheck',
+          start: v.start,
+          end: v.end,
+          validation: v,
+        })
+      }
     }
     if (lexiqaEnabled) {
-      active.push({
-        type: 'lexiqa',
-        validations: lexiqaData,
-      } satisfies ILexiQARule)
+      for (const v of lexiqaData) {
+        highlights.push({
+          type: 'lexiqa',
+          start: v.start,
+          end: v.start + v.length,
+          validation: v,
+        })
+      }
     }
+    if (highlights.length > 0) {
+      active.push({
+        type: 'range-highlight',
+        highlights,
+      } satisfies IRangeHighlightRule)
+    }
+
     if (tbTargetEnabled) {
       active.push({
         type: 'keyword',
