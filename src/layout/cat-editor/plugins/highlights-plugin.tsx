@@ -15,11 +15,7 @@ import { useCallback, useEffect, useRef } from 'react'
 
 import { computeHighlightSegments } from '../compute-segments'
 import { CODEPOINT_DISPLAY_MAP, NL_MARKER_PREFIX } from '../constants'
-import {
-  $createHighlightNode,
-  $isHighlightNode,
-  HighlightNode,
-} from '../highlight-node'
+import { $createHighlightNode, $isHighlightNode } from '../highlight-node'
 import {
   $createMentionNode,
   $isMentionNode,
@@ -182,6 +178,7 @@ export function $rebuildTree(
   segments: Array<HighlightSegment>,
   savedMentions: Array<SavedMention>,
   rules: Array<MooRule>,
+  codepointDisplayMap?: Record<number, string>,
 ): void {
   root.clear()
 
@@ -340,6 +337,7 @@ export function $rebuildTree(
             ids,
             tagDisplayText ?? quoteDisplayText,
             isTagToken || isQuoteToken || isAtomicToken,
+            codepointDisplayMap,
           ),
         )
       }
@@ -380,7 +378,14 @@ export function $rebuildTree(
           paragraph.append($createTextNode(''))
         }
         paragraph.append(
-          $createHighlightNode(symbol, nlTypes, NL_MARKER_PREFIX + nlIds),
+          $createHighlightNode(
+            symbol,
+            nlTypes,
+            NL_MARKER_PREFIX + nlIds,
+            undefined,
+            undefined,
+            codepointDisplayMap,
+          ),
         )
       }
     }
@@ -412,9 +417,6 @@ export function HighlightsPlugin({
   const rafRef = useRef<number | null>(null)
 
   const applyHighlights = useCallback(() => {
-    // Sync codepoint overrides for this editor instance
-    HighlightNode.__codepointOverrides = codepointDisplayMap
-
     // Snapshot DOM focus BEFORE the update.  Inside the update callback
     // the DOM isn't yet reconciled, so we can't reliably read activeElement.
     const rootElement = editor.getRootElement()
@@ -450,7 +452,14 @@ export function HighlightsPlugin({
         }
 
         // 6. Rebuild content tree with highlights + mentions
-        $rebuildTree(root, fullText, segments, allMentions, rules)
+        $rebuildTree(
+          root,
+          fullText,
+          segments,
+          allMentions,
+          rules,
+          codepointDisplayMap,
+        )
 
         // 7. Restore selection only when the editor has DOM focus.
         //    Lexical's reconciliation calls `rootElement.focus()` when it

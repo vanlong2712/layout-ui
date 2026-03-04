@@ -23,25 +23,24 @@ export class HighlightNode extends TextNode {
   __highlightTypes: string
   __ruleIds: string
   __displayText: string
-
-  /** Per-editor codepoint display overrides.
-   *  Set by HighlightsPlugin before each update cycle so that
-   *  createDOM / updateDOM pick up the correct map without
-   *  relying on module-level mutable state. */
-  static __codepointOverrides: Record<number, string> | undefined
+  /** Per-instance codepoint display overrides so that two editors
+   *  with different maps don't interfere with each other. */
+  __codepointOverrides: Record<number, string> | undefined
 
   static getType(): string {
     return 'highlight'
   }
 
   static clone(node: HighlightNode): HighlightNode {
-    return new HighlightNode(
+    const cloned = new HighlightNode(
       node.__text,
       node.__highlightTypes,
       node.__ruleIds,
       node.__displayText,
       node.__key,
     )
+    cloned.__codepointOverrides = node.__codepointOverrides
+    return cloned
   }
 
   constructor(
@@ -55,6 +54,7 @@ export class HighlightNode extends TextNode {
     this.__highlightTypes = highlightTypes
     this.__ruleIds = ruleIds
     this.__displayText = displayText ?? ''
+    this.__codepointOverrides = undefined
   }
 
   createDOM(config: EditorConfig): HTMLElement {
@@ -111,7 +111,7 @@ export class HighlightNode extends TextNode {
       } else {
         const replaced = replaceInvisibleChars(
           this.__text,
-          HighlightNode.__codepointOverrides,
+          this.__codepointOverrides,
         )
         if (replaced !== this.__text) {
           dom.textContent = replaced
@@ -201,7 +201,7 @@ export class HighlightNode extends TextNode {
       } else {
         const replaced = replaceInvisibleChars(
           this.__text,
-          HighlightNode.__codepointOverrides,
+          this.__codepointOverrides,
         )
         if (replaced !== this.__text) {
           dom.textContent = replaced
@@ -286,8 +286,10 @@ export function $createHighlightNode(
   /** Force token mode (atomic, non-editable). Atomic keyword and NL-marker
    *  nodes are always token; tag nodes should only be token when collapsed. */
   forceToken?: boolean,
+  codepointOverrides?: Record<number, string>,
 ): HighlightNode {
   const node = new HighlightNode(text, highlightTypes, ruleIds, displayText)
+  node.__codepointOverrides = codepointOverrides
   // Atomic keyword and NL-marker nodes are always atomic.
   // Tag nodes are only atomic when explicitly requested (collapsed mode).
   if (

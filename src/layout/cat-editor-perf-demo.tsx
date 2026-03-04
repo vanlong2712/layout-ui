@@ -53,7 +53,6 @@ import {
   CATEditorSnippetsAndFlash,
   CATEditorToolbar,
   DEFAULT_REGEX_PRESETS,
-  parseSearchTerms,
 } from '@/components/cat-editor-toolbar'
 // (cn removed — unused)
 
