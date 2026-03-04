@@ -395,8 +395,76 @@ export function $rebuildTree(
       paragraph.append($createTextNode(''))
     }
 
+    // Insert empty TextNode sentinels at boundaries of non-editable nodes
+    // (atomic keywords, collapsed tags, quote-char nodes).  Without these,
+    // the cursor lands at an element-gap position where no DOM text node
+    // exists, causing IME composition (Chinese Pinyin, Japanese Romaji, etc.)
+    // to lose the first keystroke.  The HighlightsPlugin already skips
+    // tree rebuilds during composition, so these sentinels survive until
+    // compositionend triggers the next rebuild.
+    $ensureEditableBoundaries(paragraph)
+
     root.append(paragraph)
     globalOffset = lineEnd + 1 // +1 for \n
+  }
+}
+
+// ─── IME boundary sentinels ──────────────────────────────────────────────────
+
+/**
+ * Ensure there is always an editable TextNode at the boundaries of
+ * non-editable (contentEditable="false") HighlightNodes within a paragraph.
+ *
+ * Non-editable nodes include atomic keywords (e.g. space, tab, NBSP),
+ * collapsed tags, and quote-char nodes.  When consecutive non-editable
+ * nodes are adjacent (or a non-editable node is at the start/end of the
+ * paragraph), the browser has no text node to receive IME composition
+ * input, which causes the first composed character to be lost.
+ *
+ * This function inserts zero-length TextNode('') sentinels:
+ *   • Before the first child if non-editable
+ *   • Between consecutive non-editable children
+ *   • After the last child if non-editable (excluding NL markers)
+ *
+ * These sentinels contribute '' to getTextContent(), so they don't
+ * affect offset calculations or the text model.
+ */
+function $ensureEditableBoundaries(paragraph: ElementNode): void {
+  const children = paragraph.getChildren()
+  if (children.length === 0) return
+
+  /** A node is non-editable if it's a token-mode HighlightNode that will
+   *  have contentEditable="false" in the DOM.  NL markers are excluded
+   *  because the cursor should cross to the next paragraph, not stop here. */
+  const isNonEditable = (node: LexicalNode): boolean =>
+    $isHighlightNode(node) &&
+    node.getMode() === 'token' &&
+    !node.__ruleIds.startsWith(NL_MARKER_PREFIX)
+
+  // Process from end to start so insertions don't shift earlier indices.
+
+  // 1. After last non-editable child (skip trailing NL markers)
+  let lastContentIdx = children.length - 1
+  while (lastContentIdx >= 0) {
+    const child = children[lastContentIdx]
+    if (!$isHighlightNode(child) || !child.__ruleIds.startsWith(NL_MARKER_PREFIX))
+      break
+    lastContentIdx--
+  }
+  if (lastContentIdx >= 0 && isNonEditable(children[lastContentIdx])) {
+    children[lastContentIdx].insertAfter($createTextNode(''))
+  }
+
+  // 2. Between consecutive non-editable children (backwards)
+  for (let i = children.length - 2; i >= 0; i--) {
+    if (isNonEditable(children[i]) && isNonEditable(children[i + 1])) {
+      children[i].insertAfter($createTextNode(''))
+    }
+  }
+
+  // 3. Before first non-editable child
+  if (isNonEditable(children[0])) {
+    children[0].insertBefore($createTextNode(''))
   }
 }
 
@@ -480,10 +548,10 @@ export function HighlightsPlugin({
           const anchorPt = $globalOffsetToPoint(savedAnchor)
           const focusPt = $globalOffsetToPoint(savedFocus)
           if (anchorPt && focusPt) {
-            const sel = $createRangeSelection()
-            sel.anchor.set(anchorPt.key, anchorPt.offset, anchorPt.type)
-            sel.focus.set(focusPt.key, focusPt.offset, focusPt.type)
-            $setSelection(sel)
+            const restored = $createRangeSelection()
+            restored.anchor.set(anchorPt.key, anchorPt.offset, anchorPt.type)
+            restored.focus.set(focusPt.key, focusPt.offset, focusPt.type)
+            $setSelection(restored)
           }
         } else {
           $setSelection(null)

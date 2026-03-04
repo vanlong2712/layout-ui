@@ -32,7 +32,10 @@ function $isNonEditableNode(node: LexicalNode): boolean {
 }
 
 /** If a selection point sits on a non-editable node, return the nearest
- *  valid element-type gap position.  Returns null when no fix is needed. */
+ *  valid position.  Prefers landing on an adjacent editable TextNode
+ *  (text-type position) so that IME composition has a DOM text node to
+ *  compose into.  Falls back to an element-type gap when no editable
+ *  neighbour exists.  Returns null when no fix is needed. */
 function $clampPointAwayFromNonEditable(point: PointType): {
   key: string
   offset: number
@@ -43,15 +46,36 @@ function $clampPointAwayFromNonEditable(point: PointType): {
   const node = point.getNode()
   if (!$isNonEditableNode(node)) return null
 
-  // Convert back to an element gap position around this child
   const parent = node.getParent()
   if (parent && 'getChildren' in parent) {
     const siblings = parent.getChildren()
     const idx = siblings.findIndex((s) => s.getKey() === node.getKey())
-    if (idx >= 0) {
-      const elemOffset = point.offset > 0 ? idx + 1 : idx
-      return { key: parent.getKey(), offset: elemOffset, type: 'element' }
+    if (idx < 0) return null
+
+    // Prefer an adjacent editable TextNode.  This ensures the DOM
+    // selection sits inside a text node, which is required for
+    // IME composition (Chinese Pinyin, Japanese Romaji, etc.).
+    if (point.offset > 0) {
+      // Cursor was at end of non-editable → look right
+      const next = idx + 1 < siblings.length ? siblings[idx + 1] : null
+      if (next && !$isNonEditableNode(next)) {
+        return { key: next.getKey(), offset: 0, type: 'text' }
+      }
+    } else {
+      // Cursor was at start of non-editable → look left
+      const prev = idx > 0 ? siblings[idx - 1] : null
+      if (prev && !$isNonEditableNode(prev)) {
+        return {
+          key: prev.getKey(),
+          offset: prev.getTextContent().length,
+          type: 'text',
+        }
+      }
     }
+
+    // Fallback: element gap (no editable neighbour found)
+    const elemOffset = point.offset > 0 ? idx + 1 : idx
+    return { key: parent.getKey(), offset: elemOffset, type: 'element' }
   }
   return null
 }
