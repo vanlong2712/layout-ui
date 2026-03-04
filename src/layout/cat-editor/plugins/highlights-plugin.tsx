@@ -415,6 +415,11 @@ export function HighlightsPlugin({
 }: HighlightsPluginProps) {
   const [editor] = useLexicalComposerContext()
   const rafRef = useRef<number | null>(null)
+  /** True while an IME composition session is active (e.g. Chinese Pinyin,
+   *  Japanese Romaji, Korean Hangul).  We must NOT rebuild the tree during
+   *  composition — doing so destroys the browser's composition state and
+   *  causes intermediate keystrokes to leak as committed text. */
+  const composingRef = useRef(false)
 
   const applyHighlights = useCallback(() => {
     // Snapshot DOM focus BEFORE the update.  Inside the update callback
@@ -498,13 +503,20 @@ export function HighlightsPlugin({
   }, [applyHighlights])
 
   // Re-run after content changes (skip our own 'cat-highlights' updates)
+  // Also skip during IME composition to avoid destroying the composition state.
   useEffect(() => {
     const unregister = editor.registerUpdateListener(
       ({ tags, dirtyElements, dirtyLeaves }) => {
         if (tags.has('cat-highlights')) return
         if (dirtyElements.size === 0 && dirtyLeaves.size === 0) return
+        if (composingRef.current) return
         if (rafRef.current) cancelAnimationFrame(rafRef.current)
         rafRef.current = requestAnimationFrame(() => {
+          // Re-check: compositionstart may have fired between scheduling
+          // this rAF and it executing (the first IME keystroke inserts a
+          // DOM char → MutationObserver microtask schedules this rAF →
+          // then compositionstart fires as a regular event → rAF runs).
+          if (composingRef.current) return
           applyHighlights()
         })
       },
@@ -512,6 +524,35 @@ export function HighlightsPlugin({
     return () => {
       unregister()
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    }
+  }, [editor, applyHighlights])
+
+  // Track IME composition state.  When the user finishes composing
+  // (compositionend), schedule a highlight rebuild so the final committed
+  // text gets annotated.  Works for all IME languages: Chinese (Pinyin,
+  // Wubi), Japanese (Romaji/Kana), Korean (Hangul), Vietnamese, etc.
+  useEffect(() => {
+    const rootElement = editor.getRootElement()
+    if (!rootElement) return
+
+    const onCompositionStart = () => {
+      composingRef.current = true
+    }
+    const onCompositionEnd = () => {
+      composingRef.current = false
+      // The final committed text has been inserted by the browser;
+      // schedule a highlight rebuild on the next animation frame.
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+      rafRef.current = requestAnimationFrame(() => {
+        applyHighlights()
+      })
+    }
+
+    rootElement.addEventListener('compositionstart', onCompositionStart)
+    rootElement.addEventListener('compositionend', onCompositionEnd)
+    return () => {
+      rootElement.removeEventListener('compositionstart', onCompositionStart)
+      rootElement.removeEventListener('compositionend', onCompositionEnd)
     }
   }, [editor, applyHighlights])
 
