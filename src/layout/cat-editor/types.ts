@@ -189,10 +189,19 @@ export type ISpecialCharRule = z.infer<typeof SpecialCharRuleSchema>
 
 export const TagRuleSchema = z.object({
   type: z.literal('tag'),
+  /** Alias used for CSS class scoping and UI identification.
+   *  When set, tag nodes receive `cat-highlight-tag-{alias}` CSS class. */
+  alias: z.string().optional(),
   detectInner: z.boolean().optional(),
   collapsed: z.boolean().optional(),
   collapseScope: z.enum(['all', 'html-only']).optional(),
   pattern: z.string().optional(),
+  /** When `true`, matched tags not found in `expectedTags` are flagged
+   *  with the `cat-highlight-tag-{alias}-missing` CSS class. */
+  checkExpectedTags: z.boolean().optional(),
+  /** List of expected tag strings.  Only used when `checkExpectedTags` is `true`.
+   *  Matched tags whose `originalText` is NOT in this list are marked missing. */
+  expectedTags: z.array(z.string()).optional(),
 })
 export type ITagRule = z.infer<typeof TagRuleSchema>
 
@@ -334,6 +343,11 @@ export const TagAnnotationSchema = z.object({
     originalText: z.string(),
     displayText: z.string(),
     isHtml: z.boolean(),
+    /** Rule alias — passed through from `ITagRule.alias`. */
+    alias: z.string().optional(),
+    /** `true` when `checkExpectedTags` is enabled and the matched tag
+     *  was NOT found in `expectedTags`. */
+    isMissing: z.boolean().optional(),
   }),
 })
 export type TagAnnotation = z.infer<typeof TagAnnotationSchema>

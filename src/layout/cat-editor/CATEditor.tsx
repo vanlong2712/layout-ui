@@ -1,5 +1,11 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef } from 'react'
-import { $createParagraphNode, $createTextNode, $getRoot } from 'lexical'
+import {
+  $createParagraphNode,
+  $createRangeSelection,
+  $createTextNode,
+  $getRoot,
+  $setSelection,
+} from 'lexical'
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { ContentEditable } from '@lexical/react/LexicalContentEditable'
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary'
@@ -144,13 +150,18 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
     // ── Hooks ──────────────────────────────────────────────────────
     const flash = useFlash(editorRef, containerRef)
 
-    const { popoverState, scheduleHide, cancelHide, isOverPopoverRef } =
-      usePopoverHover(containerRef, {
-        annotationMapRef,
-        openLinksOnClick,
-        onLinkClick,
-        onMentionClick,
-      })
+    const {
+      popoverState,
+      scheduleHide,
+      cancelHide,
+      forceHide,
+      isOverPopoverRef,
+    } = usePopoverHover(containerRef, {
+      annotationMapRef,
+      openLinksOnClick,
+      onLinkClick,
+      onMentionClick,
+    })
 
     useEditorHandle(ref, { editorRef, savedSelectionRef, flash })
 
@@ -159,6 +170,9 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
       (suggestion: string, ruleId: string) => {
         const editor = editorRef.current
         if (!editor) return
+
+        // Immediately dismiss the popover so it doesn't linger.
+        forceHide()
 
         let replacedRange:
           | { start: number; end: number; content: string }
@@ -181,6 +195,12 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
               }
               const textNode = $createTextNode(suggestion)
               node.replace(textNode)
+
+              // Place the caret at the end of the newly inserted text node.
+              const sel = $createRangeSelection()
+              sel.anchor.set(textNode.getKey(), suggestion.length, 'text')
+              sel.focus.set(textNode.getKey(), suggestion.length, 'text')
+              $setSelection(sel)
               break
             }
           }
@@ -198,7 +218,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
           }
         }
       },
-      [onSuggestionApply],
+      [onSuggestionApply, forceHide],
     )
 
     // ── Effective codepoint display map ────────────────────────────

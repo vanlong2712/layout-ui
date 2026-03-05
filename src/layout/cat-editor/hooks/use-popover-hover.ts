@@ -24,6 +24,7 @@ export const PopoverHoverReturnSchema = z.object({
   popoverState: z.custom<PopoverState>(),
   scheduleHide: z.custom<() => void>(),
   cancelHide: z.custom<() => void>(),
+  forceHide: z.custom<() => void>(),
   isOverPopoverRef: z.custom<React.MutableRefObject<boolean>>(),
 })
 export type PopoverHoverReturn = z.infer<typeof PopoverHoverReturnSchema>
@@ -62,6 +63,17 @@ export function usePopoverHover(
       clearTimeout(dismissTimerRef.current)
       dismissTimerRef.current = null
     }
+  }, [])
+
+  /** Immediately hide the popover and clear all hover flags. */
+  const forceHide = useCallback(() => {
+    if (dismissTimerRef.current) {
+      clearTimeout(dismissTimerRef.current)
+      dismissTimerRef.current = null
+    }
+    isOverHighlightRef.current = false
+    isOverPopoverRef.current = false
+    setPopoverState((prev) => ({ ...prev, visible: false }))
   }, [])
 
   // ── Mouse hover over highlights ──────────────────────────────────
@@ -192,5 +204,5 @@ export function usePopoverHover(
     annotationMapRef,
   ])
 
-  return { popoverState, scheduleHide, cancelHide, isOverPopoverRef }
+  return { popoverState, scheduleHide, cancelHide, forceHide, isOverPopoverRef }
 }

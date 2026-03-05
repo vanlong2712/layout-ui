@@ -492,6 +492,17 @@ function CATEditorDemo() {
   const [tagCollapseScope, setTagCollapseScope] = useState<'all' | 'html-only'>(
     'all',
   )
+  const [tagAlias, setTagAlias] = useState('source')
+  const [checkExpectedTags, setCheckExpectedTags] = useState(false)
+  const [expectedTags, setExpectedTags] = useState<Array<string>>([
+    '<b>',
+    '</b>',
+    '<i>',
+    '</i>',
+    '<a href="https://example.com">',
+    '</a>',
+    '<br/>',
+  ])
 
   // Quote options
   const [singleQuoteOpen, setSingleQuoteOpen] = useState('{')
@@ -621,10 +632,13 @@ function CATEditorDemo() {
     if (tagsEnabled) {
       active.push({
         type: 'tag',
+        alias: tagAlias || undefined,
         detectInner: tagsDetectInner,
         collapsed: tagsCollapsed,
         collapseScope: tagCollapseScope,
         pattern: tagPattern || undefined,
+        checkExpectedTags,
+        expectedTags: checkExpectedTags ? expectedTags : undefined,
       } satisfies ITagRule)
     }
     if (quotesEnabled) {
@@ -691,6 +705,9 @@ function CATEditorDemo() {
     tagsDetectInner,
     tagPattern,
     tagCollapseScope,
+    tagAlias,
+    checkExpectedTags,
+    expectedTags,
     quotesEnabled,
     singleQuoteOpen,
     singleQuoteClose,
@@ -739,6 +756,17 @@ function CATEditorDemo() {
     setTagsDetectInner(true)
     setTagPattern(DEFAULT_TAG_PATTERN)
     setTagCollapseScope('all')
+    setTagAlias('source')
+    setCheckExpectedTags(false)
+    setExpectedTags([
+      '<b>',
+      '</b>',
+      '<i>',
+      '</i>',
+      '<a href="https://example.com">',
+      '</a>',
+      '<br/>',
+    ])
     setSingleQuoteOpen('{')
     setSingleQuoteClose('}')
     setDoubleQuoteOpen('{{')
@@ -915,6 +943,12 @@ function CATEditorDemo() {
           onTagsDetectInnerChange={setTagsDetectInner}
           tagPattern={tagPattern}
           onTagPatternChange={setTagPattern}
+          tagAlias={tagAlias}
+          onTagAliasChange={setTagAlias}
+          checkExpectedTags={checkExpectedTags}
+          onCheckExpectedTagsChange={setCheckExpectedTags}
+          expectedTags={expectedTags}
+          onExpectedTagsChange={setExpectedTags}
           quotesEnabled={quotesEnabled}
           onQuotesEnabledChange={setQuotesEnabled}
           singleQuoteOpen={singleQuoteOpen}

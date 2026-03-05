@@ -303,6 +303,17 @@ export function $rebuildTree(
         typesArr.push('tag-collapsed')
       }
 
+      // Tag alias scoping + missing-tag marker
+      if (tagAnn?.type === 'tag') {
+        const { alias, isMissing } = tagAnn.data
+        if (alias) {
+          typesArr.push(`tag-${alias}`)
+          if (isMissing) {
+            typesArr.push(`tag-${alias}-missing`)
+          }
+        }
+      }
+
       const types = typesArr.join(',')
       const ids = seg.annotations.map((a) => a.id).join(',')
 

@@ -241,6 +241,12 @@ export interface CATEditorToolbarProps {
   onTagsDetectInnerChange: (v: boolean) => void
   tagPattern: string
   onTagPatternChange: (v: string) => void
+  tagAlias: string
+  onTagAliasChange: (v: string) => void
+  checkExpectedTags: boolean
+  onCheckExpectedTagsChange: (v: boolean) => void
+  expectedTags: Array<string>
+  onExpectedTagsChange: (v: Array<string>) => void
 
   // ── Quotes ─────────────────────────────────────
   quotesEnabled: boolean
@@ -813,6 +819,42 @@ export function CATEditorToolbar(props: CATEditorToolbarProps) {
             placeholder="Regex pattern…"
             onChange={(e) => props.onTagPatternChange(e.target.value)}
           />
+          <div className="flex items-center gap-1.5">
+            <Label className="text-xs text-muted-foreground shrink-0">
+              Alias
+            </Label>
+            <Input
+              className="h-6 text-xs font-mono flex-1"
+              value={props.tagAlias}
+              placeholder="e.g. source"
+              onChange={(e) => props.onTagAliasChange(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <Switch
+                checked={props.checkExpectedTags}
+                onCheckedChange={props.onCheckExpectedTagsChange}
+              />
+              <Label className="text-xs">Check expected tags</Label>
+            </div>
+            {props.checkExpectedTags && (
+              <div className="space-y-1">
+                <Label className="text-[10px] text-muted-foreground">
+                  Expected tags (one per line)
+                </Label>
+                <textarea
+                  className="w-full h-20 text-xs font-mono rounded-md border border-border bg-background px-2 py-1 resize-y"
+                  value={props.expectedTags.join('\n')}
+                  onChange={(e) =>
+                    props.onExpectedTagsChange(
+                      e.target.value.split('\n').filter((s) => s.trim() !== ''),
+                    )
+                  }
+                />
+              </div>
+            )}
+          </div>
         </div>
       </ToolbarPopoverButton>
 

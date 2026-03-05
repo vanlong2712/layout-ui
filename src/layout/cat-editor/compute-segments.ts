@@ -503,11 +503,22 @@ export function computeHighlightSegments(
       const pairs = rule.pattern
         ? detectCustomTags(text, rule.pattern)
         : detectAndPairTags(text, rule.detectInner ?? true)
+
+      // Build a Set for O(1) expected-tag lookups when the feature is on.
+      const expectedSet =
+        rule.checkExpectedTags && rule.expectedTags
+          ? new Set(rule.expectedTags)
+          : null
+
       for (const p of pairs) {
         // isHtml: a match is HTML when it came from detectAndPairTags (always
         // HTML), or from detectCustomTags where tagName !== originalText
         // (i.e. the classifier extracted an HTML tag name).
         const isHtml = !rule.pattern || p.tagName !== p.originalText
+
+        // Determine whether this matched tag is "missing" from the expected list.
+        const isMissing = expectedSet ? !expectedSet.has(p.originalText) : false
+
         rawRanges.push({
           start: p.start,
           end: p.end,
@@ -522,6 +533,8 @@ export function computeHighlightSegments(
               originalText: p.originalText,
               displayText: p.displayText,
               isHtml,
+              alias: rule.alias,
+              isMissing: isMissing || undefined,
             },
           },
         })

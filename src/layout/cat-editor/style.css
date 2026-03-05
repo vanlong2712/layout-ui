@@ -169,6 +169,17 @@
   background-color: var(--cat-tag-bg-hover, oklch(0.78 0.1 210 / 0.25));
 }
 
+/* ─── Tag missing: red warning for tags not found in expectedTags ───── */
+
+.cat-highlight[class*='cat-highlight-tag-'][class*='-missing'] {
+  background-color: var(--cat-tag-missing-bg, oklch(0.75 0.15 25 / 0.15));
+  border-bottom: 2px dashed var(--cat-tag-missing-underline, oklch(0.55 0.2 25));
+  color: var(--cat-tag-missing-text, inherit);
+}
+.cat-highlight[class*='cat-highlight-tag-'][class*='-missing']:hover {
+  background-color: var(--cat-tag-missing-bg-hover, oklch(0.75 0.15 25 / 0.28));
+}
+
 /* ─── Link: blue underline, clickable ──────────────────────────────────── */
 
 .cat-highlight-link {
@@ -444,6 +455,15 @@
 }
 .dark .cat-highlight-tag:hover {
   background-color: var(--cat-tag-bg-hover, oklch(0.45 0.12 210 / 0.4));
+}
+
+/* ─── Dark: Tag missing ─────────────────────────────────────────────── */
+.dark .cat-highlight[class*='cat-highlight-tag-'][class*='-missing'] {
+  background-color: var(--cat-tag-missing-bg, oklch(0.45 0.18 25 / 0.3));
+  border-bottom-color: var(--cat-tag-missing-underline, oklch(0.6 0.22 25));
+}
+.dark .cat-highlight[class*='cat-highlight-tag-'][class*='-missing']:hover {
+  background-color: var(--cat-tag-missing-bg-hover, oklch(0.45 0.18 25 / 0.45));
 }
 
 .dark .cat-highlight-link {
