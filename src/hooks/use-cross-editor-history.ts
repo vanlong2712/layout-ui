@@ -81,6 +81,7 @@ export const OnBeforeCrossApplySchema =
       currentColumnIndex: number,
       targetRowIndex: number,
       targetColumnIndex: number,
+      isCross: boolean,
     ) => Promise<boolean | void> | boolean | void
   >()
 export type OnBeforeCrossApply = z.infer<typeof OnBeforeCrossApplySchema>
@@ -467,13 +468,14 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
         activeCellRef.current !== null &&
         (entry.rowIndex !== activeCellRef.current.rowIndex ||
           entry.columnIndex !== activeCellRef.current.columnIndex)
-      if (isCross && onBeforeCrossApply) {
+      if (onBeforeCrossApply) {
         try {
           const result = await onBeforeCrossApply(
             activeCellRef.current!.rowIndex,
             activeCellRef.current!.columnIndex,
             entry.rowIndex,
             entry.columnIndex,
+            isCross,
           )
           if (result === false) {
             undoStackRef.current.push(entry)
@@ -513,13 +515,14 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
         activeCellRef.current !== null &&
         (entry.rowIndex !== activeCellRef.current.rowIndex ||
           entry.columnIndex !== activeCellRef.current.columnIndex)
-      if (isCross && onBeforeCrossApply) {
+      if (onBeforeCrossApply) {
         try {
           const result = await onBeforeCrossApply(
             activeCellRef.current!.rowIndex,
             activeCellRef.current!.columnIndex,
             entry.rowIndex,
             entry.columnIndex,
+            isCross,
           )
           if (result === false) {
             redoStackRef.current.push(entry)
