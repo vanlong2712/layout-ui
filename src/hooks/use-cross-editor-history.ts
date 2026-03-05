@@ -28,6 +28,7 @@ const SelectionOffsetsSchema = z.object({
 
 const HistoryEntrySchema = z.object({
   rowIndex: z.number(),
+  columnIndex: z.number(),
   beforeText: z.string(),
   beforeSelection: SelectionOffsetsSchema.nullable(),
   afterText: z.string(),
@@ -46,8 +47,11 @@ export const CrossEditorHistoryDepsSchema = z.object({
     z.custom<
       (rowIndex: number, opts?: { align?: 'center' | 'start' | 'end' }) => void
     >(),
-  /** Try to get the CATEditorRef for a row (may be `undefined` if not mounted). */
-  getEditorRef: z.custom<(rowIndex: number) => CATEditorRef | undefined>(),
+  /** Try to get the CATEditorRef for a cell (may be `undefined` if not mounted). */
+  getEditorRef:
+    z.custom<
+      (rowIndex: number, columnIndex: number) => CATEditorRef | undefined
+    >(),
 })
 export type CrossEditorHistoryDeps = z.infer<
   typeof CrossEditorHistoryDepsSchema
@@ -58,7 +62,9 @@ export type CrossEditorHistoryDeps = z.infer<
  * Use this for caret centering, scroll fine-tuning, etc.
  */
 export const OnAfterApplySchema =
-  z.custom<(rowIndex: number, wasScrolled: boolean) => void>()
+  z.custom<
+    (rowIndex: number, columnIndex: number, wasScrolled: boolean) => void
+  >()
 export type OnAfterApply = z.infer<typeof OnAfterApplySchema>
 
 /**
@@ -72,7 +78,9 @@ export const OnBeforeCrossApplySchema =
   z.custom<
     (
       currentRowIndex: number,
+      currentColumnIndex: number,
       targetRowIndex: number,
+      targetColumnIndex: number,
     ) => Promise<boolean | void> | boolean | void
   >()
 export type OnBeforeCrossApply = z.infer<typeof OnBeforeCrossApplySchema>
@@ -80,24 +88,32 @@ export type OnBeforeCrossApply = z.infer<typeof OnBeforeCrossApplySchema>
 /** Consecutive edits to the same row within this window are merged. */
 const HISTORY_MERGE_INTERVAL = 300
 
+/** Composite map key for a (row, column) cell. */
+export function cellKey(rowIndex: number, columnIndex: number): string {
+  return `${rowIndex}:${columnIndex}`
+}
+
 export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
   const depsRef = useRef(deps)
   depsRef.current = deps
 
-  // The row that was most recently edited or restored via undo/redo.
-  // Used to detect "cross-row" operations for the `onBeforeCrossApply` guard.
-  const activeRowRef = useRef<number | null>(null)
+  // The cell that was most recently edited or restored via undo/redo.
+  // Used to detect "cross-cell" operations for the `onBeforeCrossApply` guard.
+  const activeCellRef = useRef<{
+    rowIndex: number
+    columnIndex: number
+  } | null>(null)
 
-  // Last known text + selection per row — survives unmount.
+  // Last known text + selection per cell — survives unmount.
   const lastKnownRef = useRef<
     Map<
-      number,
+      string,
       { text: string; selection: { anchor: number; focus: number } | null }
     >
   >(new Map())
 
-  // Per-row update-listener cleanup functions
-  const listenersRef = useRef<Map<number, () => void>>(new Map())
+  // Per-cell update-listener cleanup functions
+  const listenersRef = useRef<Map<string, () => void>>(new Map())
 
   // Global undo / redo stacks
   const undoStackRef = useRef<Array<HistoryEntry>>([])
@@ -106,7 +122,7 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
   // ── Merge-window management via TanStack Pacer Debouncer ──
   // Instead of comparing Date.now() timestamps, we use a Debouncer to
   // track the "current typing burst".  While the debouncer is pending,
-  // subsequent edits to the same row merge into the existing top entry.
+  // subsequent edits to the same cell merge into the existing top entry.
   // When 300 ms of inactivity passes, the debouncer fires and clears
   // the pending entry ref, so the next edit creates a new undo entry.
   const pendingEntryRef = useRef<HistoryEntry | null>(null)
@@ -145,19 +161,20 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
     applyQueuerRef.current?.clear()
   }
 
-  /** Register a CATEditorRef (called when a row mounts). */
+  /** Register a CATEditorRef (called when a cell mounts). */
   const registerEditor = useCallback(
-    (rowIndex: number, catRef: CATEditorRef) => {
+    (rowIndex: number, columnIndex: number, catRef: CATEditorRef) => {
       const editor = catRef.getEditor()
       if (!editor) return
 
-      // Clean up previous listener for this row
-      listenersRef.current.get(rowIndex)?.()
+      // Clean up previous listener for this cell
+      const key = cellKey(rowIndex, columnIndex)
+      listenersRef.current.get(key)?.()
 
       // Seed last-known state so the very first edit has a "before".
       const currentText = catRef.getText()
       const currentSel = catRef.getSelection()
-      lastKnownRef.current.set(rowIndex, {
+      lastKnownRef.current.set(key, {
         text: currentText,
         selection: currentSel ?? { anchor: 0, focus: 0 },
       })
@@ -170,11 +187,11 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
           if (tags.has('history-merge')) return
           if (tags.has('historic')) return
 
-          const ref = depsRef.current.getEditorRef(rowIndex)
+          const ref = depsRef.current.getEditorRef(rowIndex, columnIndex)
           if (!ref) return
 
           const newSel = ref.getSelection()
-          const before = lastKnownRef.current.get(rowIndex)
+          const before = lastKnownRef.current.get(key)
 
           // Selection-only update — track it for next edit's "before"
           if (dirtyElements.size === 0 && dirtyLeaves.size === 0) {
@@ -193,7 +210,11 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
           // ── Record the edit ──
           const pending = pendingEntryRef.current
 
-          if (pending && pending.rowIndex === rowIndex) {
+          if (
+            pending &&
+            pending.rowIndex === rowIndex &&
+            pending.columnIndex === columnIndex
+          ) {
             // Merge into existing top entry (typing continuation)
             pending.afterText = newText
             pending.afterSelection = newSel
@@ -208,6 +229,7 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
 
             const entry: HistoryEntry = {
               rowIndex,
+              columnIndex,
               beforeText: before?.text ?? '',
               beforeSelection: before?.selection ?? null,
               afterText: newText,
@@ -219,14 +241,14 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
             sealDebouncerRef.current!.maybeExecute()
           }
 
-          // Track this row as the active one
-          activeRowRef.current = rowIndex
+          // Track this cell as the active one
+          activeCellRef.current = { rowIndex, columnIndex }
 
           // New edit clears the redo stack
           redoStackRef.current.length = 0
 
           // Update last known
-          lastKnownRef.current.set(rowIndex, {
+          lastKnownRef.current.set(key, {
             text: newText,
             selection: newSel ?? { anchor: 0, focus: 0 },
           })
@@ -235,17 +257,21 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
         },
       )
 
-      listenersRef.current.set(rowIndex, unregister)
+      listenersRef.current.set(key, unregister)
     },
     [bumpRevision],
   )
 
-  /** Unregister when a row unmounts (virtualizer recycling). */
-  const unregisterEditor = useCallback((rowIndex: number) => {
-    listenersRef.current.get(rowIndex)?.()
-    listenersRef.current.delete(rowIndex)
-    // Keep lastKnownRef — survives unmount/remount
-  }, [])
+  /** Unregister when a cell unmounts (virtualizer recycling). */
+  const unregisterEditor = useCallback(
+    (rowIndex: number, columnIndex: number) => {
+      const key = cellKey(rowIndex, columnIndex)
+      listenersRef.current.get(key)?.()
+      listenersRef.current.delete(key)
+      // Keep lastKnownRef — survives unmount/remount
+    },
+    [],
+  )
 
   /**
    * Apply a text + selection snapshot to a (possibly unmounted) editor row.
@@ -295,7 +321,8 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
 
       // Update lastKnown BEFORE setText so the update listener's
       // text-comparison guard sees "no change".
-      lastKnownRef.current.set(entry.rowIndex, {
+      const entryKey = cellKey(entry.rowIndex, entry.columnIndex)
+      lastKnownRef.current.set(entryKey, {
         text,
         selection: clamped,
       })
@@ -312,7 +339,7 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
         // `registerEditor` may have clobbered it with the stale
         // `initialText` when the editor mounted.  This ensures the
         // update listener's before-text is correct for the next edit.
-        lastKnownRef.current.set(entry.rowIndex, {
+        lastKnownRef.current.set(entryKey, {
           text,
           selection: clamped,
         })
@@ -361,14 +388,17 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
       }
 
       // ── Fast path: editor already mounted ──
-      const immediate = depsRef.current.getEditorRef(entry.rowIndex)
+      const immediate = depsRef.current.getEditorRef(
+        entry.rowIndex,
+        entry.columnIndex,
+      )
       if (immediate) {
         applyToEditor(immediate)
         requestAnimationFrame(() => {
           if (applyEpochRef.current !== epoch) return
           scrollCaretToCenter()
         })
-        onAfterApply?.(entry.rowIndex, false)
+        onAfterApply?.(entry.rowIndex, entry.columnIndex, false)
         return
       }
 
@@ -387,7 +417,10 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
           // A newer applySnapshot has started — abandon this poll chain.
           if (applyEpochRef.current !== epoch) return
 
-          const ref = depsRef.current.getEditorRef(entry.rowIndex)
+          const ref = depsRef.current.getEditorRef(
+            entry.rowIndex,
+            entry.columnIndex,
+          )
           if (ref) {
             applyToEditor(ref)
             // Center the caret in the scroll viewport after the text
@@ -396,7 +429,7 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
               if (applyEpochRef.current !== epoch) return
               scrollCaretToCenter()
             })
-            onAfterApply?.(entry.rowIndex, true)
+            onAfterApply?.(entry.rowIndex, entry.columnIndex, true)
             return // done — don't enqueue more polls
           }
           if (++attempts < MAX_ATTEMPTS) {
@@ -429,14 +462,18 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
       const entry = undoStackRef.current.pop()
       if (!entry) return
 
-      // Cross-row guard
+      // Cross-cell guard
       const isCross =
-        activeRowRef.current !== null && entry.rowIndex !== activeRowRef.current
+        activeCellRef.current !== null &&
+        (entry.rowIndex !== activeCellRef.current.rowIndex ||
+          entry.columnIndex !== activeCellRef.current.columnIndex)
       if (isCross && onBeforeCrossApply) {
         try {
           const result = await onBeforeCrossApply(
-            activeRowRef.current!,
+            activeCellRef.current!.rowIndex,
+            activeCellRef.current!.columnIndex,
             entry.rowIndex,
+            entry.columnIndex,
           )
           if (result === false) {
             undoStackRef.current.push(entry)
@@ -448,7 +485,10 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
         }
       }
 
-      activeRowRef.current = entry.rowIndex
+      activeCellRef.current = {
+        rowIndex: entry.rowIndex,
+        columnIndex: entry.columnIndex,
+      }
       applySnapshot(
         entry,
         'beforeText',
@@ -468,14 +508,18 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
       const entry = redoStackRef.current.pop()
       if (!entry) return
 
-      // Cross-row guard
+      // Cross-cell guard
       const isCross =
-        activeRowRef.current !== null && entry.rowIndex !== activeRowRef.current
+        activeCellRef.current !== null &&
+        (entry.rowIndex !== activeCellRef.current.rowIndex ||
+          entry.columnIndex !== activeCellRef.current.columnIndex)
       if (isCross && onBeforeCrossApply) {
         try {
           const result = await onBeforeCrossApply(
-            activeRowRef.current!,
+            activeCellRef.current!.rowIndex,
+            activeCellRef.current!.columnIndex,
             entry.rowIndex,
+            entry.columnIndex,
           )
           if (result === false) {
             redoStackRef.current.push(entry)
@@ -487,7 +531,10 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
         }
       }
 
-      activeRowRef.current = entry.rowIndex
+      activeCellRef.current = {
+        rowIndex: entry.rowIndex,
+        columnIndex: entry.columnIndex,
+      }
       applySnapshot(
         entry,
         'afterText',
@@ -506,7 +553,7 @@ export function useCrossEditorHistory(deps: CrossEditorHistoryDeps) {
     pendingEntryRef.current = null
     undoStackRef.current.length = 0
     redoStackRef.current.length = 0
-    activeRowRef.current = null
+    activeCellRef.current = null
     for (const unreg of listenersRef.current.values()) unreg()
     listenersRef.current.clear()
     lastKnownRef.current.clear()

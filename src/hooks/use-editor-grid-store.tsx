@@ -21,7 +21,7 @@ import { Store } from '@tanstack/store'
 import { useStore } from '@tanstack/react-store'
 import { z } from 'zod'
 
-import { useCrossEditorHistory } from './use-cross-editor-history'
+import { cellKey, useCrossEditorHistory } from './use-cross-editor-history'
 import type {
   OnAfterApply,
   OnBeforeCrossApply,
@@ -39,8 +39,9 @@ import type { MassiveVirtualizerResult } from './use-massive-virtualizer'
  * structural label here, not a runtime validator.
  */
 const CrossEditorHistoryApiSchema = z.object({
-  registerEditor: z.custom<(row: number, ref: CATEditorRef) => void>(),
-  unregisterEditor: z.custom<(row: number) => void>(),
+  registerEditor:
+    z.custom<(row: number, column: number, ref: CATEditorRef) => void>(),
+  unregisterEditor: z.custom<(row: number, column: number) => void>(),
   undo: z.custom<
     (
       onBeforeCrossApply?: OnBeforeCrossApply,
@@ -72,7 +73,7 @@ export type CrossEditorHistoryApi = z.infer<typeof CrossEditorHistoryApiSchema>
 const EditorGridStateSchema = z.object({
   virtualizer: z.custom<MassiveVirtualizerResult>().nullable(),
   crossHistory: CrossEditorHistoryApiSchema.nullable(),
-  editorRefsMap: z.custom<Map<number, CATEditorRef>>(),
+  editorRefsMap: z.custom<Map<string, CATEditorRef>>(),
   focusedRow: z.number().nullable(),
 })
 
@@ -115,7 +116,8 @@ export function EditorGridStoreProvider({ children }: PropsWithChildren) {
   const crossHistory = useCrossEditorHistory({
     scrollToRow: (rowIndex, opts) =>
       store.state.virtualizer?.scrollToRow(rowIndex, opts),
-    getEditorRef: (rowIndex) => store.state.editorRefsMap.get(rowIndex),
+    getEditorRef: (rowIndex, columnIndex) =>
+      store.state.editorRefsMap.get(cellKey(rowIndex, columnIndex)),
   })
 
   // Sync crossHistory into the store each render so selectors pick it up.
@@ -159,7 +161,7 @@ export function useGridCrossHistory(): CrossEditorHistoryApi | null {
 }
 
 /** Subscribe to the full `editorRefsMap`. */
-export function useGridEditorRefsMap(): Map<number, CATEditorRef> {
+export function useGridEditorRefsMap(): Map<string, CATEditorRef> {
   const store = useEditorGridStore()
   return useStore(store, (s) => s.editorRefsMap)
 }
@@ -199,22 +201,28 @@ export function setFocusedRow(
 export function setEditorRef(
   store: EditorGridStore,
   row: number,
+  column: number,
   ref: CATEditorRef,
 ): void {
-  store.state.editorRefsMap.set(row, ref)
+  store.state.editorRefsMap.set(cellKey(row, column), ref)
 }
 
 /** Remove a single editor ref from the map (in-place, non-reactive). */
-export function deleteEditorRef(store: EditorGridStore, row: number): void {
-  store.state.editorRefsMap.delete(row)
+export function deleteEditorRef(
+  store: EditorGridStore,
+  row: number,
+  column: number,
+): void {
+  store.state.editorRefsMap.delete(cellKey(row, column))
 }
 
 /** Get a ref without subscribing to map changes (reads snapshot). */
 export function getEditorRef(
   store: EditorGridStore,
   row: number,
+  column: number,
 ): CATEditorRef | undefined {
-  return store.state.editorRefsMap.get(row)
+  return store.state.editorRefsMap.get(cellKey(row, column))
 }
 
 /** Get the virtualizer result without subscribing (reads snapshot). */

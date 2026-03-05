@@ -642,7 +642,7 @@ function CATEditorPerfDemoInner() {
       setFocusedRow(store, rowIndex)
 
       // If editor is already mounted, focus immediately.
-      const immediate = getEditorRef(store, rowIndex)
+      const immediate = getEditorRef(store, rowIndex, 0)
       if (immediate) {
         immediate.focusEnd()
         return
@@ -652,7 +652,7 @@ function CATEditorPerfDemoInner() {
       let attempts = 0
       const poll = () => {
         if (focusPollEpochRef.current !== epoch) return
-        const ref = getEditorRef(store, rowIndex)
+        const ref = getEditorRef(store, rowIndex, 0)
         if (ref) {
           ref.focusEnd()
           return
@@ -967,11 +967,11 @@ function CATEditorPerfDemoInner() {
   const registerEditorRef = useCallback(
     (index: number, instance: CATEditorRef | null) => {
       if (instance) {
-        setEditorRef(store, index, instance)
-        getCrossHistory(store)?.registerEditor(index, instance)
+        setEditorRef(store, index, 0, instance)
+        getCrossHistory(store)?.registerEditor(index, 0, instance)
       } else {
-        deleteEditorRef(store, index)
-        getCrossHistory(store)?.unregisterEditor(index)
+        deleteEditorRef(store, index, 0)
+        getCrossHistory(store)?.unregisterEditor(index, 0)
       }
     },
     [store],
@@ -1005,14 +1005,14 @@ function CATEditorPerfDemoInner() {
       }
       if (row === null) return false
       if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-        const editorRef = getEditorRef(store, row)
+        const editorRef = getEditorRef(store, row, 0)
         if (!editorRef) return false
         const sel = editorRef.getSelection()
         if (!sel || sel.anchor !== sel.focus) return false
         const navigateTo = (targetRow: number, position: 'start' | 'end') => {
           scrollToRow(targetRow)
           requestAnimationFrame(() => {
-            const targetRef = getEditorRef(store, targetRow)
+            const targetRef = getEditorRef(store, targetRow, 0)
             if (targetRef) {
               if (position === 'end') targetRef.focusEnd()
               else targetRef.focusStart()
@@ -1074,7 +1074,7 @@ function CATEditorPerfDemoInner() {
       if (flashDemoTimerRef.current) clearTimeout(flashDemoTimerRef.current)
       setFlashedSpellcheckId(annId)
       if (focusedRow !== null) {
-        getEditorRef(store, focusedRow)?.flashHighlight(annId, durationMs)
+        getEditorRef(store, focusedRow, 0)?.flashHighlight(annId, durationMs)
       }
       flashDemoTimerRef.current = setTimeout(() => {
         setFlashedSpellcheckId(null)
@@ -1374,17 +1374,17 @@ function CATEditorPerfDemoInner() {
           disabled={focusedRow === null}
           onInsertText={(text) => {
             if (focusedRow !== null) {
-              getEditorRef(store, focusedRow)?.insertText(text)
+              getEditorRef(store, focusedRow, 0)?.insertText(text)
             }
           }}
           onSetText={(text) => {
             if (focusedRow !== null) {
-              getEditorRef(store, focusedRow)?.setText(text)
+              getEditorRef(store, focusedRow, 0)?.setText(text)
             }
           }}
           onFlashRange={(start, end, ms) => {
             if (focusedRow !== null) {
-              getEditorRef(store, focusedRow)?.flashRange(start, end, ms)
+              getEditorRef(store, focusedRow, 0)?.flashRange(start, end, ms)
             }
           }}
         />
