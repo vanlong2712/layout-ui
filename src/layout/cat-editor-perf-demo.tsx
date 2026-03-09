@@ -221,8 +221,8 @@ const DEFAULT_LEXIQA_DATA: Array<ILexiQAValidation> = [
 ]
 
 const DEFAULT_TB_ENTRIES: Array<IKeywordsEntry> = [
-  { pattern: 'endpoint', description: 'Preferred: use "API endpoint".' },
-  { pattern: 'fox', description: 'Translate as "zorro" in Spanish.' },
+  { keyword: 'endpoint', description: 'Preferred: use "API endpoint".' },
+  { keyword: 'fox', description: 'Translate as "zorro" in Spanish.' },
 ]
 
 const DEFAULT_SPELLCHECK: Array<ISpellCheckValidation> = [
@@ -247,46 +247,59 @@ const DEFAULT_SPELLCHECK: Array<ISpellCheckValidation> = [
 ]
 
 const DEFAULT_SPECIAL_CHARS: Array<IKeywordsEntry> = [
-  { pattern: '&', description: 'Ampersand', atomic: true },
-  { pattern: '\\t', description: 'Tab', atomic: true, displaySymbol: '\u21E5' },
+  { keyword: '', pattern: '&', description: 'Ampersand', atomic: true },
   {
+    keyword: '',
+    pattern: '\\t',
+    description: 'Tab',
+    atomic: true,
+    displaySymbol: '\u21E5',
+  },
+  {
+    keyword: '',
     pattern: '\\u00A0',
     description: 'Non-Breaking Space',
     atomic: true,
     displaySymbol: '\u237D',
   },
   {
+    keyword: '',
     pattern: '\\u2009',
     description: 'Thin Space',
     atomic: true,
     displaySymbol: '\u00B7',
   },
   {
+    keyword: '',
     pattern: '\\u2003',
     description: 'Em Space',
     atomic: true,
     displaySymbol: '\u2423',
   },
   {
+    keyword: '',
     pattern: '\\u200B',
     description: 'Zero-Width Space',
     atomic: true,
     displaySymbol: '\u2205',
   },
   {
+    keyword: '',
     pattern: '\\u2060',
     description: 'Word Joiner',
     atomic: true,
     displaySymbol: '\u2040',
   },
   {
+    keyword: '',
     pattern: '\\u200A',
     description: 'Hair Space',
     atomic: true,
     displaySymbol: '\u00B7',
   },
-  { pattern: ' ', description: 'Space', atomic: true },
+  { keyword: '', pattern: ' ', description: 'Space', atomic: true },
   {
+    keyword: '',
     pattern: '\\n',
     description: 'Line Break',
     atomic: true,
@@ -765,7 +778,7 @@ function CATEditorPerfDemoInner() {
   )
   const addKeyword = useCallback(
     (setter: React.Dispatch<React.SetStateAction<Array<IKeywordsEntry>>>) =>
-      setter((prev) => [...prev, { pattern: '' }]),
+      setter((prev) => [...prev, { keyword: '' }]),
     [],
   )
   const updateSpecialChar = useCallback(
@@ -784,7 +797,7 @@ function CATEditorPerfDemoInner() {
     () =>
       setSpecialCharEntries((prev) => [
         ...prev,
-        { pattern: 'x', description: 'New Char', atomic: true },
+        { keyword: '', pattern: 'x', description: 'New Char', atomic: true },
       ]),
     [],
   )
@@ -867,7 +880,11 @@ function CATEditorPerfDemoInner() {
     if (regexPresetsEnabled) {
       const presetEntries = regexPresets
         .filter((p) => p.pattern.trim())
-        .map((p) => ({ pattern: p.pattern, description: p.label || undefined }))
+        .map((p) => ({
+          keyword: '',
+          pattern: p.pattern,
+          description: p.label || undefined,
+        }))
       if (presetEntries.length > 0) {
         active.push({
           type: 'keyword',
@@ -881,7 +898,7 @@ function CATEditorPerfDemoInner() {
       active.push({
         type: 'keyword',
         label: 'search',
-        entries: [{ pattern: searchKeywords }],
+        entries: [{ keyword: searchKeywords }],
       } satisfies IKeywordsRule)
     }
     return active

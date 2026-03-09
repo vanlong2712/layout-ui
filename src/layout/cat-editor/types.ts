@@ -131,9 +131,14 @@ export type IRangeHighlightRule = z.infer<typeof RangeHighlightRuleSchema>
 
 /** Schema for a single keyword entry used for pattern-based matching. */
 export const KeywordsEntrySchema = z.object({
+  /** Exact string to match.  Takes priority over `pattern`.
+   *  The match is literal (no regex interpretation).
+   *  Pass an empty string to skip exact matching and rely on `pattern`. */
+  keyword: z.string(),
   /** Regex source string used for matching.
-   *  Example: `'hello|hi'` matches both "hello" and "hi". */
-  pattern: z.string(),
+   *  Example: `'hello|hi'` matches both "hello" and "hi".
+   *  Ignored when `keyword` is provided. */
+  pattern: z.string().optional(),
   /** Optional description shown in the popover. */
   description: z.string().optional(),
   /** When `true`, the highlighted node is atomic — the caret cannot be
@@ -302,7 +307,9 @@ export const KeywordsAnnotationSchema = z.object({
   id: z.string(),
   data: z.object({
     label: z.string(),
-    pattern: z.string(),
+    /** The keyword (exact match) that produced this annotation. */
+    keyword: z.string(),
+    pattern: z.string().optional(),
     description: z.string().optional(),
     /** When `true`, the highlight node is atomic (caret cannot enter). */
     atomic: z.boolean().optional(),

@@ -500,10 +500,10 @@ const rules: MooRule[] = [
     label: 'tb-target',
     entries: [
       {
-        pattern: 'React',
+        keyword: 'React',
         description: 'A JavaScript library for building UIs',
       },
-      { pattern: 'tailwind(css)?' },
+      { keyword: '', pattern: 'tailwind(css)?' },
     ],
   },
 ]
@@ -522,13 +522,20 @@ const rules: MooRule[] = [
     label: 'special-char',
     entries: [
       {
+        keyword: '',
         pattern: '\\u00A0',
         description: 'Non-Breaking Space',
         atomic: true,
         displaySymbol: '⍽',
       },
-      { pattern: '\\t', description: 'Tab', atomic: true, displaySymbol: '⇥' },
-      { pattern: ' ', description: 'Space', atomic: true },
+      {
+        keyword: '',
+        pattern: '\\t',
+        description: 'Tab',
+        atomic: true,
+        displaySymbol: '⇥',
+      },
+      { keyword: '', pattern: ' ', description: 'Space', atomic: true },
     ],
   },
 ]

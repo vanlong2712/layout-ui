@@ -407,7 +407,7 @@ describe('CATEditor', () => {
         {
           type: 'keyword',
           label: 'search',
-          entries: [{ pattern: 'test' }],
+          entries: [{ keyword: 'test' }],
         },
       ]
 

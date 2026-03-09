@@ -137,9 +137,29 @@ export function usePopoverHover(
     container.addEventListener('mouseover', handleMouseOver)
     container.addEventListener('mouseout', handleMouseOut)
 
+    // Dismiss popover on scroll — the highlighted node may move out from
+    // under the cursor without firing any mouse events.
+    const handleScroll = () => {
+      if (dismissTimerRef.current) {
+        clearTimeout(dismissTimerRef.current)
+        dismissTimerRef.current = null
+      }
+      isOverHighlightRef.current = false
+      isOverPopoverRef.current = false
+      setPopoverState((prev) => ({ ...prev, visible: false }))
+    }
+
+    // Listen on the container itself and on any scrollable ancestor
+    // (e.g. a virtualised list wrapper).  `capture: true` on the
+    // container catches scroll events from inner scrollable elements.
+    container.addEventListener('scroll', handleScroll, true)
+    window.addEventListener('scroll', handleScroll, true)
+
     return () => {
       container.removeEventListener('mouseover', handleMouseOver)
       container.removeEventListener('mouseout', handleMouseOut)
+      container.removeEventListener('scroll', handleScroll, true)
+      window.removeEventListener('scroll', handleScroll, true)
       if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current)
     }
   }, [containerRef, scheduleHide, cancelHide])

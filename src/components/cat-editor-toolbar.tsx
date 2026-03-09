@@ -67,9 +67,9 @@ export const DEFAULT_REGEX_PRESETS: Array<RegexPreset> = [
 // regex like `https?://[^\s]+` or `\d+` in the search box.
 //
 // Examples:
-//   "hello"              → [{ pattern: "hello" }]
-//   "https?://[^\\s]+"   → [{ pattern: "https?://[^\\s]+" }]
-//   "fox, \\d+"          → [{ pattern: "fox" }, { pattern: "\\d+" }]
+//   "hello"              → [{ keyword: "hello" }]
+//   "https?://[^\\s]+"   → [{ keyword: "https?://[^\\s]+" }]
+//   "fox, \\d+"          → [{ keyword: "fox" }, { keyword: "\\d+" }]
 
 export function parseSearchTerms(input: string): Array<IKeywordsEntry> {
   if (!input.trim()) return []
@@ -77,7 +77,7 @@ export function parseSearchTerms(input: string): Array<IKeywordsEntry> {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)
-    .map((term) => ({ pattern: term }))
+    .map((term) => ({ keyword: term }))
 }
 
 // ─── Toolbar popover button ──────────────────────────────────────────────────
@@ -148,9 +148,17 @@ export function KeywordEditor({
           >
             <Input
               className="h-7 text-xs flex-1 font-mono"
-              value={e.pattern}
-              placeholder="Pattern (e.g. fox|dog, \bAPI\b)"
-              onChange={(ev) => onUpdate(i, { pattern: ev.target.value })}
+              value={e.keyword}
+              placeholder="Keyword (exact match)"
+              onChange={(ev) => onUpdate(i, { keyword: ev.target.value })}
+            />
+            <Input
+              className="h-7 text-xs flex-1 font-mono"
+              value={e.pattern ?? ''}
+              placeholder="Pattern (regex, optional)"
+              onChange={(ev) =>
+                onUpdate(i, { pattern: ev.target.value || undefined })
+              }
             />
             <Input
               className="h-7 text-xs flex-1"
@@ -742,10 +750,12 @@ export function CATEditorToolbar(props: CATEditorToolbarProps) {
               />
               <Input
                 className="h-6 text-xs w-24 font-mono"
-                value={e.pattern}
+                value={e.pattern ?? ''}
                 placeholder="Pattern"
                 onChange={(ev) =>
-                  props.onSpecialCharUpdate(i, { pattern: ev.target.value })
+                  props.onSpecialCharUpdate(i, {
+                    pattern: ev.target.value || undefined,
+                  })
                 }
               />
               <Input

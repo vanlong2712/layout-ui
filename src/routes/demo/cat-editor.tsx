@@ -132,111 +132,132 @@ const DEFAULT_LEXIQA_DATA: Array<ILexiQAValidation> = [
 
 const DEFAULT_TB_ENTRIES: Array<IKeywordsEntry> = [
   {
-    pattern: 'endpoint',
+    keyword: 'endpoint',
     description:
       "Preferred terminology: use 'API endpoint' instead of 'endpoint' alone.",
   },
   {
-    pattern: 'fox',
+    keyword: 'fox',
     description:
       "Term Base: 'fox' should be translated as 'zorro' in the Spanish target.",
   },
 ]
 
 const DEFAULT_SPECIAL_CHARS: Array<IKeywordsEntry> = [
-  { pattern: '&', description: 'Ampersand', atomic: true },
-  { pattern: '\\t', description: 'Tab', atomic: true, displaySymbol: '⇥' },
+  { keyword: '', pattern: '&', description: 'Ampersand', atomic: true },
   {
+    keyword: '',
+    pattern: '\\t',
+    description: 'Tab',
+    atomic: true,
+    displaySymbol: '⇥',
+  },
+  {
+    keyword: '',
     pattern: '\\u00A0',
     description: 'Non-Breaking Space',
     atomic: true,
     displaySymbol: '⍽',
   },
   {
+    keyword: '',
     pattern: '\\u2002',
     description: 'En Space',
     atomic: true,
     displaySymbol: '␣',
   },
   {
+    keyword: '',
     pattern: '\\u2003',
     description: 'Em Space',
     atomic: true,
     displaySymbol: '␣',
   },
   {
+    keyword: '',
     pattern: '\\u2009',
     description: 'Thin Space',
     atomic: true,
     displaySymbol: '·',
   },
   {
+    keyword: '',
     pattern: '\\u3000',
     description: 'Ideographic Space',
     atomic: true,
     displaySymbol: '□',
   },
   {
+    keyword: '',
     pattern: '\\u200A',
     description: 'Hair Space',
     atomic: true,
     displaySymbol: '·',
   },
   {
+    keyword: '',
     pattern: '\\u200B',
     description: 'Zero-Width Space',
     atomic: true,
     displaySymbol: '∅',
   },
   {
+    keyword: '',
     pattern: '\\u200C',
     description: 'Zero-Width Non-Joiner',
     atomic: true,
     displaySymbol: '⊘',
   },
   {
+    keyword: '',
     pattern: '\\u200D',
     description: 'Zero-Width Joiner',
     atomic: true,
     displaySymbol: '⊕',
   },
   {
+    keyword: '',
     pattern: '\\u2060',
     description: 'Word Joiner',
     atomic: true,
     displaySymbol: '⁀',
   },
   {
+    keyword: '',
     pattern: '\\uFEFF',
     description: 'BOM / Zero-Width No-Break Space',
     atomic: true,
     displaySymbol: '◊',
   },
   {
+    keyword: '',
     pattern: '\\u000D',
     description: 'Carriage Return',
     atomic: true,
     displaySymbol: '↵',
   },
   {
+    keyword: '',
     pattern: '\\u000C',
     description: 'Form Feed',
     atomic: true,
     displaySymbol: '␌',
   },
   {
+    keyword: '',
     pattern: '\\u0000',
     description: 'Null Character',
     atomic: true,
     displaySymbol: '␀',
   },
   {
+    keyword: '',
     pattern: '\\n',
     description: 'Line Break',
     atomic: true,
     displaySymbol: '↩',
   },
-  { pattern: ' ', description: 'Space', atomic: true },
+  { keyword: '', pattern: ' ', description: 'Space', atomic: true },
 ]
 
 const DEFAULT_MENTION_USERS: Array<IMentionUser> = [
@@ -670,7 +691,11 @@ function CATEditorDemo() {
     if (regexPresetsEnabled) {
       const presetEntries = regexPresets
         .filter((p) => p.pattern.trim())
-        .map((p) => ({ pattern: p.pattern, description: p.label || undefined }))
+        .map((p) => ({
+          keyword: '',
+          pattern: p.pattern,
+          description: p.label || undefined,
+        }))
       if (presetEntries.length > 0) {
         active.push({
           type: 'keyword',
@@ -852,7 +877,7 @@ function CATEditorDemo() {
   ) => setter((prev) => prev.filter((_, i) => i !== idx))
   const addKeyword = (
     setter: React.Dispatch<React.SetStateAction<Array<IKeywordsEntry>>>,
-  ) => setter((prev) => [...prev, { pattern: '' }])
+  ) => setter((prev) => [...prev, { keyword: '' }])
 
   const updateSpecialChar = (idx: number, patch: Partial<IKeywordsEntry>) =>
     setSpecialCharEntries((prev) =>
@@ -863,7 +888,7 @@ function CATEditorDemo() {
   const addSpecialChar = () =>
     setSpecialCharEntries((prev) => [
       ...prev,
-      { pattern: 'x', description: 'New Char', atomic: true },
+      { keyword: '', pattern: 'x', description: 'New Char', atomic: true },
     ])
 
   return (

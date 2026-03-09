@@ -448,14 +448,22 @@ export function computeHighlightSegments(
     } else if (rule.type === 'keyword') {
       const { label, entries } = rule
       for (const entry of entries) {
-        if (!entry.pattern) continue
-
+        // `keyword` (exact match) takes priority over `pattern` (regex).
         let re: RegExp
-        try {
-          re = parsePatternWithFlags(entry.pattern)
-        } catch {
-          continue // skip invalid regex
+        if (entry.keyword) {
+          // Escape all regex-special chars for a literal match
+          const escaped = entry.keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          re = new RegExp(escaped, 'g')
+        } else if (entry.pattern) {
+          try {
+            re = parsePatternWithFlags(entry.pattern)
+          } catch {
+            continue // skip invalid regex
+          }
+        } else {
+          continue // neither keyword nor pattern provided
         }
+
         let m: RegExpExecArray | null
         while ((m = re.exec(text)) !== null) {
           if (m[0].length === 0) {
@@ -488,6 +496,7 @@ export function computeHighlightSegments(
               id: `kw-${label}-${m.index}-${m.index + matchStr.length}`,
               data: {
                 label,
+                keyword: entry.keyword,
                 pattern: entry.pattern,
                 description: entry.description,
                 atomic: entry.atomic,
