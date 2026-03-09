@@ -181,29 +181,45 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
         editor.update(() => {
           const root = $getRoot()
           const allNodes = root.getAllTextNodes()
+
+          // Collect ALL nodes that carry this ruleId — nested highlights
+          // split a single annotation range into multiple HighlightNodes.
+          const matchingNodes: Array<HighlightNode> = []
           for (const node of allNodes) {
             if (
               $isHighlightNode(node) &&
               node.__ruleIds.split(',').includes(ruleId)
             ) {
-              const globalOffset = $pointToGlobalOffset(node.getKey(), 0)
-              const originalContent = node.getTextContent()
-              replacedRange = {
-                start: globalOffset,
-                end: globalOffset + originalContent.length,
-                content: originalContent,
-              }
-              const textNode = $createTextNode(suggestion)
-              node.replace(textNode)
-
-              // Place the caret at the end of the newly inserted text node.
-              const sel = $createRangeSelection()
-              sel.anchor.set(textNode.getKey(), suggestion.length, 'text')
-              sel.focus.set(textNode.getKey(), suggestion.length, 'text')
-              $setSelection(sel)
-              break
+              matchingNodes.push(node)
             }
           }
+
+          if (matchingNodes.length === 0) return
+
+          // Build the replaced range from the full span of matching nodes.
+          const firstNode = matchingNodes[0]
+          const globalStart = $pointToGlobalOffset(firstNode.getKey(), 0)
+          const originalContent = matchingNodes
+            .map((n) => n.getTextContent())
+            .join('')
+          replacedRange = {
+            start: globalStart,
+            end: globalStart + originalContent.length,
+            content: originalContent,
+          }
+
+          // Replace the first node with the suggestion text, remove the rest.
+          const textNode = $createTextNode(suggestion)
+          firstNode.replace(textNode)
+          for (let i = 1; i < matchingNodes.length; i++) {
+            matchingNodes[i].remove()
+          }
+
+          // Place the caret at the end of the newly inserted text node.
+          const sel = $createRangeSelection()
+          sel.anchor.set(textNode.getKey(), suggestion.length, 'text')
+          sel.focus.set(textNode.getKey(), suggestion.length, 'text')
+          $setSelection(sel)
         })
 
         if (replacedRange !== undefined) {
@@ -228,7 +244,8 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
         if (rule.type !== 'keyword') continue
         for (const entry of rule.entries) {
           if (!entry.atomic || !entry.displaySymbol) continue
-          const src = entry.pattern
+          const src = entry.keyword || entry.pattern
+          if (!src) continue
           let cp: number | undefined
           const uEsc = /^\\u([0-9A-Fa-f]{4})$/.exec(src)
           if (uEsc) {

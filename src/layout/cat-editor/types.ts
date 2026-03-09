@@ -141,6 +141,9 @@ export const KeywordsEntrySchema = z.object({
   pattern: z.string().optional(),
   /** Optional description shown in the popover. */
   description: z.string().optional(),
+  /** Optional display text shown in the popover instead of the raw
+   *  keyword / pattern value.  Useful for human-readable labels. */
+  display: z.string().optional(),
   /** When `true`, the highlighted node is atomic — the caret cannot be
    *  placed inside it and it behaves as a single indivisible unit.
    *  Use this for invisible / special characters, markers, etc. */
@@ -311,6 +314,8 @@ export const KeywordsAnnotationSchema = z.object({
     keyword: z.string(),
     pattern: z.string().optional(),
     description: z.string().optional(),
+    /** Human-readable display text for the popover. */
+    display: z.string().optional(),
     /** When `true`, the highlight node is atomic (caret cannot enter). */
     atomic: z.boolean().optional(),
     /** Display symbol override for the matched text. */

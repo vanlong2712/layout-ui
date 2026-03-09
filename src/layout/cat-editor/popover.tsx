@@ -230,6 +230,7 @@ function KeywordsPopoverContent({
     keyword: string
     pattern?: string
     description?: string
+    display?: string
     atomic?: boolean
     displaySymbol?: string
     matchedText?: string
@@ -282,8 +283,8 @@ function KeywordsPopoverContent({
   }
 
   // Show keyword (exact match) when non-empty, otherwise fall back to pattern
-  const matchDisplay = data.keyword || data.pattern
-  const matchLabel = data.keyword ? 'Keyword' : 'Pattern'
+  const matchDisplay = data.display || data.keyword || data.pattern
+  const matchLabel = data.display ? '' : data.keyword ? 'Keyword' : 'Pattern'
 
   return (
     <div className="p-3 max-w-xs space-y-2">
@@ -294,7 +295,7 @@ function KeywordsPopoverContent({
       </span>
       {matchDisplay && (
         <p className="text-sm leading-relaxed text-foreground">
-          {matchLabel}:{' '}
+          {matchLabel ? `${matchLabel}: ` : ''}
           <strong className="font-semibold text-foreground">
             {matchDisplay}
           </strong>

@@ -499,6 +499,7 @@ export function computeHighlightSegments(
                 keyword: entry.keyword,
                 pattern: entry.pattern,
                 description: entry.description,
+                display: entry.display,
                 atomic: entry.atomic,
                 displaySymbol: entry.displaySymbol,
                 matchedText: entry.atomic ? matchStr : undefined,
