@@ -1,6 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
 import {
+  $createParagraphNode,
+  $createTextNode,
   $getRoot,
   $isParagraphNode,
   COMMAND_PRIORITY_CRITICAL,
@@ -154,6 +156,48 @@ export function PasteCleanupPlugin() {
       unregUpdate()
     }
   }, [editor])
+
+  return null
+}
+
+export function DefaultValuePlugin({ defaultValue }: { defaultValue: string }) {
+  const [editor] = useLexicalComposerContext()
+
+  useLayoutEffect(() => {
+    const unregister = editor.update(
+      () => {
+        const rootElement = editor.getRootElement()
+        if (
+          !!rootElement &&
+          !!document.activeElement &&
+          rootElement.contains(document.activeElement) &&
+          editor._editable
+        )
+          return
+        const root = $getRoot()
+        root.clear()
+        if (!defaultValue) {
+          root.append($createParagraphNode())
+          return
+        }
+        const lines = defaultValue.split('\n')
+        if (lines.length > 1 && lines[lines.length - 1] === '') {
+          lines.pop()
+        }
+        for (const line of lines) {
+          const p = $createParagraphNode()
+          p.append($createTextNode(line))
+          root.append(p)
+        }
+      },
+      {
+        tag: 'historic',
+        discrete: true,
+      },
+    )
+
+    return unregister
+  }, [defaultValue, editor])
 
   return null
 }

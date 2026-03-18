@@ -1,7 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { flushSync } from 'react-dom'
-import { createRoot } from 'react-dom/client'
 import { CheckCircle2, Plus } from 'lucide-react'
 
 import type { DetectQuotesOptions } from '@/utils/detect-quotes'
@@ -21,16 +19,16 @@ import type {
   ISpellCheckRule,
   ISpellCheckValidation,
   ITagRule,
-  MentionDOMRenderer,
   MooRule,
   RuleAnnotation,
 } from '@/layout/cat-editor'
 import type { RegexPreset } from '@/components/cat-editor-toolbar'
-import { CATEditor } from '@/layout/cat-editor'
+import { CATEditor, getInitials } from '@/layout/cat-editor'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { layoutDemos } from '@/data/layout-demos'
 import {
   CATEditorLegend,
@@ -260,170 +258,139 @@ const DEFAULT_SPECIAL_CHARS: Array<IKeywordsEntry> = [
   { keyword: '', pattern: ' ', description: 'Space', atomic: true },
 ]
 
+/** Factory: returns an avatar render function with base-ui Avatar + initials fallback.
+ *  Used in the typeahead dropdown menu (normal React tree). */
+function mentionAvatar(src: string, name: string): () => React.ReactNode {
+  return () => (
+    <Avatar className="w-full h-full">
+      <AvatarImage src={src} alt={name} />
+      <AvatarFallback className="text-[8px]">
+        {getInitials(name)}
+      </AvatarFallback>
+    </Avatar>
+  )
+}
+
+/** Lightweight React component rendered inside the mention node's DOM via
+ *  `createRoot` + `flushSync`.  Uses a plain `<img>` + `onError` state
+ *  instead of base-ui Avatar to keep the initial render fully synchronous
+ *  and avoid async DOM mutations that could confuse Lexical. */
 const DEFAULT_MENTION_USERS: Array<IMentionUser> = [
   {
     id: '1',
     name: 'Alice Johnson',
-    avatar: () => (
-      <img
-        src="https://i.pravatar.cc/48?u=alice-johnson"
-        className="rounded-full w-full h-full object-cover"
-        alt=""
-      />
-    ),
+    avatarUrl: '',
+    avatar: mentionAvatar('', 'Alice Johnson'),
   },
   {
     id: '2',
     name: 'Bob Smith',
-    avatar: () => (
-      <img
-        src="https://i.pravatar.cc/48?u=bob-smith"
-        className="rounded-full w-full h-full object-cover"
-        alt=""
-      />
-    ),
+    avatarUrl: 'https://i.pravatar.cc/48?u=bob-smith',
+    avatar: mentionAvatar('https://i.pravatar.cc/48?u=bob-smith', 'Bob Smith'),
   },
   {
     id: '3',
     name: 'Charlie Brown',
-    avatar: () => (
-      <img
-        src="https://i.pravatar.cc/48?u=charlie-brown"
-        className="rounded-full w-full h-full object-cover"
-        alt=""
-      />
+    avatarUrl: 'https://i.pravatar.cc/48?u=charlie-brown',
+    avatar: mentionAvatar(
+      'https://i.pravatar.cc/48?u=charlie-brown',
+      'Charlie Brown',
     ),
   },
   {
     id: '4',
     name: 'Diana Prince',
-    avatar: () => (
-      <img
-        src="https://i.pravatar.cc/48?u=diana-prince"
-        className="rounded-full w-full h-full object-cover"
-        alt=""
-      />
+    avatarUrl: 'https://i.pravatar.cc/48?u=diana-prince',
+    avatar: mentionAvatar(
+      'https://i.pravatar.cc/48?u=diana-prince',
+      'Diana Prince',
     ),
   },
   {
     id: '5',
     name: 'Eve Williams',
-    avatar: () => (
-      <img
-        src="https://i.pravatar.cc/48?u=eve-williams"
-        className="rounded-full w-full h-full object-cover"
-        alt=""
-      />
+    avatarUrl: 'https://i.pravatar.cc/48?u=eve-williams',
+    avatar: mentionAvatar(
+      'https://i.pravatar.cc/48?u=eve-williams',
+      'Eve Williams',
     ),
   },
   {
     id: '6',
     name: 'Frank Castle',
-    avatar: () => (
-      <img
-        src="https://i.pravatar.cc/48?u=frank-castle"
-        className="rounded-full w-full h-full object-cover"
-        alt=""
-      />
+    avatarUrl: 'https://i.pravatar.cc/48?u=frank-castle',
+    avatar: mentionAvatar(
+      'https://i.pravatar.cc/48?u=frank-castle',
+      'Frank Castle',
     ),
   },
   {
     id: '7',
     name: 'Grace Hopper',
-    avatar: () => (
-      <img
-        src="https://i.pravatar.cc/48?u=grace-hopper"
-        className="rounded-full w-full h-full object-cover"
-        alt=""
-      />
+    avatarUrl: 'https://i.pravatar.cc/48?u=grace-hopper',
+    avatar: mentionAvatar(
+      'https://i.pravatar.cc/48?u=grace-hopper',
+      'Grace Hopper',
     ),
   },
   {
     id: '8',
     name: 'Henry Ford',
-    avatar: () => (
-      <img
-        src="https://i.pravatar.cc/48?u=henry-ford"
-        className="rounded-full w-full h-full object-cover"
-        alt=""
-      />
+    avatarUrl: 'https://i.pravatar.cc/48?u=henry-ford',
+    avatar: mentionAvatar(
+      'https://i.pravatar.cc/48?u=henry-ford',
+      'Henry Ford',
     ),
   },
   {
     id: '9',
     name: 'Ivy Chen',
-    avatar: () => (
-      <img
-        src="https://i.pravatar.cc/48?u=ivy-chen"
-        className="rounded-full w-full h-full object-cover"
-        alt=""
-      />
-    ),
+    avatarUrl: 'https://i.pravatar.cc/48?u=ivy-chen',
+    avatar: mentionAvatar('https://i.pravatar.cc/48?u=ivy-chen', 'Ivy Chen'),
   },
   {
     id: '10',
     name: 'Jack Daniels',
-    avatar: () => (
-      <img
-        src="https://i.pravatar.cc/48?u=jack-daniels"
-        className="rounded-full w-full h-full object-cover"
-        alt=""
-      />
+    avatarUrl: 'https://i.pravatar.cc/48?u=jack-daniels',
+    avatar: mentionAvatar(
+      'https://i.pravatar.cc/48?u=jack-daniels',
+      'Jack Daniels',
     ),
   },
   {
     id: '11',
     name: 'Karen Lee',
-    avatar: () => (
-      <img
-        src="https://i.pravatar.cc/48?u=karen-lee"
-        className="rounded-full w-full h-full object-cover"
-        alt=""
-      />
-    ),
+    avatarUrl: 'https://i.pravatar.cc/48?u=karen-lee',
+    avatar: mentionAvatar('https://i.pravatar.cc/48?u=karen-lee', 'Karen Lee'),
   },
   {
     id: '12',
     name: 'Leo Messi',
-    avatar: () => (
-      <img
-        src="https://i.pravatar.cc/48?u=leo-messi"
-        className="rounded-full w-full h-full object-cover"
-        alt=""
-      />
-    ),
+    avatarUrl: 'https://i.pravatar.cc/48?u=leo-messi',
+    avatar: mentionAvatar('https://i.pravatar.cc/48?u=leo-messi', 'Leo Messi'),
   },
   {
     id: '13',
     name: 'Mia Wong',
-    avatar: () => (
-      <img
-        src="https://i.pravatar.cc/48?u=mia-wong"
-        className="rounded-full w-full h-full object-cover"
-        alt=""
-      />
-    ),
+    avatarUrl: 'https://i.pravatar.cc/48?u=mia-wong',
+    avatar: mentionAvatar('https://i.pravatar.cc/48?u=mia-wong', 'Mia Wong'),
   },
   {
     id: '14',
     name: 'Nathan Drake',
-    avatar: () => (
-      <img
-        src="https://i.pravatar.cc/48?u=nathan-drake"
-        className="rounded-full w-full h-full object-cover"
-        alt=""
-      />
+    avatarUrl: 'https://i.pravatar.cc/48?u=nathan-drake',
+    avatar: mentionAvatar(
+      'https://i.pravatar.cc/48?u=nathan-drake',
+      'Nathan Drake',
     ),
   },
   {
     id: '15',
     name: 'Olivia Kim',
-    avatar: () => (
-      <img
-        src="https://i.pravatar.cc/48?u=olivia-kim"
-        className="rounded-full w-full h-full object-cover"
-        alt=""
-      />
+    avatarUrl: 'https://i.pravatar.cc/48?u=olivia-kim',
+    avatar: mentionAvatar(
+      'https://i.pravatar.cc/48?u=olivia-kim',
+      'Olivia Kim',
     ),
   },
 ]
@@ -558,31 +525,8 @@ function CATEditorDemo() {
 
   const demoMeta = layoutDemos.find((d) => d.to === '/demo/cat-editor')
 
-  // ── Custom mention DOM renderer ──────────────────────────────────────
-  const renderMentionDOM = useCallback<MentionDOMRenderer>(
-    (element, mentionId, mentionName) => {
-      element.textContent = ''
-      const user = DEFAULT_MENTION_USERS.find((u) => u.id === mentionId)
-
-      if (mentionShowAvatar && user?.avatar) {
-        const container = document.createElement('span')
-        container.className = 'cat-mention-avatar'
-        container.style.width = '16px'
-        container.style.height = '16px'
-        const root = createRoot(container)
-        flushSync(() => root.render(user.avatar!()))
-        element.appendChild(container)
-      }
-
-      const label = document.createElement('span')
-      label.className = 'cat-mention-label'
-      label.textContent = `@${user?.name ?? mentionName}`
-      element.appendChild(label)
-
-      return true
-    },
-    [mentionShowAvatar],
-  )
+  // ── Custom mention DOM renderer (React-based) ───────────────────────
+  // (Removed — now handled natively by CATEditor’s mentionShowAvatar prop)
 
   // ── Derive mentionSerialize / mentionPattern from format template ───
   const mentionSerialize = useMemo(() => {
@@ -1121,7 +1065,7 @@ function CATEditorDemo() {
             initialText={SAMPLE_TEXT}
             rules={rules}
             onSuggestionApply={handleSuggestionApply}
-            renderMentionDOM={renderMentionDOM}
+            mentionShowAvatar={mentionShowAvatar}
             mentionSerialize={mentionSerialize}
             mentionPattern={mentionPattern}
             openLinksOnClick={openLinksOnClick}

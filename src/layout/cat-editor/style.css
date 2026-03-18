@@ -227,23 +227,36 @@
 }
 
 .cat-mention-avatar {
-  display: inline-block;
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
   border-radius: 9999px;
-  vertical-align: text-bottom;
+  overflow: hidden;
+  vertical-align: middle;
+  margin-right: 2px;
+}
+
+.cat-mention-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 9999px;
   object-fit: cover;
-  margin-right: 0.125rem;
 }
 
 .cat-mention-initials {
   display: inline-flex;
+  width: 16px;
+  height: 16px;
   align-items: center;
   justify-content: center;
   border-radius: 9999px;
   background: oklch(0.7 0.1 300 / 0.3);
   color: oklch(0.4 0.18 300);
   font-weight: 600;
-  vertical-align: text-bottom;
-  margin-right: 0.125rem;
+  font-size: 7px;
+  line-height: 1;
+  vertical-align: middle;
 }
 
 /* ─── Mention typeahead popover ────────────────────────────────────── */

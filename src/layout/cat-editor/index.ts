@@ -17,6 +17,7 @@ export {
   setMentionNodeConfig,
   getMentionModelText,
   getMentionPattern,
+  mentionAvatarFailedUrls,
 } from './mention-node'
 export type {
   SerializedMentionNode,
@@ -25,7 +26,7 @@ export type {
 } from './mention-node'
 
 // Mention plugin
-export { MentionPlugin } from './mention-plugin'
+export { MentionPlugin, getInitials } from './mention-plugin'
 export type { MentionPluginProps } from './mention-plugin'
 
 // Types & Zod schemas

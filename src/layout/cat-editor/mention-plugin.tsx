@@ -7,6 +7,7 @@ import {
   useBasicTypeaheadTriggerMatch,
 } from '@lexical/react/LexicalTypeaheadMenuPlugin'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { Avatar as AvatarPrimitive } from '@base-ui/react/avatar'
 
 import { $createTextNode } from 'lexical'
 import { $createMentionNode } from './mention-node'
@@ -33,6 +34,16 @@ class MentionTypeaheadOption extends MenuOption {
 
 // ─── Avatar helper ────────────────────────────────────────────────────────────
 
+/** Get 2-letter initials from a display name. */
+export function getInitials(name: string): string {
+  return name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
+}
+
 function MentionAvatar({
   user,
   size = 24,
@@ -51,21 +62,21 @@ function MentionAvatar({
     )
   }
 
-  // Fallback: initials avatar
-  const initials = user.name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase()
+  // Fallback: base-ui Avatar with initials
+  const initials = getInitials(user.name)
 
   return (
-    <span
-      className="inline-flex items-center justify-center rounded-full bg-muted text-muted-foreground font-medium"
-      style={{ width: size, height: size, fontSize: size * 0.4 }}
+    <AvatarPrimitive.Root
+      className="inline-flex items-center justify-center rounded-full overflow-hidden bg-muted"
+      style={{ width: size, height: size }}
     >
-      {initials}
-    </span>
+      <AvatarPrimitive.Fallback
+        className="flex items-center justify-center w-full h-full text-muted-foreground font-medium"
+        style={{ fontSize: size * 0.4 }}
+      >
+        {initials}
+      </AvatarPrimitive.Fallback>
+    </AvatarPrimitive.Root>
   )
 }
 

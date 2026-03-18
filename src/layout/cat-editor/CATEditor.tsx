@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useMemo, useRef } from 'react'
+import { forwardRef, useCallback, useMemo, useRef } from 'react'
 import {
   $createParagraphNode,
   $createRangeSelection,
@@ -20,6 +20,7 @@ import { HighlightPopover } from './popover'
 import { $getPlainText, $pointToGlobalOffset } from './selection-helpers'
 
 import {
+  DefaultValuePlugin,
   DirectionPlugin,
   KeyDownPlugin,
   PasteCleanupPlugin,
@@ -78,6 +79,9 @@ export interface CATEditorProps {
   mentionPattern?: RegExp
   /** Custom DOM renderer for mention nodes. */
   renderMentionDOM?: MentionDOMRenderer
+  /** Whether to show avatars inside mention nodes. Default: `false`.
+   *  Uses the built-in pure-DOM renderer (no React roots). */
+  mentionShowAvatar?: boolean
   /** Placeholder text */
   placeholder?: string
   /** Additional class name for the editor container */
@@ -96,6 +100,7 @@ export interface CATEditorProps {
   disableHistory?: boolean
   /** Custom keydown handler. Return `true` to consume the event. */
   onKeyDown?: (event: KeyboardEvent) => boolean
+  autoUpdateDefaultValue?: boolean
 }
 
 // ─── CATEditor ───────────────────────────────────────────────────────────────
@@ -117,6 +122,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
       mentionSerialize,
       mentionPattern,
       renderMentionDOM,
+      mentionShowAvatar = false,
       placeholder = 'Start typing or paste text here…',
       className,
       dir,
@@ -126,6 +132,7 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
       readOnlySelectable = false,
       disableHistory = false,
       onKeyDown: onKeyDownProp,
+      autoUpdateDefaultValue = true,
     },
     ref,
   ) {
@@ -139,13 +146,30 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
     const annotationMapRef = useRef(new Map<string, RuleAnnotation>())
 
     // ── Mention config sync ────────────────────────────────────────
-    useEffect(() => {
-      setMentionNodeConfig({
-        renderDOM: renderMentionDOM,
-        serialize: mentionSerialize,
-        pattern: mentionPattern,
-      })
-    }, [renderMentionDOM, mentionSerialize, mentionPattern])
+    // Build a stable avatar-URL lookup from the mention rules' user lists.
+    const getAvatarUrl = useMemo(() => {
+      const map = new Map<string, string>()
+      for (const rule of rules) {
+        if (rule.type !== 'mention') continue
+        for (const u of rule.users) {
+          if (u.avatarUrl) map.set(u.id, u.avatarUrl)
+        }
+      }
+      if (map.size === 0) return undefined
+      return (id: string) => map.get(id)
+    }, [rules])
+
+    // Set synchronously during render so the config is available when
+    // child effects (HighlightsPlugin) create MentionNodes via createDOM.
+    // This is safe because setMentionNodeConfig only assigns a plain object
+    // to a module-level variable — no DOM interaction.
+    setMentionNodeConfig({
+      renderDOM: renderMentionDOM,
+      serialize: mentionSerialize,
+      pattern: mentionPattern,
+      showAvatar: mentionShowAvatar,
+      getAvatarUrl,
+    })
 
     // ── Hooks ──────────────────────────────────────────────────────
     const flash = useFlash(editorRef, containerRef)
@@ -346,6 +370,9 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
               savedSelectionRef={savedSelectionRef}
             />
             <NLMarkerNavigationPlugin />
+            {autoUpdateDefaultValue && (
+              <DefaultValuePlugin defaultValue={initialText} />
+            )}
             {!isEditable && readOnlySelectable && <ReadOnlySelectablePlugin />}
             {onKeyDownProp && <KeyDownPlugin onKeyDown={onKeyDownProp} />}
             {dir && dir !== 'auto' && <DirectionPlugin dir={dir} />}

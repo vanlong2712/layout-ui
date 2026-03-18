@@ -248,6 +248,11 @@ export const MentionUserSchema = z.object({
   avatar: z
     .custom<() => React.ReactNode>((v) => typeof v === 'function')
     .optional(),
+  /** Optional image URL used for pure-DOM avatar rendering inside the editor.
+   *  When provided, the mention node DOM renderer can build an `<img>` directly
+   *  instead of spinning up a React root — avoiding async re-renders that
+   *  break Lexical's DOM reconciliation. */
+  avatarUrl: z.string().optional(),
 })
 export type IMentionUser = z.infer<typeof MentionUserSchema>
 

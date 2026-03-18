@@ -175,7 +175,7 @@ export function useFlash(
       const editor = editorRef.current
       if (editor) {
         flashEditUnregRef.current = editor.registerUpdateListener(
-          ({ tags }) => {
+          ({ tags, dirtyElements, dirtyLeaves }) => {
             if (tags.has('cat-highlights')) {
               if (flashIdRef.current) {
                 requestAnimationFrame(() =>
@@ -188,6 +188,8 @@ export function useFlash(
               }
               return
             }
+            // Ignore selection-only updates (focus, click, arrow keys)
+            if (dirtyElements.size === 0 && dirtyLeaves.size === 0) return
             clearFlash()
           },
         )
@@ -207,7 +209,7 @@ export function useFlash(
       const editor = editorRef.current
       if (editor) {
         flashEditUnregRef.current = editor.registerUpdateListener(
-          ({ tags }) => {
+          ({ tags, dirtyElements, dirtyLeaves }) => {
             if (tags.has('cat-highlights')) {
               if (flashRangeRef.current) {
                 const { start: s, end: e } = flashRangeRef.current
@@ -215,6 +217,8 @@ export function useFlash(
               }
               return
             }
+            // Ignore selection-only updates (focus, click, arrow keys)
+            if (dirtyElements.size === 0 && dirtyLeaves.size === 0) return
             clearFlash()
           },
         )

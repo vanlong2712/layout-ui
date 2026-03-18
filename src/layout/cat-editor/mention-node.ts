@@ -46,6 +46,10 @@ export interface MentionNodeConfig {
    *  The `g` flag is required.
    *  Default: `/@\{([^}]+)\}/g` — matches `@{5}`, `@{user_abc}`, etc. */
   pattern?: RegExp
+  /** Whether to show an avatar in the mention node. Default: `false`. */
+  showAvatar?: boolean
+  /** Lookup: given a mentionId, return the avatar image URL (or undefined). */
+  getAvatarUrl?: (mentionId: string) => string | undefined
 }
 
 // ─── Default serialization ────────────────────────────────────────────────────
@@ -77,13 +81,68 @@ export function getMentionPattern(): RegExp {
 
 // ─── Built-in DOM renderer ────────────────────────────────────────────────────
 
-/** Default rendering: `@DisplayName` */
+/** URLs that have already failed to load — shared so external code
+ *  (e.g. mention dropdown) can skip broken images immediately. */
+export const mentionAvatarFailedUrls = new Set<string>()
+
+/** Get 2-letter initials from a display name. */
+function _getInitials(name: string): string {
+  return name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
+}
+
+/** Build an avatar <span> (img with onerror-to-initials fallback). Pure DOM.
+ *  Consults `mentionAvatarFailedUrls` to skip known-broken URLs. */
+function _buildAvatarDOM(
+  url: string | undefined,
+  displayName: string,
+): HTMLSpanElement {
+  const container = document.createElement('span')
+  container.className = 'cat-mention-avatar'
+
+  // Treat previously-failed URLs the same as no URL
+  const effectiveUrl = url && !mentionAvatarFailedUrls.has(url) ? url : undefined
+
+  if (effectiveUrl) {
+    const img = document.createElement('img')
+    img.src = effectiveUrl
+    img.alt = ''
+    img.draggable = false
+    img.onerror = () => {
+      mentionAvatarFailedUrls.add(effectiveUrl)
+      container.textContent = ''
+      const fb = document.createElement('span')
+      fb.className = 'cat-mention-initials'
+      fb.textContent = _getInitials(displayName)
+      container.appendChild(fb)
+    }
+    container.appendChild(img)
+  } else {
+    const fb = document.createElement('span')
+    fb.className = 'cat-mention-initials'
+    fb.textContent = _getInitials(displayName)
+    container.appendChild(fb)
+  }
+  return container
+}
+
+/** Default rendering: optional avatar + @DisplayName */
 function renderDefaultMentionDOM(
   element: HTMLSpanElement,
-  _mentionId: string,
+  mentionId: string,
   mentionName: string,
 ): void {
   element.textContent = ''
+
+  if (_mentionNodeConfig.showAvatar) {
+    const url = _mentionNodeConfig.getAvatarUrl?.(mentionId)
+    element.appendChild(_buildAvatarDOM(url, mentionName))
+  }
+
   const label = document.createElement('span')
   label.className = 'cat-mention-label'
   label.textContent = `@${mentionName}`
