@@ -12,6 +12,7 @@ import {
   Plus,
   Quote,
   Regex,
+  Replace,
   RotateCcw,
   Search,
   Settings,
@@ -23,6 +24,7 @@ import type {
   IKeywordsEntry,
   ILexiQAValidation,
   ISpellCheckValidation,
+  QuoteAutoReplace,
 } from '@/layout/cat-editor'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -275,6 +277,20 @@ export interface CATEditorToolbarProps {
   onQuoteAllowNestingChange: (v: boolean) => void
   quoteDetectInner: boolean
   onQuoteDetectInnerChange: (v: boolean) => void
+
+  // ── Quote Replace ──────────────────────────────
+  quoteReplaceEnabled: boolean
+  onQuoteReplaceEnabledChange: (v: boolean) => void
+  quoteReplaceMode: QuoteAutoReplace
+  onQuoteReplaceModeChange: (v: QuoteAutoReplace) => void
+  quoteReplaceSingleOpen: string
+  onQuoteReplaceSingleOpenChange: (v: string) => void
+  quoteReplaceSingleClose: string
+  onQuoteReplaceSingleCloseChange: (v: string) => void
+  quoteReplaceDoubleOpen: string
+  onQuoteReplaceDoubleOpenChange: (v: string) => void
+  quoteReplaceDoubleClose: string
+  onQuoteReplaceDoubleCloseChange: (v: string) => void
 
   // ── Links ──────────────────────────────────────
   linkEnabled: boolean
@@ -936,6 +952,76 @@ export function CATEditorToolbar(props: CATEditorToolbarProps) {
               />
               <Label className="text-xs">Inner</Label>
             </div>
+          </div>
+        </div>
+      </ToolbarPopoverButton>
+
+      {/* Quote Replace (auto-replace typed quotes) */}
+      <ToolbarPopoverButton
+        label="Quote Replace"
+        icon={<Replace className="h-3.5 w-3.5" />}
+        enabled={props.quoteReplaceEnabled}
+        onToggle={props.onQuoteReplaceEnabledChange}
+      >
+        <div className="space-y-2">
+          <div className="grid grid-cols-[auto_1fr_1fr] gap-1.5 items-center text-xs">
+            <span />
+            <span className="text-muted-foreground text-center text-[10px]">
+              Open
+            </span>
+            <span className="text-muted-foreground text-center text-[10px]">
+              Close
+            </span>
+            <span className="text-muted-foreground">Single</span>
+            <Input
+              className="h-6 text-xs text-center font-mono"
+              value={props.quoteReplaceSingleOpen}
+              onChange={(e) =>
+                props.onQuoteReplaceSingleOpenChange(e.target.value)
+              }
+            />
+            <Input
+              className="h-6 text-xs text-center font-mono"
+              value={props.quoteReplaceSingleClose}
+              onChange={(e) =>
+                props.onQuoteReplaceSingleCloseChange(e.target.value)
+              }
+            />
+            <span className="text-muted-foreground">Double</span>
+            <Input
+              className="h-6 text-xs text-center font-mono"
+              value={props.quoteReplaceDoubleOpen}
+              onChange={(e) =>
+                props.onQuoteReplaceDoubleOpenChange(e.target.value)
+              }
+            />
+            <Input
+              className="h-6 text-xs text-center font-mono"
+              value={props.quoteReplaceDoubleClose}
+              onChange={(e) =>
+                props.onQuoteReplaceDoubleCloseChange(e.target.value)
+              }
+            />
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <Label className="text-xs text-muted-foreground shrink-0">
+              Mode
+            </Label>
+            <Select
+              value={props.quoteReplaceMode}
+              onValueChange={(v) =>
+                props.onQuoteReplaceModeChange(v as QuoteAutoReplace)
+              }
+            >
+              <SelectTrigger className="h-6 text-xs flex-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="always">Always</SelectItem>
+                <SelectItem value="post-hoc">Post-hoc</SelectItem>
+                <SelectItem value="opening-only">Opening only</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
       </ToolbarPopoverButton>

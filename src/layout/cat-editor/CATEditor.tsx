@@ -30,6 +30,7 @@ import { EditorRefPlugin } from './plugins/editor-ref-plugin'
 import { HighlightsPlugin } from './plugins/highlights-plugin'
 import { NLMarkerNavigationPlugin } from './plugins/navigation-plugin'
 
+import { QuoteAutoReplacePlugin } from './plugins/quote-auto-replace-plugin'
 import { useEditorHandle } from './hooks/use-editor-handle'
 import { useFlash } from './hooks/use-flash'
 import { usePopoverHover } from './hooks/use-popover-hover'
@@ -38,6 +39,7 @@ import type { LexicalEditor } from 'lexical'
 import type {
   CATEditorRef,
   IMentionRule,
+  IQuoteReplaceRule,
   MooRule,
   PopoverContentRenderer,
   RuleAnnotation,
@@ -377,6 +379,14 @@ export const CATEditor = forwardRef<CATEditorRef, CATEditorProps>(
             {onKeyDownProp && <KeyDownPlugin onKeyDown={onKeyDownProp} />}
             {dir && dir !== 'auto' && <DirectionPlugin dir={dir} />}
             <PasteCleanupPlugin />
+            {rules
+              .filter((r): r is IQuoteReplaceRule => r.type === 'quote-replace')
+              .map((quoteRule, i) => (
+                <QuoteAutoReplacePlugin
+                  key={`quote-replace-${i}`}
+                  quoteRule={quoteRule}
+                />
+              ))}
             {rules
               .filter((r): r is IMentionRule => r.type === 'mention')
               .map((mentionRule, i) => (

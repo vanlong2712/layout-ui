@@ -222,6 +222,13 @@ export const QuoteRuleMappingSchema = z.object({
 })
 export type IQuoteRuleMapping = z.infer<typeof QuoteRuleMappingSchema>
 
+export const QuoteAutoReplaceSchema = z.enum([
+  'always',
+  'post-hoc',
+  'opening-only',
+])
+export type QuoteAutoReplace = z.infer<typeof QuoteAutoReplaceSchema>
+
 export const QuoteRuleSchema = z.object({
   type: z.literal('quote'),
   singleQuote: QuoteRuleMappingSchema,
@@ -230,6 +237,31 @@ export const QuoteRuleSchema = z.object({
   detectOptions: DetectQuotesOptionsSchema.optional(),
 })
 export type IQuoteRule = z.infer<typeof QuoteRuleSchema>
+
+/**
+ * Standalone rule that auto-replaces typed `'`/`"` with configured
+ * opening/closing characters on user keystrokes ONLY.
+ *
+ * This is a separate feature from the visual quote-highlight rule
+ * (`IQuoteRule`).  It never produces highlight segments — its sole
+ * job is to intercept keystrokes in the editor.
+ */
+export const QuoteReplaceRuleSchema = z.object({
+  type: z.literal('quote-replace'),
+  singleQuote: QuoteRuleMappingSchema,
+  doubleQuote: QuoteRuleMappingSchema,
+  /**
+   * - `'always'` — Replace immediately.  Correct for curly/smart quotes where
+   *   the closing char IS the typographic apostrophe.
+   * - `'post-hoc'` — Replace immediately, then revert if the very next
+   *   keystroke is a Unicode letter (mid-word apostrophe / elision).
+   *   Works for ALL languages without per-language configuration.
+   * - `'opening-only'` — Only replace in unambiguous opening context
+   *   (after whitespace, line start, or opening bracket).  Safest mode.
+   */
+  autoReplace: QuoteAutoReplaceSchema,
+})
+export type IQuoteReplaceRule = z.infer<typeof QuoteReplaceRuleSchema>
 
 // ─── Link detection ───────────────────────────────────────────────────────────
 
@@ -270,6 +302,7 @@ export const MooRuleSchema = z.discriminatedUnion('type', [
   KeywordsRuleSchema,
   TagRuleSchema,
   QuoteRuleSchema,
+  QuoteReplaceRuleSchema,
   LinkRuleSchema,
   MentionRuleSchema,
 ])

@@ -4,6 +4,7 @@
 export { EditorRefPlugin } from './editor-ref-plugin'
 export { HighlightsPlugin } from './highlights-plugin'
 export { NLMarkerNavigationPlugin } from './navigation-plugin'
+export { QuoteAutoReplacePlugin } from './quote-auto-replace-plugin'
 export {
   DirectionPlugin,
   KeyDownPlugin,

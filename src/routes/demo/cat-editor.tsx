@@ -13,6 +13,7 @@ import type {
   ILinkRule,
   IMentionRule,
   IMentionUser,
+  IQuoteReplaceRule,
   IQuoteRule,
   IRangeHighlight,
   IRangeHighlightRule,
@@ -20,6 +21,7 @@ import type {
   ISpellCheckValidation,
   ITagRule,
   MooRule,
+  QuoteAutoReplace,
   RuleAnnotation,
 } from '@/layout/cat-editor'
 import type { RegexPreset } from '@/components/cat-editor-toolbar'
@@ -502,6 +504,17 @@ function CATEditorDemo() {
   const [quoteAllowNesting, setQuoteAllowNesting] = useState(false)
   const [quoteDetectInner, setQuoteDetectInner] = useState(true)
 
+  // Quote auto-replace options (separate feature)
+  const [quoteReplaceEnabled, setQuoteReplaceEnabled] = useState(false)
+  const [quoteReplaceMode, setQuoteReplaceMode] =
+    useState<QuoteAutoReplace>('always')
+  const [quoteReplaceSingleOpen, setQuoteReplaceSingleOpen] = useState('\u2018')
+  const [quoteReplaceSingleClose, setQuoteReplaceSingleClose] =
+    useState('\u2019')
+  const [quoteReplaceDoubleOpen, setQuoteReplaceDoubleOpen] = useState('\u201C')
+  const [quoteReplaceDoubleClose, setQuoteReplaceDoubleClose] =
+    useState('\u201D')
+
   // Track which spellcheck annotation is currently flash-highlighted
   const [flashedSpellcheckId, setFlashedSpellcheckId] = useState<string | null>(
     null,
@@ -620,6 +633,20 @@ function CATEditorDemo() {
         detectOptions,
       } satisfies IQuoteRule)
     }
+    if (quoteReplaceEnabled) {
+      active.push({
+        type: 'quote-replace',
+        singleQuote: {
+          opening: quoteReplaceSingleOpen,
+          closing: quoteReplaceSingleClose,
+        },
+        doubleQuote: {
+          opening: quoteReplaceDoubleOpen,
+          closing: quoteReplaceDoubleClose,
+        },
+        autoReplace: quoteReplaceMode,
+      } satisfies IQuoteReplaceRule)
+    }
     if (linkEnabled) {
       active.push({
         type: 'link',
@@ -686,6 +713,12 @@ function CATEditorDemo() {
     quoteEscapeContractions,
     quoteAllowNesting,
     quoteDetectInner,
+    quoteReplaceEnabled,
+    quoteReplaceMode,
+    quoteReplaceSingleOpen,
+    quoteReplaceSingleClose,
+    quoteReplaceDoubleOpen,
+    quoteReplaceDoubleClose,
     linkEnabled,
     mentionEnabled,
     mentionTrigger,
@@ -744,6 +777,12 @@ function CATEditorDemo() {
     setQuoteEscapeContractions(true)
     setQuoteAllowNesting(false)
     setQuoteDetectInner(true)
+    setQuoteReplaceEnabled(false)
+    setQuoteReplaceMode('always')
+    setQuoteReplaceSingleOpen('\u2018')
+    setQuoteReplaceSingleClose('\u2019')
+    setQuoteReplaceDoubleOpen('\u201C')
+    setQuoteReplaceDoubleClose('\u201D')
     setLinkEnabled(true)
     setOpenLinksOnClick(true)
     setMentionEnabled(true)
@@ -936,6 +975,18 @@ function CATEditorDemo() {
           onQuoteAllowNestingChange={setQuoteAllowNesting}
           quoteDetectInner={quoteDetectInner}
           onQuoteDetectInnerChange={setQuoteDetectInner}
+          quoteReplaceEnabled={quoteReplaceEnabled}
+          onQuoteReplaceEnabledChange={setQuoteReplaceEnabled}
+          quoteReplaceMode={quoteReplaceMode}
+          onQuoteReplaceModeChange={setQuoteReplaceMode}
+          quoteReplaceSingleOpen={quoteReplaceSingleOpen}
+          onQuoteReplaceSingleOpenChange={setQuoteReplaceSingleOpen}
+          quoteReplaceSingleClose={quoteReplaceSingleClose}
+          onQuoteReplaceSingleCloseChange={setQuoteReplaceSingleClose}
+          quoteReplaceDoubleOpen={quoteReplaceDoubleOpen}
+          onQuoteReplaceDoubleOpenChange={setQuoteReplaceDoubleOpen}
+          quoteReplaceDoubleClose={quoteReplaceDoubleClose}
+          onQuoteReplaceDoubleCloseChange={setQuoteReplaceDoubleClose}
           linkEnabled={linkEnabled}
           onLinkEnabledChange={setLinkEnabled}
           openLinksOnClick={openLinksOnClick}
